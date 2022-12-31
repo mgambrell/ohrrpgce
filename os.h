@@ -13,7 +13,14 @@
 extern "C" {
 #endif
 
-#ifdef _WIN32
+#ifdef HOST_FB_BLACKBOX
+
+	typedef struct HOST_FB_BLACKBOX_IPCChannel_t HOST_FB_BLACKBOX_IPCChannel_t;
+	typedef struct HOST_FB_BLACKBOX_IPCChannel_t* IPCChannel;
+	typedef void *ProcessHandle;
+	#define NULL_CHANNEL (IPCChannel)0
+
+#elif _WIN32
 
 // in gfx_common/win_error.c
 const char* win_error_str(int errcode);
@@ -77,7 +84,7 @@ int channel_write(IPCChannel *channel, const char *buf, int buflen);
 int channel_write_string(IPCChannel *channel, FBSTRING *input);
 int channel_input_line(IPCChannel *channel, FBSTRING *output);
 
-bool file_ready_to_read(int fileno);
+boolint file_ready_to_read(int fileno);
 
 //Threads
 

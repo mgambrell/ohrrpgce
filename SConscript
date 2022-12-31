@@ -212,7 +212,10 @@ if arch == 'x86':
 tiny = int(ARGUMENTS.get('tiny', 0))
 
 if int (ARGUMENTS.get ('asm', False)):
-    FBFLAGS += ["-R", "-RR", "-g"]
+    FBFLAGS += ["-R", "-RR"]
+
+#MBG HACK
+#FBFLAGS += ["-dnullptr"]
 
 pdb = int(ARGUMENTS.get('pdb', 0))
 if pdb:
@@ -1044,8 +1047,7 @@ for k in music:
 base_modules += ['os_sockets.c']
 
 if win32:
-    base_modules += ['os_windows.bas', 'os_windows2.c', 'lib/win98_compat.bas',
-                     'lib/msvcrt_compat.c', 'gfx_common/win_error.c']
+    # base_modules += ['os_windows.bas', 'os_windows2.c', 'lib/win98_compat.bas', 'lib/msvcrt_compat.c', 'gfx_common/win_error.c']
     # winmm needed for MIDI, used by music backends but also by miditest
     # psapi.dll needed just for get_process_path() and memory_usage(). Not present on Win98 unfortunately,
     # so now we dynamically link it.

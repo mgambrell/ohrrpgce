@@ -731,7 +731,7 @@ EmbeddedFileInfo *find_embedded_file(const char *path) {
 }
 
 // Write an embedded file out to dump_path. Returns true on success.
-bool dump_embedded_file(const char *embedded_path, const char *dump_path) {
+boolint dump_embedded_file(const char *embedded_path, const char *dump_path) {
 	EmbeddedFileInfo *embedded = find_embedded_file(embedded_path);
 	if (!embedded) {
 		// This function is called from the -dump-embed commandline arg,
@@ -742,7 +742,7 @@ bool dump_embedded_file(const char *embedded_path, const char *dump_path) {
 	FILE *cfile = fopen(dump_path, "wb");
 	if (!cfile) return false;
 	// Returns 1 if whole file written
-	bool ret = fwrite(embedded->data, embedded->length, 1, cfile);
+	boolint ret = fwrite(embedded->data, embedded->length, 1, cfile);
 	fclose(cfile);
 	return ret;
 }

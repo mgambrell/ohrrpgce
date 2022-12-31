@@ -8,7 +8,7 @@
 'somehow fscked up the private heap implementation. Or, someone else touched something without
 'understanding how it works...
 
-'#define RELOAD_NOPRIVATEHEAP
+#define RELOAD_NOPRIVATEHEAP
 
 #include "config.bi"
 

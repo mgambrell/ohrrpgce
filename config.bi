@@ -7,7 +7,6 @@
 #IFNDEF CONFIG_BI
 #DEFINE CONFIG_BI
 
-
 '================================== Global namespace cleanup ==============================
 
 #UNDEF name
@@ -356,5 +355,38 @@ use_32bit_integer()
  #define TIMER_STOP(a)  a += TIMER
 #endif
 
+
+''''''''''''''''''''
+'MBG HACKS
+
+'fix string.bi functions
+#undef strcpy
+#undef strlen
+#undef strcmp
+#undef strncmp
+#undef strchr
+declare function strcpy alias "wrap_strcpy" (byval as zstring ptr, byval as const zstring ptr) as zstring ptr
+declare function strlen alias "wrap_strlen" (byval as const zstring ptr) as size_t
+declare function strcmp alias "wrap_strcmp" (byval as const zstring ptr, byval as const zstring ptr) as long
+declare function strncmp alias "wrap_strncmp" (byval as const zstring ptr, byval as const zstring ptr, byval as size_t) as long
+declare function strchr alias "wrap_strchr" (byval as const zstring ptr, byval as long) as zstring ptr
+
+'fix mem.bi functions
+#undef memchr
+#undef memcmp
+#undef memcpy
+#undef memmove
+#undef memset
+declare function memchr alias "wrap_memchr" (byval as const any ptr, byval as long, byval as size_t) as any ptr
+declare function memcmp alias "wrap_memcmp" (byval as const any ptr, byval as const any ptr, byval as size_t) as long
+declare function memcpy alias "wrap_memcpy" (byval as any ptr, byval as const any ptr, byval as size_t) as any ptr
+declare function memmove alias "wrap_memmove" (byval as any ptr, byval as const any ptr, byval as size_t) as any ptr
+declare function memset alias "wrap_memset" (byval as any ptr, byval as long, byval as size_t) as any ptr
+
+'fix stdlib.bi functions
+#undef strtoll
+#undef remove
+declare function strtoll alias "wrap_strtoll" (byval as zstring ptr, byval as byte ptr ptr, byval as long) as longint
+declare function remove alias "wrap_remove" (byval as const zstring ptr) as long
 
 #ENDIF

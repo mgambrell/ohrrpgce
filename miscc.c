@@ -259,6 +259,7 @@ uint32_t stringhash(const unsigned char *strp, int length) {
 	return hash;
 }
 
+#ifndef HOST_FB_BLACKBOX
 
 /////////////////////// Put x87 FPU in double-precision mode //////////////////
 
@@ -325,7 +326,7 @@ void disable_extended_precision() {}
 
 #endif
 
-
+#endif
 ///////////////////////////////////////////////////////////////////////////////
 
 // This sets the locale (LC_ALL) according to the environment, while the FB
