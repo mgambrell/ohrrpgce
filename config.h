@@ -140,6 +140,9 @@ extern "C" {
 */
 typedef int boolint;
 
+//MBG - added this because we were using bools in some structs that FB needs access to but bool isnt reliable (I guess this should be fixed some other way but I have no idea what the situation is with bools on C, and I don't want to know)
+typedef int8_t fb_bool;
+
 #ifdef _MSC_VER
  // TODO: bool is only available when compiling as C++, otherwise need typedef it...
 #else

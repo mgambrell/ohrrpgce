@@ -107,19 +107,19 @@ typedef struct
 	// gfx_render* and gfx_surfaceCopy API ONLY, all other functions take
 	// separate 'trans' arguments Whether colour 0 (or mask 0, in Surfaces
 	// with masks) of 8-bit source textures is transparent.
-	boolint color_key0;
+	fb_bool color_key0;
 
 	// If the destination has a mask, sets the mask for the destination rectangle
 	// equal to the mask (or color-key) for the source rectangle. Does not OR them.
 	// (TODO: not implemented for 32-bit draws (gfx_surfaceCopy))
-	boolint write_mask;
+	fb_bool write_mask;
 
 	// If false, all blending/modulation options are ignored. Used as an early-out
-	boolint with_blending;
+	fb_bool with_blending;
 
 	// gfx_render* API only (TODO: implement for gfx_surfaceCopy): whether to use
 	// the alpha channel of 32-bit source textures
-	boolint alpha_channel;
+	fb_bool alpha_channel;
 
 	enum BlendMode blend_mode;
 
