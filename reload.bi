@@ -5,9 +5,12 @@
 #ifndef RELOAD_BI
 #define RELOAD_BI
 
+#define RELOAD_NOPRIVATEHEAP
+
 #include "config.bi"
 #include "util.bi"
 #include "lumpfile.bi"
+
 
 #if defined(__FB_WIN32__) and not defined(RELOAD_NOPRIVATEHEAP)
 #if defined(RELOADINTERNAL) or __FB_DEBUG__

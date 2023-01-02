@@ -8,8 +8,6 @@
 'somehow fscked up the private heap implementation. Or, someone else touched something without
 'understanding how it works...
 
-#define RELOAD_NOPRIVATEHEAP
-
 #include "config.bi"
 
 #if defined(__FB_WIN32__) and not defined(RELOAD_NOPRIVATEHEAP)
