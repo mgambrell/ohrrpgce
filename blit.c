@@ -97,7 +97,7 @@ void blitohr(Frame *spr, Frame *destspr, Palette16 *pal, int startoffset, int st
 					srcc = curmasterpal[*srcp];
 
 				// Blend source and dest pixels in 24-bit colour space (.a ignored for now)
-				RGBcolor blended = alpha_blend(srcc, destc, alpha, opts->blend_mode, false);
+				RGBcolor blended = alpha_blend(srcc, destc, alpha, opts->blend_mode, 0);
 
 				destp[0] = map_rgb_to_masterpal(blended, &rgberr, tog, (i&j));
 				destp++;
@@ -217,12 +217,12 @@ void blitohrscaled(Frame *spr, Frame *destspr, Palette16 *pal, int x, int y, int
 
 	int scale = opts->scale;
 
-	bool write_mask = opts->write_mask;
+	boolint write_mask = opts->write_mask;
 	if (maskp == 0) {
 		maskp = srcp;
 	}
 	if (destmaskp == 0) {
-		write_mask = false;
+		write_mask = 0;
 	}
 
 	if (trans == 0) {
@@ -269,9 +269,9 @@ typedef void (*smoothblitfunc_t)(void *srcbuffer, void *destbuffer, XYPair size,
 
 // The smoothzoomblit functions implement smoothing at 2x, 3x and 4x zooms.
 // This implements smoothing at other zooms by chaining together calls to those functions
-bool multismoothblit(int srcbitdepth, int destbitdepth, void *srcbuffer, void *destbuffer, XYPair size, int pitch, int zoom, int *smooth, RGBcolor pal[]) {
+boolint multismoothblit(int srcbitdepth, int destbitdepth, void *srcbuffer, void *destbuffer, XYPair size, int pitch, int zoom, int *smooth, RGBcolor pal[]) {
 	if (zoom < 4 || !*smooth)
-		return false;
+		return 0;
 
 	smoothblitfunc_t func1, func2;
 	if (srcbitdepth == 32) {
@@ -300,7 +300,7 @@ bool multismoothblit(int srcbitdepth, int destbitdepth, void *srcbuffer, void *d
 	else if (zoom == 16) { zoom0 = 2; zoom1 = 2; zoom2 = 4; finalsmooth = 0; }
 	else {
 		// Still attempt to smooth zooms like 5x, 7x, but the effect is very slight
-		return false;
+		return 0;
 	}
 	int zoom01 = zoom0 * zoom1;
 
@@ -317,7 +317,7 @@ bool multismoothblit(int srcbitdepth, int destbitdepth, void *srcbuffer, void *d
 	func1(first_buffer, intermediate_buffer, (XYPair){size.w * zoom0, size.h * zoom0}, size.w * zoom01, zoom1, 1, pal);
 	func2(intermediate_buffer, destbuffer, (XYPair){size.w * zoom01, size.h * zoom01}, pitch, zoom2, finalsmooth, pal);
 	free(intermediate_buffer);
-	return true;
+	return 1;
 }
 
 void smoothzoomblit_8_to_8bit(uint8_t *srcbuffer, uint8_t *destbuffer, XYPair size, int pitch, int zoom, int smooth, RGBcolor dummypal[]) {

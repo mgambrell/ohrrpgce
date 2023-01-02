@@ -16,7 +16,7 @@ extern "C" {
 // Blend source and dest pixels in 24-bit colour space.
 // This blends using fixed alpha (range 0-256) and optionally
 // also combining with the alpha channel value (range 0-255)
-static inline RGBcolor alpha_blend(RGBcolor src, RGBcolor dest, unsigned int alpha, enum BlendMode mode, bool alpha_channel) {
+static inline RGBcolor alpha_blend(RGBcolor src, RGBcolor dest, unsigned int alpha, enum BlendMode mode, boolint alpha_channel) {
 	RGBcolor res;
 	if (alpha_channel)
 		alpha = alpha * src.a / 255;
