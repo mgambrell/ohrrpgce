@@ -74,8 +74,10 @@ SUB draw_gfx(it as integer)
 END SUB
 
 SUB draw_loop
-	switch_to_32bit_vpages()
+	'switch_to_32bit_vpages()
 	toggle_fps_display
+	toggle_fps_display
+	use_speed_control = false
 
 	FOR it as integer = 0 TO 999999
 		'setwait 16.666

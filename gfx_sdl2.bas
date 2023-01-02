@@ -109,7 +109,8 @@ DECLARE FUNCTION scOHR2SDL(byval ohr_scancode as KBScancode, byval default_sdl_s
 DECLARE SUB log_error(failed_call as zstring ptr, funcname as zstring ptr)
 #define CheckOK(condition, otherwise...)  IF condition THEN log_error(#condition, __FUNCTION__) : otherwise
 
-DIM SHARED zoom as integer = 2  'Size of a pixel
+'DIM SHARED zoom as integer = 2  'Size of a pixel
+DIM SHARED zoom as integer = 1  'Size of a pixel
 DIM SHARED smooth_zoom as integer = 2  'Amount to zoom before applying smoothing
 DIM SHARED smooth as integer = 0  'Smoothing mode (0 or 1)
 DIM SHARED mainwindow as SDL_Window ptr = NULL
@@ -751,7 +752,7 @@ LOCAL FUNCTION present_internal2(srcsurf as SDL_Surface ptr, raw as any ptr, ima
 
   'Clearing the screen first is necessary in fullscreen, when the window size may not match the maintexture size
   '(this clears the black bars)
-  SDL_RenderClear(mainrenderer)
+  'SDL_RenderClear(mainrenderer)
   'DIM dstrect as SDL_Rect = (0, 0, framesize.w * zoom, framesize.h * zoom) 'imagew, imageh
   CheckOK(SDL_RenderCopy(mainrenderer, maintexture, NULL, NULL /'@dstrect'/), ret = NO)
   SDL_RenderPresent(mainrenderer)
