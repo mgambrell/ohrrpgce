@@ -303,7 +303,8 @@ sub music_init()
 			audio_buffers = 1024 '1536
 		#else
 			' SDL_mixer 2: the above problem doesn't apply
-			audio_rate = 44100
+			'audio_rate = 44100
+			audio_rate = 48000 'MBG - I want 48000 so I can avoid resampling on the output
 			audio_buffers = 2048 'Might as well increase to match (effect not investigated)
 
 			'SDL_SetHint("SDL_MIXER_DEBUG_MUSIC_INTERFACES", "1")
