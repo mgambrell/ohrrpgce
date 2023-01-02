@@ -78,7 +78,7 @@ SUB draw_loop
 	toggle_fps_display
 
 	FOR it as integer = 0 TO 999999
-		setwait 16.666
+		'setwait 16.666
 		setkeys
 		IF getquitflag ORELSE keyval(ccCancel) > 1 THEN EXIT FOR
 
@@ -86,7 +86,7 @@ SUB draw_loop
 		draw_basic_mouse_cursor vpage
 		draw_keys_overlay vpage
 		setvispage vpage
-		dowait
+		'dowait
 	NEXT
 END SUB
 
