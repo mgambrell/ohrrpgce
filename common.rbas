@@ -1515,9 +1515,10 @@ SUB showerror_internal (callsite as any ptr, zmsg as const zstring ptr, byval is
  printmsg = IIF(isbug, "(BUG) ", "") + IIF(isfatal, "FATAL: ", "ERROR: ") + *zmsg
  'Don't use PRINT, doesn't go to the terminal under gfx_fb
  'also printing to stdout doesn't work on android
-#IFNDEF __FB_ANDROID__
- fprintf(stderr, !"%s\n", STRPTR(printmsg))
-#ENDIF
+'MBG - this causes trouble, maybe due to define of stderr to __iob_func but it looks buggier than that
+'#IFNDEF __FB_ANDROID__
+ 'fprintf(stderr, !"%s\n", STRPTR(printmsg))
+'#ENDIF
 
  STATIC last_error as string
  DIM msg as string = RTRIM(*zmsg, !"\n")
@@ -7373,6 +7374,8 @@ FUNCTION get_settings_dir () as string
  #ELSE
   #ERROR "Unknown OS"
  #ENDIF
+	'MBG - MUST HACK 
+	settings_dir = "/ohr/settings"
  IF NOT isdir(settings_dir) THEN makedir(settings_dir)
  RETURN settings_dir
 END FUNCTION
