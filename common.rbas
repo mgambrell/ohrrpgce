@@ -7375,7 +7375,7 @@ FUNCTION get_settings_dir () as string
   #ERROR "Unknown OS"
  #ENDIF
 	'MBG - MUST HACK 
-	settings_dir = "/ohr/settings"
+	settings_dir = "/saves/settings"
  IF NOT isdir(settings_dir) THEN makedir(settings_dir)
  RETURN settings_dir
 END FUNCTION
