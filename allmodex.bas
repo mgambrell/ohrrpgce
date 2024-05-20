@@ -8864,6 +8864,7 @@ sub surface_export_gif (surf as Surface Ptr, fname as string, dither as bool = N
 	FAIL_IF(surf->format <> SF_32bit, "8bit Surface")
 	FAIL_IF(surf->pitch <> surf->width, "pitch doesn't match width")
 
+#ifndef __FB_BLACKBOX__
 	dim writer as GifWriter
 	if GifBegin(@writer, fopen(fname, "wb"), surf->width, surf->height, 0, NO, NULL) = NO then
 		debug "GifWriter(" & fname & ") failed"
@@ -8872,6 +8873,7 @@ sub surface_export_gif (surf as Surface Ptr, fname as string, dither as bool = N
 	elseif GifEnd(@writer) = NO then
 		debug "GifEnd failed"
 	end if
+#endif
 end sub
 
 ' Output a single-frame .gif. Ignores mask.
@@ -8882,6 +8884,7 @@ sub frame_export_gif (fr as Frame Ptr, fname as string, maspal() as RGBcolor, pa
 	end if
 	BUG_IF(fr->pitch <> fr->w, "pitch doesn't match width")
 
+#ifndef __FB_BLACKBOX__
 	dim writer as GifWriter
 	dim gifpal as GifPalette
 	GifPalette_from_pal gifpal, maspal(), pal
@@ -8892,6 +8895,7 @@ sub frame_export_gif (fr as Frame Ptr, fname as string, maspal() as RGBcolor, pa
 	elseif GifEnd(@writer) = NO then
 		debug "GifEnd failed"
 	end if
+#endif
 end sub
 
 
@@ -8945,6 +8949,8 @@ constructor GIFRecorder(outfile as string, secondscreen as string = "")
 	GifPalette_from_pal gifpal, curmasterpal()
 	this.fname = outfile
 	this.secondscreen = secondscreen
+
+#ifndef __FB_BLACKBOX__
 	dim file as FILE ptr = fopen(this.fname, "wb")
 	if GifBegin(@this.writer, file, vpages(vpage)->w, vpages(vpage)->h, 6, NO, @gifpal) then
 		show_overlay_message "Shft/Ctrl-F12 to stop recording", 1.
@@ -8954,6 +8960,8 @@ constructor GIFRecorder(outfile as string, secondscreen as string = "")
 		show_overlay_message "Can't record, GifBegin failed"
 		debug "GifBegin failed"
 	end if
+#endif
+
 end constructor
 
 sub GIFRecorder.stop()
