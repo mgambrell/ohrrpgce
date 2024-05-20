@@ -78,6 +78,22 @@ Function RHeapDestroy(byval doc as DocPtr) as bool
 #endif
 end function
 
+#ifdef __FB_BLACKBOX__
+
+Function RCallocate(byval s as integer, byval doc as DocPtr) as any ptr
+	return CAllocate(s)
+end function
+
+Function RReallocate(byval p as any ptr, byval doc as DocPtr, byval newsize as integer) as any ptr
+	return Reallocate(p, newsize)
+end function
+
+Sub RDeallocate(byval p as any ptr, byval doc as DocPtr)
+	Deallocate(p)
+End Sub
+
+#else
+
 Function RCallocate(byval s as integer, byval doc as DocPtr) as any ptr
 	dim ret as any ptr
 	
@@ -109,6 +125,8 @@ Sub RDeallocate(byval p as any ptr, byval doc as DocPtr)
 	Deallocate(p)
 #endif
 End Sub
+
+#endif '__FB_BLACKBOX__
 
 'Fed a list of 132010 english words, this produced 131957 unique hashes.
 'The old hash produced only 1931 unique hashes
