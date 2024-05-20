@@ -11,7 +11,7 @@ typedef void (*FnCopyCtor)(void *, void *);  // second arg ought to be const, bu
 typedef void (*FnDtor)(void *);
 typedef void *(*FnCopy)(void *);  // Allocate and initialise a copy
 typedef void (*FnDelete)(void *);  // Destruct and delete
-typedef int (*FnCompare)(const void *, const void *);
+typedef int (*FnCompare)(void *, void *);
 typedef unsigned int (*FnHash)(const void *);
 typedef struct FBSTRING *(*FnStr)(const void *);
 
