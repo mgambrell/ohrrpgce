@@ -12,7 +12,7 @@
 #include "miscc.h"
 #include "errorlog.h"
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && !defined(HOST_FB_BLACKBOX)
 #include <intrin.h>  //for _ReturnAddress
 #pragma intrinsic(_ReturnAddress)  // I have no idea whether this is needed, but it's in MS's example
 #endif
