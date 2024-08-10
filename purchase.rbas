@@ -11,6 +11,7 @@
 #include "uiconst.bi"
 #include "game_udts.bi"
 #include "yetmore2.bi"
+#include "menustuf.bi"
 
 #include "game.bi"
 #include "moresubs.bi"
@@ -121,8 +122,8 @@ SUB purchases_menu ()
   IF usemenu(st, ccUp, ccDown) THEN
    menusound gen(genCursorSFX)
   END IF
-  IF carray(ccUse) > 1 THEN do_pick = YES
-  IF carray(ccCancel) > 1 THEN do_quit = YES
+  IF game_check_use_key() THEN do_pick = YES
+  IF game_check_cancel_key() THEN do_quit = YES
   
   IF get_gen_bool("/mouse/mouse_menus") THEN
    DIM hover as integer = -1

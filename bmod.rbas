@@ -1075,14 +1075,14 @@ SUB battle_targetting(byref bat as BattleState, bslot() as BattleSprite)
  END IF
 
  'cancel
- IF carray(ccCancel) > 1 THEN do_cancel = YES
+ IF game_check_cancel_key() THEN do_cancel = YES
  IF do_cancel THEN
   battle_leave_targetting_mode bat, bslot()
   EXIT SUB
  END IF
  
  'confirm
- IF carray(ccUse) > 1 THEN do_pick = YES
+ IF game_battle_check_use_key() THEN do_pick = YES
  IF do_pick THEN
   IF autotestmode THEN write_checkpoint
   menusound gen(genAcceptSFX)
@@ -2697,7 +2697,7 @@ SUB RewardsState.add_item(itemid as integer, count as integer = 1)
 END SUB
 
 FUNCTION should_victory_advance(byref bat as BattleState) as bool
- IF carray(ccUse) > 1 ORELSE carray(ccCancel) > 1 THEN RETURN YES
+ IF game_check_use_key() ORELSE game_check_cancel_key() THEN RETURN YES
  IF (readmouse.release AND mouseLeft) ORELSE (readmouse.release AND mouseLeft) THEN RETURN YES
  IF gen(genSkipBattleRewardsTicks) > 0 THEN
   IF bat.vic.display_ticks > gen(genSkipBattleRewardsTicks) THEN
@@ -3711,11 +3711,11 @@ SUB heromenu (byref bat as BattleState, bslot() as BattleSprite, st() as HeroDef
    EXIT SUB
   END IF
 
-  IF carray(ccCancel) > 1 THEN do_close = YES
+  IF game_check_cancel_key() THEN do_close = YES
  
   usemenusounds
   usemenu .menust
-  IF carray(ccUse) > 1 THEN do_pick = YES
+  IF game_battle_check_use_key() THEN do_pick = YES
   
   IF get_gen_bool("/mouse/mouse_battles") THEN
    IF .menust.hover >= 0 THEN
@@ -3960,8 +3960,8 @@ SUB spellmenu (byref bat as BattleState, st() as HeroDef, bslot() as BattleSprit
   END IF
  END WITH
 
- IF carray(ccCancel) > 1 THEN do_cancel = YES
- IF carray(ccUse) > 1 THEN do_pick = YES
+ IF game_check_cancel_key() THEN do_cancel = YES
+ IF game_battle_check_use_key() THEN do_pick = YES
 
  IF get_gen_bool("/mouse/mouse_battles") THEN
   bat.sptr_hover = -1
@@ -4082,8 +4082,8 @@ SUB itemmenu (byref bat as BattleState, bslot() as BattleSprite)
   bat.item.pt = bat.item.pt + 1
  END IF
 
- IF carray(ccCancel) > 1 THEN do_cancel = YES
- IF carray(ccUse) > 1 THEN do_pick = YES
+ IF game_check_cancel_key() THEN do_cancel = YES
+ IF game_battle_check_use_key() THEN do_pick = YES
 
  bat.item.hover = -1
  IF get_gen_bool("/mouse/mouse_battles") THEN
