@@ -248,6 +248,7 @@ IF LEN(backend) THEN prefer_gfx_backend backend
 
 'Global variables which are affected by processcommandline (specifically, game_setoption)
 DIM autotestmode as bool = NO
+DIM disable_exit as bool = NO
 DIM always_enable_debug_keys as bool = NO
 DIM speedcontrol as double = 55
 DIM autosnap as integer = 0   'Number of ticks
@@ -453,11 +454,12 @@ IF gam.autorungame = NO THEN
  'DEBUG debug "browse for RPG"
  ' If we've shown the browser once, that means we should return to it when quitting
  ' (Can't use gam.autorungame to make that decision due to "run game")
+ ' This also allows exit_to_os_allowed logic to behave correctly depending on whether we browsed for a game
  gam.return_to_browser = YES
  show_virtual_gamepad()
- sourcerpg = browse(browseRPG, rpg_browse_default, , "game_browse_rpg", YES)  'fades in
+ sourcerpg = browse(browseRPG, rpg_browse_default, , "game_browse_rpg", YES, exit_to_os_allowed())  'fades in
  hide_virtual_gamepad()
-
+  
  IF sourcerpg = "" THEN exit_gracefully NO
 
  'Save the window size of the browser before loading (exit_gracefully also does this)
@@ -1001,6 +1003,7 @@ DO
 
  'Main loop exit test (does this need to be here?)
  IF gam.quit OR gam.want.resetgame OR LEN(gam.want.rungame) THEN
+ 
   resetgame
   'Stop sounds but not music; the title screen might not have any music set, or be set to the same music
   resetsfx
@@ -1010,7 +1013,7 @@ DO
   skip_load_menu OR= (count_used_save_slots() = 0)
   skip_load_menu OR= gam.want.dont_quit_to_loadmenu
   'if skipping title and loadmenu, quit
-  IF prefbit(11) AND skip_load_menu THEN  '"Skip title screen"
+  IF prefbit(11) ANDALSO skip_load_menu ANDALSO exit_from_game_is_allowed() THEN  '"Skip title screen"
    EXIT DO, DO ' To game select screen (quit the gameplay and RPG file loops, allowing the program loop to cycle)
   ELSE
    EXIT DO ' To title screen (quit the gameplay loop and allow the RPG file loop to cycle)
@@ -1102,7 +1105,9 @@ SUB reset_game_final_cleanup()
  sprite_empty_cache
  palette16_reload_cache   'Read default palettes (now that game="")
  'We bypass exit_gracefully() because we already called save_game_config
- IF gam.return_to_browser = NO AND LEN(gam.want.rungame) = 0 THEN exitprogram YES
+ IF gam.return_to_browser = NO AND LEN(gam.want.rungame) = 0 THEN
+  exitprogram YES
+ END IF
  debuginfo "Recreating " & tmpdir
  killdir tmpdir, YES  'recursively deletes playing.tmp if it exists
  makedir tmpdir
@@ -1110,6 +1115,24 @@ SUB reset_game_final_cleanup()
  IF NOT isdir(tmpdir) THEN fatalerror "Can't recreate temp directory " & tmpdir
  fadeout uilook(uiFadeoutNewGame)
 END SUB
+
+FUNCTION exit_to_os_allowed() as bool
+debug "inside exit_to_os_allowed() function"
+#IF defined(__FB_ANDROID__) OR defined(__FB_JS__) OR defined(__FB_BLACKBOX__)
+debug "disabled by platform"
+ RETURN NO
+#ELSE
+debug "disable_exit=" & disable_exit
+ IF disable_exit THEN RETURN NO
+ RETURN YES
+#ENDIF
+END FUNCTION
+
+FUNCTION exit_from_game_is_allowed() as bool
+ 'This is used to check if we can exit from title screen, load screen, or "game over" script command
+ IF gam.return_to_browser THEN RETURN YES
+ RETURN exit_to_os_allowed()
+END FUNCTION
 
 ' Call this instead of exitprogram when not quitting due to an error.
 ' This assumes no cleanup has been performed;

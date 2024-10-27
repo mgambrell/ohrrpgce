@@ -52,8 +52,8 @@ DECLARE SUB spells_menu_control(sp as SpellsMenuState)
 DECLARE SUB spells_menu_paint (byref sp as SpellsMenuState)
 
 DECLARE FUNCTION picksaveload (byval loading as bool, byval newgame_opt as bool = YES, byval beep_if_no_saves as bool = NO) as integer
-DECLARE SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as bool, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval page as integer)
-DECLARE FUNCTION picksave_confirm(menu() as string, byval loading as bool, byval newgame_opt as bool, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval holdscreen as integer, byval page as integer) as bool
+DECLARE SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as bool, disable_exit as bool=NO, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval page as integer)
+DECLARE FUNCTION picksave_confirm(menu() as string, byval loading as bool, byval newgame_opt as bool, exit_load_disabled as bool=NO, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval holdscreen as integer, byval page as integer) as bool
 DECLARE SUB picksave_update_mouse(st as MenuState, byval newgame_opt as bool, byref drag_start_top as integer)
 DECLARE SUB sellstuff_refresh(byval last_stuff as integer, byval recordsize as integer, permask() as integer, price() as integer, stuffdata() as integer)
 DECLARE SUB sellstuff_infostr(byval ic as integer, info as string, b() as integer, permask() as integer, price() as integer, byval stuff_count as integer, byval recordsize as integer)
@@ -1327,6 +1327,8 @@ FOR i as integer = 0 TO last_slot
  END IF
 NEXT i
 
+DIM exit_load_disabled as bool = NO
+
 IF loading THEN
  'Check for no saves
  DIM nosaves as bool = YES
@@ -1340,6 +1342,8 @@ IF loading THEN
  END IF
 END IF
 
+IF loading ANDALSO newgame_opt ANDALSO NOT exit_from_game_is_allowed() THEN exit_load_disabled = YES
+
 'FIXME: using need_fade_in to trigger the sound effect seems like a bad idea
 IF gam.need_fade_in = NO THEN MenuSound gen(genAcceptSFX)
 setkeys
@@ -1349,8 +1353,13 @@ DO
  IF loading = NO THEN playtimer
  IF game_check_cancel_key() THEN
   MenuSound gen(genCancelSFX)
-  ret_slot = -2
-  EXIT DO
+  IF exit_load_disabled THEN
+   'No nothing if exiting is not allowed from the initital loadgame screen
+  ELSE
+   'Cancel and exit out of the load menu
+   ret_slot = -2
+   EXIT DO
+  END IF
  END IF
 
  'Make menu position -2 appear as -1 to usemenu
@@ -1363,8 +1372,13 @@ DO
   picksave_update_mouse st, newgame_opt, drag_start_top
  END IF
  IF st.pt < 0 AND newgame_opt THEN
-  IF carray(ccLeft) > 1 THEN st.pt = -1: MenuSound gen(genCursorSFX)
-  IF carray(ccRight) > 1 THEN st.pt = -2: MenuSound gen(genCursorSFX)
+  IF exit_load_disabled THEN
+   'If exit is disabled, then new game is the only option (exit can't be disabled when newgame is disabled)
+   st.pt = -1
+  ELSE
+   IF carray(ccLeft) > 1 THEN st.pt = -1: MenuSound gen(genCursorSFX)
+   IF carray(ccRight) > 1 THEN st.pt = -2: MenuSound gen(genCursorSFX)
+  END IF
  END IF
 
  IF game_check_use_key() ORELSE (get_gen_bool("/mouse/mouse_menus") ANDALSO (readmouse.release AND mouseLeft) ANDALSO readmouse.drag_dist < 10 ANDALSO (readmouse.buttons AND mouseRight) = 0 ) THEN
@@ -1376,8 +1390,13 @@ DO
   ELSEIF st.pt < 0 THEN
    'Selected "Cancel" or "Exit"
    MenuSound gen(genCancelSFX)
-   ret_slot = -2
-   EXIT DO
+   IF exit_load_disabled THEN
+    'Do nothing if exiting is not allowed from the initial loadgame screen
+   ELSE
+    'Cancel and exit out of the load menu
+    ret_slot = -2
+    EXIT DO
+   END IF
   ELSE
    allow = YES
    IF loading THEN
@@ -1385,7 +1404,7 @@ DO
     IF pv(st.pt).valid = 0 THEN allow = NO
    ELSE
     '--normal save in a slot
-    IF pv(st.pt).valid THEN allow = picksave_confirm(menu(), loading, newgame_opt, sprites(), pv(), mapname(), lev(), st, holdscreen, page)
+    IF pv(st.pt).valid THEN allow = picksave_confirm(menu(), loading, newgame_opt, exit_load_disabled, sprites(), pv(), mapname(), lev(), st, holdscreen, page)
    END IF
    IF allow = YES THEN
     MenuSound gen(genAcceptSFX)
@@ -1397,7 +1416,7 @@ DO
   END IF
  END IF
  copypage holdscreen, page
- picksave_draw menu(), loading, newgame_opt, sprites(), pv(), mapname(), lev(), st, page
+ picksave_draw menu(), loading, newgame_opt, exit_load_disabled, sprites(), pv(), mapname(), lev(), st, page
  setvispage vpage
  check_for_queued_fade_in
  dowait
@@ -1418,7 +1437,7 @@ RETURN ret_slot
 END FUNCTION
 
 'Returns YES if overwrite is allowed, NO if canceled
-FUNCTION picksave_confirm(menu() as string, byval loading as bool, byval newgame_opt as bool, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval holdscreen as integer, byval page as integer) as bool
+FUNCTION picksave_confirm(menu() as string, byval loading as bool, byval newgame_opt as bool, exit_load_disabled as bool=NO, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval holdscreen as integer, byval page as integer) as bool
 
  DIM confirmboxY as integer = 14 + (44 * (st.pt - st.top))
  DIM tog as integer
@@ -1471,7 +1490,7 @@ FUNCTION picksave_confirm(menu() as string, byval loading as bool, byval newgame
   END IF
  
   copypage holdscreen, page
-  picksave_draw menu(), loading, newgame_opt, sprites(), pv(), mapname(), lev(), st, page
+  picksave_draw menu(), loading, newgame_opt, exit_load_disabled, sprites(), pv(), mapname(), lev(), st, page
   centerbox 160, confirmboxY, 40 + (LEN(replacedat) * 8) + menuwidth, 24, 3, page
   edgeprint replacedat, 200 - (LEN(replacedat) * 8), confirmboxY - 5, uilook(uiText), page
   FOR i as integer = 0 TO 1
@@ -1485,7 +1504,7 @@ FUNCTION picksave_confirm(menu() as string, byval loading as bool, byval newgame
  LOOP
 END FUNCTION
 
-SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as bool, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval page as integer)
+SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as bool, disable_exit as bool=NO, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval page as integer)
  'newgame_opt controls whether there are one (left only) or two buttons (left and right) at the top
  'st.pt = -1 and menu(0) is the left button, st.pt = -2 and menu(1) is the right button
  DIM col as integer
@@ -1501,7 +1520,7 @@ SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as 
  DIM last_slot as integer = UBOUND(pv)
  
  centerbox 50, 11, 80, 14, 1 + 14, page
- IF newgame_opt THEN centerbox 270, 11, 80, 14, 1 + 14, page
+ IF newgame_opt ANDALSO NOT disable_exit THEN centerbox 270, 11, 80, 14, 1 + 14, page
  DIM top as integer = large(st.top, 0)
  DIM yoff as integer
  FOR i as integer = top TO small(top + 3, last_slot)
@@ -1543,7 +1562,7 @@ SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as 
  IF st.hover = -1 THEN col = uilook(uiMouseHoverItem)
  col = uilook(IIF(st.pt = -1, uiSelectedItem + tog, uiMenuItem))
  edgeprint menu(0), ancCenter + 50, 6, col, page
- IF newgame_opt THEN
+ IF newgame_opt ANDALSO NOT disable_exit THEN
   IF st.hover = -2 THEN col = uilook(uiMouseHoverItem)
   col = uilook(IIF(st.pt = -2, uiSelectedItem + tog, uiMenuItem))
   edgeprint menu(1), ancCenter + 270, 6, col, page

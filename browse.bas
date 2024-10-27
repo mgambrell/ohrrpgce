@@ -108,7 +108,7 @@ END SUB
 '          if the defaults aren't right (e.g. only "*.slice" rather than all RELOAD files).
 '          Mandatory for filetype=browseAny.
 ' needf:   whether to fade screen in
-FUNCTION browse (filetype as BrowseFileType = browseAny, byref default as string = "", fmask as string = "", helpkey as string = "", needf as bool = NO) as string
+FUNCTION browse (filetype as BrowseFileType = browseAny, byref default as string = "", fmask as string = "", helpkey as string = "", needf as bool = NO, allowed_to_cancel as bool = YES) as string
 DIM ret as string
 
 DIM selectst as SelectTypeState
@@ -210,7 +210,7 @@ DO
  setkeys YES
  browse_update_layout br, tree()
 
- IF keyval(ccCancel) > 1 THEN EXIT DO
+ IF keyval(ccCancel) > 1 ANDALSO allowed_to_cancel THEN EXIT DO
  IF keyval(scF1) > 1 THEN show_help helpkey
  IF usemenu(br.mstate) THEN br.mstate.need_update = YES
  mouse_drag_menu(br.mstate)

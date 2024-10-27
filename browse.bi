@@ -22,7 +22,7 @@ ENUM BrowseFileType
  browseTilemap,       'tilemaps (.tilemap)
 END ENUM
 
-DECLARE FUNCTION browse (filetype as BrowseFileType, byref default as string = "", fmask as string = "", helpkey as string = "", needf as bool = NO) as string
+DECLARE FUNCTION browse (filetype as BrowseFileType, byref default as string = "", fmask as string = "", helpkey as string = "", needf as bool = NO, allowed_to_cancel as bool=YES) as string
 DECLARE SUB set_browse_default (default as string)
 
 #ENDIF
