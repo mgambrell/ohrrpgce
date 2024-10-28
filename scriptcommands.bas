@@ -876,17 +876,17 @@ SUB script_commands(byval cmdid as integer)
  CASE 253'--set tile animation offset
   retvals(2) = get_optional_arg(2, 0)
   IF (retvals(0) = 0 OR retvals(0) = 1) AND valid_map_layer(retvals(2), serrBound) THEN
-   tilesets(retvals(2))->anim(retvals(0)).cycle = retvals(1) MOD 160
+   tilesets(retvals(2))->tanim_state(retvals(0)).cycle = retvals(1) MOD 160
   END IF
  CASE 254'--get tile animation offset
   retvals(1) = get_optional_arg(1, 0)
   IF (retvals(0) = 0 OR retvals(0) = 1) AND valid_map_layer(retvals(1), serrBound) THEN
-   scriptret = tilesets(retvals(1))->anim(retvals(0)).cycle
+   scriptret = tilesets(retvals(1))->tanim_state(retvals(0)).cycle
   END IF
  CASE 255'--animation start tile
   retvals(1) = get_optional_arg(1, 0)
   IF (retvals(0) >= 0 AND retvals(0) < 256) AND valid_map_layer(retvals(1), serrBound) THEN
-   scriptret = tile_anim_deanimate_tile(retvals(0), tilesets(retvals(1))->tastuf())
+   scriptret = tile_anim_deanimate_tile(retvals(0), tilesets(retvals(1))->tanim())
   END IF
  CASE 258'--check hero wall
   IF valid_hero_caterpillar_rank(retvals(0)) THEN

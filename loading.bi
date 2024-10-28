@@ -136,13 +136,13 @@ DECLARE SUB DeSerAttackElementCond (byref cond as AttackElementCondition, buf() 
 DECLARE SUB convertattackdata(buf() as integer, byref atkdat as AttackData)
 DECLARE SUB saveattackdata (array() as integer, byval index as integer)
 
-DECLARE SUB load_tile_anims (byval tileset_num as integer, tastuf() as integer)
-DECLARE SUB save_tile_anims (byval tileset_num as integer, tastuf() as integer)
+DECLARE SUB load_tile_anims (byval tileset_num as integer, tanim() as TileAnimPattern)
+DECLARE SUB save_tile_anims (byval tileset_num as integer, tanim() as TileAnimPattern)
 DECLARE FUNCTION tile_anim_pattern_number(tileid as integer) as integer
-DECLARE FUNCTION tile_anim_deanimate_tile (tileid as integer, tastuf() as integer) as integer
-DECLARE FUNCTION tile_anim_animate_tile (tileid as integer, pattern_num as integer, tastuf() as integer) as integer
+DECLARE FUNCTION tile_anim_deanimate_tile (tileid as integer, tanim() as TileAnimPattern) as integer
+DECLARE FUNCTION tile_anim_animate_tile (tileid as integer, pattern_num as integer, tanim() as TileAnimPattern) as integer
 DECLARE FUNCTION tile_anim_current_display_tile(tileid as integer, tileset as TilesetData ptr) as integer
-DECLARE FUNCTION tile_anim_is_empty(pattern_num as integer, tastuf() as integer) as bool
+DECLARE FUNCTION tile_anim_is_empty(pattern_num as integer, tanim() as TileAnimPattern) as bool
 
 DECLARE SUB palette16_save (pal as Palette16 ptr, pal_num as integer)
 

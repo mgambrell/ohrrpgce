@@ -4693,7 +4693,7 @@ end function
 'drawmap helper: initialize animoffsets() from tileset animation state
 local sub setup_tile_anim (animoffsets() as integer, tileset as TilesetData ptr)
 	for i as integer = 0 to 1
-		animoffsets(i) = POSMOD(tileset->anim(i).cycle + tileset->tastuf(i * 20), 160)
+		animoffsets(i) = POSMOD(tileset->tanim_state(i).cycle + tileset->tanim(i).range_start, 160)
 	next
 end sub
 
@@ -4740,7 +4740,7 @@ sub drawmap (tmap as TileMap, x as integer, y as integer, tilesetsprite as Frame
 'overheadmode = 2 : draw overhead tiles only
 'largetileset : A hack which disables tile animation, instead using tilesets with 256 tiles
 'opts : Note that DrawOptions.scale is not yet supported
-'tilesetanims : tileset animations (.tastuf()) and state (.anim) are taken from this TilesetData
+'tilesetanims : tileset animations (.tanim()) and state (.tanim_state) are taken from this TilesetData
 
 	dim sptr as ubyte ptr
 	dim plane as integer

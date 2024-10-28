@@ -4582,54 +4582,54 @@ END IF
 IF gen(genVersion) = 1 THEN
  upgrade_message "June 18 1999 format (2)"
  gen(genVersion) = 2
+
  upgrade_message "Updating Door Format..."
  ' Read 20 records, 600 bytes each
  DIM doorbuf(20 * 600 \ 2) as integer
  IF isfile(game + ".dor") THEN xbload game + ".dor", doorbuf(), "No doors"
  storerecord doorbuf(), game + ".dox", 20 * 600 \ 2, 0
+
  upgrade_message "Enforcing default font"
  DIM fnt(1023) as integer
  getdefaultfont fnt()
  xbsave game + ".fnt", fnt(), 2048
+
  upgrade_message "rpgfix: Upgrading to customisable tile animations"
- ' The last two tiles in the tileset used to auto-toggle. Add a default
+ ' The last two tiles in the tileset used to auto-toggle (only tile 158, not 159). Add a default
  ' tile animation and replace those tiles with animated tiles.
- FOR i as integer = 0 TO 39
-  buffer(i) = 0
- NEXT i
- FOR i as integer = 0 TO 1
-  DIM o as integer = i * 20
-  buffer(0 + o) = 112
-  buffer(1 + o) = 0
+ DIM tanim(1) as TileAnimPattern
+ WITH tanim(0)
+  .range_start = 112
+  .cmd(0).op = 5
   '--wait 3--
-  buffer(2 + o + 0) = 5
-  buffer(11 + o + 0) = 3
+  .cmd(0).op = 5
+  .cmd(0).arg = 3
   '--right 1--
-  buffer(2 + o + 1) = 3
-  buffer(11 + o + 1) = 1
+  .cmd(1).op = 3
+  .cmd(1).arg = 1
   '--wait 3--
-  buffer(2 + o + 2) = 5
-  buffer(11 + o + 2) = 3
+  .cmd(2).op = 5
+  .cmd(2).arg = 3
   '--left 1--
-  buffer(2 + o + 3) = 4
-  buffer(11 + o + 3) = 1
- NEXT i
+  .cmd(3).op = 4
+  .cmd(3).arg = 1
+ END WITH
  FOR i as integer = 0 TO gen(genMaxTile)
-  save_tile_anims i, buffer()
+  save_tile_anims i, tanim()
  NEXT i
- DIM tx as integer, ty as integer
  DIM tmap as TileMap
  FOR i as integer = 0 TO gen(genMaxMap)
-  upgrade_message " map " & i
+  debuginfo "rpgfix:  map " & i
   loadtilemap tmap, maplumpname(i, "t")
-  FOR tx = 0 TO tmap.wide - 1
-   FOR ty = 0 TO tmap.high - 1
+  FOR tx as integer = 0 TO tmap.wide - 1
+   FOR ty as integer = 0 TO tmap.high - 1
     IF readblock(tmap, tx, ty) = 158 THEN writeblock tmap, tx, ty, 206
    NEXT ty
   NEXT tx
   savetilemap tmap, maplumpname(i, "t")
  NEXT i
  unloadtilemap tmap
+
 END IF
 '---VERSION 3---
 IF gen(genVersion) = 2 THEN
@@ -6757,36 +6757,36 @@ SUB animatetileset (tileset as TilesetData)
  DIM notstuck as integer
  FOR pattern as integer = 0 TO 1
 #IFDEF IS_GAME
-  IF istag(tileset.tastuf(1 + 20 * pattern), 0) THEN CONTINUE FOR
+  IF istag(tileset.tanim(pattern).disable_tag, 0) THEN CONTINUE FOR
 #ENDIF
-  WITH tileset.anim(pattern)
+  WITH tileset.tanim_state(pattern)
    .skip = large(.skip - 1, 0)
    IF .skip = 0 THEN
     notstuck = 10
     DO
-     DIM arg as integer = tileset.tastuf(11 + 20 * pattern + .pt)
-     SELECT CASE tileset.tastuf(2 + 20 * pattern + .pt)
+     DIM byref cmd as TileAnimCmd = tileset.tanim(pattern).cmd(.pt)
+     SELECT CASE cmd.op
       CASE 0  'End of animation
        IF .pt <> 0 THEN .cycle = 0  'this is done for the tile animation plotscript commands
        .pt = 0
       CASE 1  'Left
-       .cycle -= arg * 16
+       .cycle -= cmd.arg * 16
        loopvar .pt, 0, 8
       CASE 2  'Right
-       .cycle += arg * 16
+       .cycle += cmd.arg * 16
        loopvar .pt, 0, 8
       CASE 3  'Down
-       .cycle += arg
+       .cycle += cmd.arg
        loopvar .pt, 0, 8
       CASE 4  'Up
-       .cycle -= arg
+       .cycle -= cmd.arg
        loopvar .pt, 0, 8
       CASE 5  'Wait
-       .skip = arg
+       .skip = cmd.arg
        loopvar .pt, 0, 8
 #IFDEF IS_GAME
       CASE 6  'If tag then stop
-       IF istag(arg, 0) THEN
+       IF istag(cmd.arg, 0) THEN
         loopvar .pt, 0, 8
        ELSE
         .pt = 0
@@ -6796,8 +6796,8 @@ SUB animatetileset (tileset as TilesetData)
       CASE ELSE  'Invalid
        loopvar .pt, 0, 8
      END SELECT
-     notstuck = large(notstuck - 1, 0)
-    LOOP WHILE notstuck AND .skip = 0
+     notstuck -= 1
+    LOOP WHILE notstuck > 0 AND .skip = 0
    END IF
   END WITH
  NEXT pattern
@@ -6805,8 +6805,8 @@ END SUB
 
 'Reset state of all animations to beginning
 SUB reset_tile_anims(tileset as TilesetData)
- FOR pattern as integer = 0 TO 1
-  WITH tileset.anim(pattern)
+ FOR pattern as integer = 0 TO UBOUND(tileset.tanim_state)
+  WITH tileset.tanim_state(pattern)
    .cycle = 0
    .pt = 0
    .skip = 0
@@ -6818,8 +6818,8 @@ SUB lockstep_tile_animation (tilesets() as TilesetData ptr, byval layer as integ
  'Called after changing a layer's tileset to make sure its tile animation is in phase with other layers of the same tileset
  FOR i as integer = 0 TO UBOUND(tilesets)
   IF i <> layer ANDALSO tilesets(i) ANDALSO tilesets(i)->num = tilesets(layer)->num THEN
-   tilesets(layer)->anim(0) = tilesets(i)->anim(0)
-   tilesets(layer)->anim(1) = tilesets(i)->anim(1)
+   tilesets(layer)->tanim_state(0) = tilesets(i)->tanim_state(0)
+   tilesets(layer)->tanim_state(1) = tilesets(i)->tanim_state(1)
    EXIT SUB
   END IF
  NEXT
@@ -6859,7 +6859,7 @@ SUB loadtilesetdata (tilesets() as TilesetData ptr, byval layer as integer, byva
  WITH *tilesets(layer)
   .num = tilesetnum
   .spr = frame_load(sprTypeTilesetStrip, tilesetnum)
-  load_tile_anims tilesetnum, .tastuf()
+  load_tile_anims tilesetnum, .tanim()
  END WITH
 
  reset_tile_anims *tilesets(layer)
@@ -6934,7 +6934,7 @@ SUB reloadtileanimations (tilesets() as TilesetData ptr, gmap() as integer)
 
  FOR i as integer = 0 TO UBOUND(tilesets)
   tileset = get_layer_tileset(i, gmap())
-  load_tile_anims tileset, tilesets(i)->tastuf()
+  load_tile_anims tileset, tilesets(i)->tanim()
   reset_tile_anims *tilesets(i)
  NEXT
 END SUB

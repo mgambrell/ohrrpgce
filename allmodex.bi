@@ -156,6 +156,17 @@ DECLARE SUB engine_settings_menu ()
 '==========================================================================================
 '                                        Maps
 
+Type TileAnimCmd
+  op as integer
+  arg as integer
+End Type
+
+Type TileAnimPattern
+  range_start as integer
+  disable_tag as integer
+  cmd(8) as TileAnimCmd
+End Type
+
 Type TileAnimState
   cycle as integer 'Current tile offset (tile to show)
   pt as integer    'Step number of the next step in the animation
@@ -165,8 +176,8 @@ End Type
 Type TilesetData
   num as integer
   spr as Frame ptr
-  anim(1) as TileAnimState
-  tastuf(40) as integer
+  tanim(1) as TileAnimPattern
+  tanim_state(1) as TileAnimState
 End Type
 
 '*** Requires construction + destruction ***

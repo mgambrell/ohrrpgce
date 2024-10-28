@@ -86,7 +86,7 @@ DECLARE SUB reimport_previous_scripts ()
 DECLARE SUB write_session_info ()
 
 DECLARE SUB common_elementals_editor(elementals() as single, helpfile as string, byval showsign as integer = 0)
-DECLARE SUB tile_anim_draw_range(tastuf() as integer, byval taset as integer, byval page as integer)
+DECLARE SUB tile_anim_draw_range(tanim() as TileAnimPattern, byval taset as integer, byval page as integer)
 
 DECLARE FUNCTION pick_graphics_export_format() as string
 

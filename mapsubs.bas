@@ -1118,13 +1118,13 @@ DO
 
      'Don't animate if it would accomplish nothing
      DIM pattern as integer = tile_anim_pattern_number(oldtile)
-     IF pattern = -1 ANDALSO tile_anim_is_empty(i, st.tilesets(st.layer)->tastuf()) THEN CONTINUE FOR
+     IF pattern = -1 ANDALSO tile_anim_is_empty(i, st.tilesets(st.layer)->tanim()) THEN CONTINUE FOR
 
      'Returns -1 if can't be done
-     newtile = tile_anim_animate_tile(oldtile, i, st.tilesets(st.layer)->tastuf())
+     newtile = tile_anim_animate_tile(oldtile, i, st.tilesets(st.layer)->tanim())
      IF newtile = oldtile THEN
       'It was already animated with this pattern, so instead toggle to a non-animated tile
-      newtile = tile_anim_deanimate_tile(oldtile, st.tilesets(st.layer)->tastuf())
+      newtile = tile_anim_deanimate_tile(oldtile, st.tilesets(st.layer)->tanim())
      END IF
      IF newtile >= 0 THEN
       IF keyval(scCtrl) = 0 THEN
@@ -2181,9 +2181,9 @@ DO
    IF st.showzonehints THEN
     'Overlay animated 'hints' at hidden zones, using animated tiles,
     'setting the state of the animation manually using a dummy TilesetData.
-    DIM animated_overlay as TilesetData
-    animated_overlay.anim(0).cycle = ABS(st.gauze_ticker \ 5 - 4)
-    drawmap st.zoneoverlaymap, st.mapx, st.mapy, st.overlaytileset, @animated_overlay, dpage, YES, , , 20
+    DIM tsanim as TilesetData
+    tsanim.tanim_state(0).cycle = ABS(st.gauze_ticker \ 5 - 4)
+    drawmap st.zoneoverlaymap, st.mapx, st.mapy, st.overlaytileset, @tsanim, dpage, YES, , , 20
    END IF
   END IF
  END IF
@@ -4659,7 +4659,7 @@ SUB color_for_each_tile (tileset as TilesetData ptr, colors() as RGBcolor)
  'Then handle animated tiles by making them the same colour as the first tile in the animation
  FOR tile as integer = 160 TO 255
   DIM basetile as integer
-  basetile = tile_anim_deanimate_tile(tile, tileset->tastuf())
+  basetile = tile_anim_deanimate_tile(tile, tileset->tanim())
   colors(tile) = colors(basetile)
  NEXT
 END SUB
@@ -5635,7 +5635,7 @@ SUB calculatepassblock(st as MapEditState, x as integer, y as integer)
  FOR i as integer = 0 TO UBOUND(st.map.tiles)
   tilenum = readblock(st.map.tiles(i), x, y)
   IF i = 0 OR tilenum > 0 THEN
-   n = n OR st.defaultwalls[i][tile_anim_deanimate_tile(tilenum, st.tilesets(i)->tastuf())]
+   n = n OR st.defaultwalls[i][tile_anim_deanimate_tile(tilenum, st.tilesets(i)->tanim())]
   END IF
  NEXT i
  DIM oldval as integer = readblock(st.map.pass, x, y)
@@ -5706,7 +5706,7 @@ SUB mapedit_pickblock_setup_tileset(st as MapEditState, tilesetview as TileMap, 
  '3 rows each.
  DIM tiley as integer = 10
  FOR pattern as integer = 0 TO 1
-  IF tile_anim_is_empty(pattern, tilesetdata->tastuf()) = NO THEN
+  IF tile_anim_is_empty(pattern, tilesetdata->tanim()) = NO THEN
    FOR i as integer = 0 TO 47
     DIM tileid as integer = 160 + 48 * pattern + i
     DIM tilepos as XYPair = (i MOD 16, tiley + i \ 16)

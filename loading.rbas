@@ -3371,17 +3371,39 @@ END SUB
 '==========================================================================================
 ' Other functions for working with tile animations are in common.rbas
 
-SUB load_tile_anims (byval tileset_num as integer, tastuf() as integer)
+SUB load_tile_anims (byval tileset_num as integer, tanim() as TileAnimPattern)
  IF tileset_num < 0 THEN
   onetime_debug errShowError, "Corrupt map data: invalid tileset " & tileset_num & " loading animations"
   EXIT SUB
  END IF
- 'It's normal for not all tilesets to have .tap records (short lump) if they weren't edited
- loadrecord tastuf(), game & ".tap", 80 \ 2, tileset_num, NO
+ DIM tapbuf(19) as integer
+ FOR pattern as integer = 0 TO 1
+  'It's normal for not all tilesets to have .tap records (short lump) if they weren't edited
+  loadrecord tapbuf(), game & ".tap", 40 \ 2, 2 * tileset_num + pattern, NO
+  WITH tanim(pattern)
+   .range_start = tapbuf(0)
+   .disable_tag = tapbuf(1)
+   FOR idx as integer = 0 TO 8
+    .cmd(idx).op = tapbuf(2 + idx)
+    .cmd(idx).arg = tapbuf(11 + idx)
+   NEXT
+  END WITH
+ NEXT
 END SUB
 
-SUB save_tile_anims (byval tileset_num as integer, tastuf() as integer)
- storerecord tastuf(), game & ".tap", 80 \ 2, tileset_num
+SUB save_tile_anims (byval tileset_num as integer, tanim() as TileAnimPattern)
+ DIM tapbuf(19) as integer
+ FOR pattern as integer = 0 TO 1
+  WITH tanim(pattern)
+   tapbuf(0) = .range_start
+   tapbuf(1) = .disable_tag
+   FOR idx as integer = 0 TO 8
+    tapbuf(2 + idx) = .cmd(idx).op
+    tapbuf(11 + idx) = .cmd(idx).arg
+   NEXT
+  END WITH
+  storerecord tapbuf(), game & ".tap", 40 \ 2, 2 * tileset_num + pattern
+ NEXT
 END SUB
 
 'Returns -1 if not animated, or the pattern number (0 or 1)
@@ -3392,24 +3414,24 @@ END FUNCTION
 
 'Given a tile ID which may or may not be animated, return the tile number for the
 'non-animated version of the tile (which is the initial tile in the animation)
-FUNCTION tile_anim_deanimate_tile (tileid as integer, tastuf() as integer) as integer
- IF tileid >= 208 THEN tileid = (tileid - 208) + tastuf(20)
- IF tileid >= 160 THEN tileid = (tileid - 160) + tastuf(0)
+FUNCTION tile_anim_deanimate_tile (tileid as integer, tanim() as TileAnimPattern) as integer
+ IF tileid >= 208 THEN tileid = (tileid - 208) + tanim(1).range_start
+ IF tileid >= 160 THEN tileid = (tileid - 160) + tanim(0).range_start
  RETURN tileid
 END FUNCTION
 
 'Given a tile ID which may or may not be animated, return the tile number for the
 'animated version in one of the animation patterns 0 or 1, or -1 for no animation.
 'Returns -1 if the tile can't be animated.
-FUNCTION tile_anim_animate_tile (tileid as integer, pattern_num as integer, tastuf() as integer) as integer
+FUNCTION tile_anim_animate_tile (tileid as integer, pattern_num as integer, tanim() as TileAnimPattern) as integer
  IF tileid >= 160 THEN
-  tileid = tile_anim_deanimate_tile(tileid, tastuf())
+  tileid = tile_anim_deanimate_tile(tileid, tanim())
  END IF
  IF pattern_num = -1 THEN
   RETURN tileid
  END IF
  DIM idoffset as integer
- idoffset = tileid - tastuf(pattern_num * 20)  'subtract start of range
+ idoffset = tileid - tanim(pattern_num).range_start
  IF idoffset < 0 OR idoffset >= 48 THEN
   RETURN -1
  END IF
@@ -3419,14 +3441,14 @@ END FUNCTION
 'Which tile a tileid (animated or not) is currently displayed as
 FUNCTION tile_anim_current_display_tile(tileid as integer, tileset as TilesetData ptr) as integer
  IF tileid < 160 THEN RETURN tileid
- RETURN POSMOD(tile_anim_deanimate_tile(tileid, tileset->tastuf()) _
-               + tileset->anim(tile_anim_pattern_number(tileid)).cycle, 160)
+ RETURN POSMOD(tile_anim_deanimate_tile(tileid, tileset->tanim()) _
+               + tileset->tanim_state(tile_anim_pattern_number(tileid)).cycle, 160)
 END FUNCTION
 
 'Returns whether one of the tile animation patterns is unused (0 length)
-FUNCTION tile_anim_is_empty(pattern_num as integer, tastuf() as integer) as bool
+FUNCTION tile_anim_is_empty(pattern_num as integer, tanim() as TileAnimPattern) as bool
  'IF first command is 'End of animation'
- RETURN tastuf(20 * pattern_num + 2) = 0
+ RETURN tanim(pattern_num).cmd(0).op = 0
 END FUNCTION
 
 '==========================================================================================
