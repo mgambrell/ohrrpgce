@@ -1186,7 +1186,7 @@ SUB gamestate_party_to_reload(byval parent as Reload.NodePtr)
    
    ch = SetChildNode(slot, "level_mp")
    FOR j as integer = 0 TO 7
-    IF gam.hero(i).levelmp(j) <> 0 THEN
+    IF max_levelmp_for_hero(gam.hero(i), j) <> 0 THEN
      SetKeyValueNode(ch, "lev", j, gam.hero(i).levelmp(j), "val")
     END IF
    NEXT j

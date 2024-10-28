@@ -1606,6 +1606,14 @@ SUB reset_levelmp (byref hero as HeroState)
  get_max_levelmp(hero.levelmp(), hero.lev)
 END SUB
 
+FUNCTION max_levelmp_for_hero(byref hero as HeroState, lmp_slot as integer) as integer
+ 'Currently this is the same for all heros based on level,
+ 'but it would be lovely to have a way to customize that in the future
+ DIM maxes(UBOUND(hero.levelmp)) as integer
+ get_max_levelmp maxes(), hero.lev
+ RETURN maxes(lmp_slot)
+END FUNCTION 
+
 SUB shop (byval id as integer)
 
 DIM storebuf(40) as integer
