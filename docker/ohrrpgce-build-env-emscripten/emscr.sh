@@ -21,7 +21,7 @@ export OHRDIR=${OHRDIR:-~/src/ohrrpgce} # /src/ohr
 echo "OHRDIR=${OHRDIR}"
 
 # The docker image name. This will be built locally, we won't pull it
-export ANDRIMG=bobthehamster/ohrrpgce-build-env-emscripten
+export DOCKERIMG=bobthehamster/ohrrpgce-build-env-emscripten
 
 #-----------------------------------------------------------------------
 # Command line arguments
@@ -72,12 +72,12 @@ echo "REBUILD_IMAGE=$REBUILD_IMAGE"
 
 #-----------------------------------------------------------------------
 
-if [ -z "$(docker images -q ${ANDRIMG})" -o "$REBUILD_IMAGE" = "Y" ] ; then
+if [ -z "$(docker images -q ${DOCKERIMG})" -o "$REBUILD_IMAGE" = "Y" ] ; then
   # Rebuild the docker image each time. Skip if we requested to skip,
   # unless the image doesn't exist at all, in which case we can't skip it.
   echo "Build the docker image"
   echo "(This will be super slow the first time)"
-  docker build -f "Dockerfile" --tag="${ANDRIMG}" "${SCRIPT_DIR}"
+  docker build -f "Dockerfile" --tag="${DOCKERIMG}" "${SCRIPT_DIR}"
   EXITCODE="$?"
   if [ "$EXITCODE" -ne 0 ] ; then
     echo "Docker build failed with exit code $EXITCODE"
@@ -98,4 +98,4 @@ echo "but don't worry, it will still be correct for volume mounts."
 docker run --rm ${INTERACTIVE_TERMINAL} \
   -v "${OHRDIR}":/src/ohr \
   -u $(id -u):$(id -g) \
-  "${ANDRIMG}" /bin/bash $HASCMD $RUNCMD
+  "${DOCKERIMG}" /bin/bash $HASCMD $RUNCMD
