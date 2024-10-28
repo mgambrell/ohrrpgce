@@ -174,7 +174,7 @@ End Type
 Type TileAnimPattern
   range_start as integer
   disable_tag as integer
-  cmd(8) as TileAnimCmd
+  cmd(maxTileAnimCmds) as TileAnimCmd
 End Type
 
 Type TileAnimState
