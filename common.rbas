@@ -6779,7 +6779,14 @@ SUB animatetileset (tileset as TilesetData)
      DIM byref cmd as TileAnimCmd = tileset.tanim(pattern).cmd(.pt)
      SELECT CASE cmd.op
       CASE taopEnd
-       IF .pt <> 0 THEN .cycle = 0  'this is done for the tile animation plotscript commands
+       'Don't reset if the pattern is empty (.pt = 0), so tile animation
+       'script commands can set .cycle
+       IF .pt <> 0 THEN .cycle = 0
+       .pt = 0
+      CASE taopReset
+       .cycle = 0
+       loopvar .pt, 0, lastcmd
+      CASE taopLoop
        .pt = 0
       CASE taopUp
        .cycle -= cmd.arg * 16

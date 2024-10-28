@@ -154,7 +154,8 @@ DECLARE FUNCTION overlay_message_visible () as bool
 DECLARE SUB engine_settings_menu ()
 
 '==========================================================================================
-'                                        Maps
+'                                  Tilesets & Maps
+
 Enum TileAnimOperator
  taopEnd = 0
  taopUp = 1
@@ -163,7 +164,9 @@ Enum TileAnimOperator
  taopLeft = 4
  taopWait = 5
  taopCheckTag = 6
- taopLAST = 6
+ taopReset = 7
+ taopLoop = 8
+ taopLAST = 8
 End Enum
 
 Type TileAnimCmd
