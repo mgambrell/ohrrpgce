@@ -155,9 +155,19 @@ DECLARE SUB engine_settings_menu ()
 
 '==========================================================================================
 '                                        Maps
+Enum TileAnimOperator
+ taopEnd = 0
+ taopUp = 1
+ taopDown = 2
+ taopRight = 3
+ taopLeft = 4
+ taopWait = 5
+ taopCheckTag = 6
+ taopLAST = 6
+End Enum
 
 Type TileAnimCmd
-  op as integer
+  op as TileAnimOperator
   arg as integer
 End Type
 

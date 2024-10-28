@@ -4600,18 +4600,17 @@ IF gen(genVersion) = 1 THEN
  DIM tanim(1) as TileAnimPattern
  WITH tanim(0)
   .range_start = 112
-  .cmd(0).op = 5
   '--wait 3--
-  .cmd(0).op = 5
+  .cmd(0).op = taopWait
   .cmd(0).arg = 3
   '--right 1--
-  .cmd(1).op = 3
+  .cmd(1).op = taopRight
   .cmd(1).arg = 1
   '--wait 3--
-  .cmd(2).op = 5
+  .cmd(2).op = taopWait
   .cmd(2).arg = 3
   '--left 1--
-  .cmd(3).op = 4
+  .cmd(3).op = taopLeft
   .cmd(3).arg = 1
  END WITH
  FOR i as integer = 0 TO gen(genMaxTile)
@@ -6754,6 +6753,7 @@ SUB animatetilesets (tilesets() as TilesetData ptr)
 END SUB
 
 SUB animatetileset (tileset as TilesetData)
+ STATIC seen_unknown as bool = NO
  DIM notstuck as integer
  FOR pattern as integer = 0 TO 1
 #IFDEF IS_GAME
@@ -6766,26 +6766,26 @@ SUB animatetileset (tileset as TilesetData)
     DO
      DIM byref cmd as TileAnimCmd = tileset.tanim(pattern).cmd(.pt)
      SELECT CASE cmd.op
-      CASE 0  'End of animation
+      CASE taopEnd
        IF .pt <> 0 THEN .cycle = 0  'this is done for the tile animation plotscript commands
        .pt = 0
-      CASE 1  'Left
+      CASE taopUp
        .cycle -= cmd.arg * 16
        loopvar .pt, 0, 8
-      CASE 2  'Right
+      CASE taopDown
        .cycle += cmd.arg * 16
        loopvar .pt, 0, 8
-      CASE 3  'Down
+      CASE taopRight
        .cycle += cmd.arg
        loopvar .pt, 0, 8
-      CASE 4  'Up
+      CASE taopLeft
        .cycle -= cmd.arg
        loopvar .pt, 0, 8
-      CASE 5  'Wait
+      CASE taopWait
        .skip = cmd.arg
        loopvar .pt, 0, 8
 #IFDEF IS_GAME
-      CASE 6  'If tag then stop
+      CASE taopCheckTag  'Or else stop
        IF istag(cmd.arg, 0) THEN
         loopvar .pt, 0, 8
        ELSE
@@ -6793,7 +6793,11 @@ SUB animatetileset (tileset as TilesetData)
         .cycle = 0
        END IF
 #ENDIF
-      CASE ELSE  'Invalid
+      CASE ELSE  'Invalid/Unknown
+       IF seen_unknown = NO THEN
+        debug "Unknown tile animation op " & cmd.op & " in tileset " & tileset.num
+        seen_unknown = YES
+       END IF
        loopvar .pt, 0, 8
      END SELECT
      notstuck -= 1

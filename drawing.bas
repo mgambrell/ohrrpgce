@@ -1003,20 +1003,20 @@ SUB setanimpattern (tanim() as TileAnimPattern, taset as integer, tilesetnum as 
  menu(0) = "Previous Menu"
 
  'These are the parameter limits for each tile animation op
- DIM llim(7) as integer
- DIM ulim(7) as integer
- FOR i as integer = 1 TO 2
+ DIM llim(taopLAST) as integer
+ DIM ulim(taopLAST) as integer
+ FOR i as integer = taopUp TO taopDown
   llim(i) = 0
   ulim(i) = 9
  NEXT i
- FOR i as integer = 3 TO 4
+ FOR i as integer = taopRight TO taopLeft
   llim(i) = 0
   ulim(i) = 159
  NEXT i
- llim(5) = 0
- ulim(5) = 32767
- llim(6) = -max_tag()
- ulim(6) = max_tag()
+ llim(taopWait) = 0
+ ulim(taopWait) = 32767
+ llim(taopCheckTag) = -max_tag()
+ ulim(taopCheckTag) = max_tag()
 
  DIM context as integer = 0
  DIM tog as integer
@@ -1055,12 +1055,12 @@ SUB setanimpattern (tanim() as TileAnimPattern, taset as integer, tilesetnum as 
     DIM index as integer = bound(state.pt - 1, 0, 8)
     WITH tanim(taset).cmd(index)
      IF state2.pt = 0 THEN  'Select op
-      IF intgrabber(.op, 0, 6) THEN state.need_update = YES
+      IF intgrabber(.op, 0, taopLAST) THEN state.need_update = YES
      END IF
      IF state2.pt = 1 THEN  'Select param
-      IF .op = 6 THEN  'If tag do rest
+      IF .op = taopCheckTag THEN  'If tag do rest
        IF tag_grabber(.arg, state2) THEN state.need_update = YES
-      ELSE
+      ELSEIF .op <= taopLAST THEN  'Not invalid
        IF intgrabber(.arg, llim(.op), ulim(.op)) THEN state.need_update = YES
       END IF
      END IF
@@ -1087,7 +1087,7 @@ SUB setanimpattern (tanim() as TileAnimPattern, taset as integer, tilesetnum as 
 END SUB
 
 SUB setanimpattern_refreshmenu(state as MenuState, menu() as string, menu2() as string, tanim() as TileAnimPattern, byval taset as integer, llim() as integer, ulim() as integer)
- DIM animop(7) as string
+ DIM animop(taopLAST) as string
  animop(0) = "end of animation"
  animop(1) = "up"
  animop(2) = "down"
@@ -1095,7 +1095,6 @@ SUB setanimpattern_refreshmenu(state as MenuState, menu() as string, menu2() as 
  animop(4) = "left"
  animop(5) = "wait"
  animop(6) = "if tag do rest"
- animop(7) = "unknown command"
 
  setanimpattern_forcebounds tanim(), taset, llim(), ulim()
  FOR i as integer = 1 TO 9
@@ -1106,12 +1105,14 @@ SUB setanimpattern_refreshmenu(state as MenuState, menu() as string, menu2() as 
  FOR anim_i = 0 TO 8
   WITH tanim(taset).cmd(anim_i)
    menu(anim_i + 1) = safe_caption(animop(), .op)
-   IF .op = 0 THEN  'end-of-animation
+   IF .op = taopEnd THEN
     state.last = 1 + anim_i
     EXIT FOR
+   ELSEIF .op = taopCheckTag THEN
+    menu(anim_i + 1) &= " (" & load_tag_name(.arg) & ")"
+   ELSEIF .op <= taopLAST THEN  'Not invalid
+    menu(anim_i + 1) &= " " & .arg
    END IF
-   IF .op > 0 AND .op < 6 THEN menu(anim_i + 1) &= " " & .arg
-   IF .op = 6 THEN menu(anim_i + 1) &= " (" & load_tag_name(.arg) & ")"
   END WITH
  NEXT anim_i
  'If the tile animation doesn't end with an "end of animation" op, then it
@@ -1132,11 +1133,11 @@ SUB setanimpattern_refreshmenu(state as MenuState, menu() as string, menu2() as 
    menu2(0) = "Action=" + safe_caption(animop(), .op)
    menu2(1) = "Value="
    SELECT CASE .op
-    CASE 1 TO 4
+    CASE taopUp, taopDown, taopLeft, taopRight
      menu2(1) &= .arg & " Tiles"
-    CASE 5
+    CASE taopWait
      menu2(1) &= .arg & " Ticks"
-    CASE 6
+    CASE taopCheckTag
      menu2(1) &= tag_condition_caption(.arg, , "Never")
     CASE ELSE
      menu2(1) &= "N/A"
@@ -1149,8 +1150,11 @@ SUB setanimpattern_forcebounds(tanim() as TileAnimPattern, byval taset as intege
  DIM tmp as integer
  FOR i as integer = 0 TO 8
   WITH tanim(taset).cmd(i)
-   .op = bound(.op, 0, 7)  '7 is "unknown command"
-   .arg = bound(.arg, llim(.op), ulim(.op))
+   'Preserve unknown ops > taopLAST, but wipe invalid negative ones
+   IF .op < 0 THEN .op = 0
+   IF .op <= taopLAST THEN
+    .arg = bound(.arg, llim(.op), ulim(.op))
+   END IF
   END WITH
  NEXT i
 END SUB
