@@ -1212,7 +1212,7 @@ FUNCTION curbinsize (byval id as integer) as integer
  IF id = binDT0        THEN RETURN 858 '.dt0
  IF id = binDT1        THEN RETURN 744 '.dt1
  IF id = binITM        THEN RETURN 480 '.itm
- IF id = binTAP        THEN RETURN 40  '.tap
+ IF id = binTAP        THEN RETURN 314 '.tap
  RETURN 0
 END FUNCTION
 
@@ -4614,6 +4614,7 @@ IF gen(genVersion) = 1 THEN
   '--left 1--
   .cmd(3).op = taopLeft
   .cmd(3).arg = 1
+  '--end--
  END WITH
  FOR i as integer = 0 TO gen(genMaxTile)
   save_tile_anims i, tanim()
@@ -4980,6 +4981,17 @@ IF full_upgrade THEN
  END IF
  safekill game + ".mxs"
  sprite_empty_cache
+END IF
+
+IF getfixbit(fixExtendedTileAnims) = 0 THEN
+ upgrade_message "Extend tile animations..."
+ 'load_tile_anims initializes the new data if the fixbit is off
+ REDIM tanim(1) as TileAnimPattern
+ FOR i as integer = 0 TO gen(genMaxTile)
+  load_tile_anims i, tanim()
+  save_tile_anims i, tanim()
+ NEXT i
+ setfixbit(fixExtendedTileAnims, 1)
 END IF
 
 'Workaround bug #2013: Backdrops were drawn immediately above (instead of) spritelayer until

@@ -172,12 +172,18 @@ End Enum
 Type TileAnimCmd
   op as TileAnimOperator
   arg as integer
+  arg2 as integer
 End Type
 
 Type TileAnimPattern
   range_start as integer
   disable_tag as integer
   cmd(maxTileAnimCmds) as TileAnimCmd
+
+  'For future use; currently unused. See save_tile_anims
+  tileset_num as integer
+  range_length as integer = 48
+  range_stride as integer = 1
 End Type
 
 Type TileAnimState
