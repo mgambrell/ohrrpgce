@@ -5,7 +5,7 @@
 #IFNDEF __CONST_BI__
 #DEFINE __CONST_BI__
 
-CONST CURRENT_RPG_VERSION = 22
+CONST CURRENT_RPG_VERSION = 23
 ' It is a good idea to increment this number each time a major feature
 ' has been added, if opening a new game in an old editor would cause data-loss
 ' Don't be afraid to increment this. Backcompat warnings are a good thing!
@@ -33,6 +33,7 @@ CONST CURRENT_RPG_VERSION = 22
 ' 20 - callipygous release. Added general.reld (including new version system) and maxScriptCmdID checking.
 ' 21 - fufluns replaced all .PT# and .MXS with .rgfx
 ' 22 - ichorescent switched to extra data vectors in .Z and slicetree_*.reld
+' 23 - ichorescent made .TAP binsize-sized
 
 CONST CURRENT_RGFX_VERSION = 1
 ' Version number embedded in each .rgfx file.
@@ -362,8 +363,9 @@ CONST binN = 9
 CONST binDT0 = 10
 CONST binDT1 = 11
 CONST binITM = 12
+CONST binTAP = 13
 
-CONST binLASTENTRY = 12 ' *** Update this when adding binsize records ***
+CONST binLASTENTRY = 13 ' *** Update this when adding binsize records ***
 
 Enum SpriteType
 	sprTypeInvalid = -2

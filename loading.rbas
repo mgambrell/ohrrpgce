@@ -3376,10 +3376,11 @@ SUB load_tile_anims (byval tileset_num as integer, tanim() as TileAnimPattern)
   onetime_debug errShowError, "Corrupt map data: invalid tileset " & tileset_num & " loading animations"
   EXIT SUB
  END IF
- DIM tapbuf(19) as integer
+ 'binTAP is the size of a single animation pattern, not of both patterns for a tileset
+ DIM tapbuf(dimbinsize(binTAP)) as integer
  FOR pattern as integer = 0 TO 1
   'It's normal for not all tilesets to have .tap records (short lump) if they weren't edited
-  loadrecord tapbuf(), game & ".tap", 40 \ 2, 2 * tileset_num + pattern, NO
+  loadrecord tapbuf(), game & ".tap", getbinsize(binTAP) \ 2, 2 * tileset_num + pattern, NO
   WITH tanim(pattern)
    .range_start = tapbuf(0)
    .disable_tag = tapbuf(1)
@@ -3392,7 +3393,7 @@ SUB load_tile_anims (byval tileset_num as integer, tanim() as TileAnimPattern)
 END SUB
 
 SUB save_tile_anims (byval tileset_num as integer, tanim() as TileAnimPattern)
- DIM tapbuf(19) as integer
+ DIM tapbuf(dimbinsize(binTAP)) as integer
  FOR pattern as integer = 0 TO 1
   WITH tanim(pattern)
    tapbuf(0) = .range_start
@@ -3402,7 +3403,7 @@ SUB save_tile_anims (byval tileset_num as integer, tanim() as TileAnimPattern)
     tapbuf(11 + idx) = .cmd(idx).arg
    NEXT
   END WITH
-  storerecord tapbuf(), game & ".tap", 40 \ 2, 2 * tileset_num + pattern
+  storerecord tapbuf(), game & ".tap", getbinsize(binTAP) \ 2, 2 * tileset_num + pattern
  NEXT
 END SUB
 
