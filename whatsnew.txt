@@ -2,6 +2,26 @@ WHAT IS NEW?
 
 October 28 2024 [Ichorescent]
 
+  *** Summary
+    * Source code license has been changed to Dual GPLv2+ & MIT license
+      by unanimous consent of all OHRRPGCE contributors
+    * Changes to ports
+      * New experimental web port (lacks save game support)
+      * Many changes to facilitate console porting
+      * Android port doesn't currently work on Android 12 or newer
+       (don't worry this will get fixed in the future)
+    * Misc new features and fixes, Including but not limited to:
+      * new battle features
+      * new script commands
+      * new slice features and improved slice editor
+      * Improved support for non-default screen resolutions (other than 320x200)
+      * improved mouse/touch support
+      * improved config support
+      * improvements to distribute game menu
+      * Improved debug tools
+      * Improvements to both fullscreen and windowed modes
+    * And more, detailed below!
+    
   *** New Features
     * From the "Distribute Game" menu, you can upload your game directly to
       itch.io [James]
@@ -74,7 +94,7 @@ October 28 2024 [Ichorescent]
       add a column for time each script spends on one command [Ralph]
     * Number of script strings increased from 100 to 256 (IDs 0-255)
     * Attacks can directly spawn an enemy (if there is room) [James]
-    * New attack starget class "Most recently spawned by attack" allows
+    * New attack target class "Most recently spawned by attack" allows
       attack chains to target newly spawned enemies [James]
     * "Battles display at 320x200" battle/backcompat bit (default on) which you
       can turn off to make battles run at a higher resolution. Everything
