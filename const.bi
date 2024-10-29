@@ -331,6 +331,7 @@ CONST spellsPerLMP = 3 'Number of spells at each level-MP level
 CONST maxElements = 64 'Maximum selectable number of elements
 CONST maxDoorsPerMap = 99 '0 thru 99
 CONST maxTileAnimCmds = 49 'Ubound of TileAnimPattern.cmd()
+CONST maxTileOffset = 20   'Number of pixels over the screenedge which drawmap draws tiles; max tile shift
 CONST maxMapHistoryMem = 2000000 'In number of MapEditUndoTiles (8 bytes)
 CONST maxSpriteHistoryMem = 16000000  'Max size of sprite undo history, in bytes
 CONST maxFrameSize = 4096 'Max width or height of a Frame (in memory or .rgfx) or importable image.

@@ -4698,10 +4698,19 @@ local sub setup_tile_anim (animoffsets() as integer, tileset as TilesetData ptr)
 end sub
 
 'Given a tile number, possibly animated, translate it to the static tile to display
-local function translate_animated_tile(animoffsets() as integer, todraw as integer) as integer
+'tileset ptr can be NULL
+local function translate_animated_tile(animoffsets() as integer, tileset as TilesetData ptr, todraw as integer, byref drawoffset as XYPair) as integer
+	drawoffset.x = 0
+	drawoffset.y = 0
 	if todraw >= 208 then
+		if tileset then
+			drawoffset = tileset->tanim_state(1).drawoffset
+		end if
 		return (todraw - 48 + animoffsets(1)) mod 160
 	elseif todraw >= 160 then
+		if tileset then
+			drawoffset = tileset->tanim_state(0).drawoffset
+		end if
 		return (todraw + animoffsets(0)) mod 160
 	else
 		return todraw
@@ -4742,20 +4751,6 @@ sub drawmap (tmap as TileMap, x as integer, y as integer, tilesetsprite as Frame
 'opts : Note that DrawOptions.scale is not yet supported
 'tilesetanims : tileset animations (.tanim()) and state (.tanim_state) are taken from this TilesetData
 
-	dim sptr as ubyte ptr
-	dim plane as integer
-
-	dim ypos as integer
-	dim xpos as integer
-	dim xstart as integer
-	dim yoff as integer
-	dim xoff as integer
-	dim calc as integer
-	dim ty as integer
-	dim tx as integer
-	dim todraw as integer
-	dim tileframe as Frame
-
 	dim subtimer as TimerIDs
 	if opts.with_blending then
 		' Does nothing if timing not enabled
@@ -4767,37 +4762,57 @@ sub drawmap (tmap as TileMap, x as integer, y as integer, tilesetsprite as Frame
 		setup_tile_anim animoffsets(), tilesetanims
 	end if
 
-	'copied from the asm
-	ypos = y \ 20
-	calc = y mod 20
-	if calc < 0 then	'adjust for negative coords
-		calc = calc + 20
-		ypos = ypos - 1
-	end if
-	yoff = -calc
+	dim destpos as XYPair  'Position on dest Frame of current tile
+	dim start_destpos as XYPair  'Position on dest Frame of top-left tile
 
-	xpos = x \ 20
-	calc = x mod 20
-	if calc < 0 then
-		calc = calc + 20
-		xpos = xpos - 1
-	end if
-	xoff = -calc
-	xstart = xpos
+	dim xpos as integer    'Tilemap coords of current tile
+	dim ypos as integer
+	dim xstart as integer  'xpos at start of each row
 
+	'Find the first tile to draw at the top-left
+
+	'Division rounded to negative infinity
+	if x < 0 then
+		xstart = (x \ 20) - 1
+	else
+		xstart = x \ 20
+	end if
+	start_destpos.x = -POSMOD(x, 20)
+	'We start drawing not at 0,0 but at -maxTileOffset,-maxTileOffset in case
+	'of tiles just out-of-view that are shifted into it by a tile animation
+	while start_destpos.x > -maxTileOffset
+		'So draw an extra tile
+		start_destpos.x -= 20
+		xstart -= 1
+	wend
+
+	if y < 0 then
+		ypos = (y \ 20) - 1
+	else
+		ypos = y \ 20
+	end if
+	start_destpos.y = -POSMOD(y, 20)
+	while start_destpos.y > -maxTileOffset
+		start_destpos.y -= 20
+		ypos -= 1
+	wend
+
+	dim tileframe as Frame
 	tileframe.refcount = NOREFC
 	tileframe.w = 20
 	tileframe.h = 20
 	tileframe.pitch = 20
+	dim drawoffset as XYPair
 
-	ty = yoff
-	while ty < dest->h
-		tx = xoff
+	destpos.y = start_destpos.y
+	while destpos.y < dest->h + maxTileOffset
+		destpos.x = start_destpos.x
 		xpos = xstart
-		while tx < dest->w
+		while destpos.x < dest->w + maxTileOffset
+			dim todraw as integer
 			todraw = calcblock(tmap, xpos, ypos, overheadmode, pmapptr)
 			if largetileset = NO then
-				todraw = translate_animated_tile(animoffsets(), todraw)
+				todraw = translate_animated_tile(animoffsets(), tilesetanims, todraw, drawoffset)
 			end if
 
 			'get the tile
@@ -4810,14 +4825,15 @@ sub drawmap (tmap as TileMap, x as integer, y as integer, tilesetsprite as Frame
 				end if
 
 				'draw it on the map
-				frame_draw_internal(@tileframe, curmasterpal(), pal, tx, ty, trans, dest, opts)
+				var where = destpos + drawoffset
+				frame_draw_internal(@tileframe, curmasterpal(), pal, where.x, where.y, trans, dest, opts)
 			end if
 
-			tx = tx + 20
-			xpos = xpos + 1
+			destpos.x += 20
+			xpos += 1
 		wend
-		ty = ty + 20
-		ypos = ypos + 1
+		destpos.y += 20
+		ypos += 1
 	wend
 
 	gfx_op_timer.substop subtimer
@@ -4835,6 +4851,7 @@ end sub
 ' Respects setoutside.
 sub draw_layers_at_tile(composed_tile as Frame ptr, tiles as TileMap ptr vector, tilesets as TilesetData ptr vector, tx as integer, ty as integer, pmapptr as TileMap ptr = NULL)
 	BUG_IF(v_len(tiles) <> v_len(tilesets), "mismatched vectors")
+	dim drawoffset as XYPair  'Unused
 	for idx as integer = 0 to v_len(tiles) - 1
 		'It's possible that layer <> idx if for example drawing a minimap of a single map layer
 		dim layer as integer = tiles[idx]->layernum
@@ -4843,7 +4860,8 @@ sub draw_layers_at_tile(composed_tile as Frame ptr, tiles as TileMap ptr vector,
 		with *tilesets[idx]
 			dim todraw as integer = calcblock(*tiles[idx], tx, ty, 0, 0)
 			if todraw < 0 then continue for
-			todraw = translate_animated_tile(animoffsets(), todraw)
+			'TODO: drawoffset is ignored for minimaps, as are shifted map layers
+			todraw = translate_animated_tile(animoffsets(), tilesets[idx], todraw, drawoffset)
 
 			frame_draw .spr, , 0, -todraw * 20, (layer > 0), composed_tile
 

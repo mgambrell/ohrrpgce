@@ -1013,6 +1013,7 @@ SUB setanimpattern (tanim() as TileAnimPattern, taset as integer, tilesetnum as 
  animop(6) = "if tag do rest"
  animop(7) = "reset"
  animop(8) = "loop"
+ animop(9) = "shift tile"
 
  DIM numargs(taopLAST) as integer
  numargs(taopUp) = 1
@@ -1021,6 +1022,7 @@ SUB setanimpattern (tanim() as TileAnimPattern, taset as integer, tilesetnum as 
  numargs(taopLeft) = 1
  numargs(taopWait) = 1
  numargs(taopCheckTag) = 1
+ numargs(taopShiftTile) = 2
 
  'These are the parameter limits for each tile animation op
  DIM llim(taopLAST) as integer
@@ -1037,6 +1039,8 @@ SUB setanimpattern (tanim() as TileAnimPattern, taset as integer, tilesetnum as 
  ulim(taopWait) = 32767
  llim(taopCheckTag) = -max_tag()
  ulim(taopCheckTag) = max_tag()
+ llim(taopShiftTile) = -maxTileOffset
+ ulim(taopShiftTile) = maxTileOffset
 
  DIM context as integer = 0  '0 = main menu, 1 = detail menu
  DIM tog as integer
@@ -1115,12 +1119,16 @@ SUB setanimpattern (tanim() as TileAnimPattern, taset as integer, tilesetnum as 
         END IF
        END IF
        IF intgrabber(.op, 0, taopLAST) THEN state.need_update = YES
-      END IF
-      IF state2.pt = 1 THEN  'Select param
-       IF .op = taopCheckTag THEN  'If tag do rest
-        IF tag_grabber(.arg, state2) THEN state.need_update = YES
-       ELSEIF .op <= taopLAST THEN  'Not invalid
-        IF intgrabber(.arg, llim(.op), ulim(.op)) THEN state.need_update = YES
+      ELSEIF .op <= taopLAST THEN  'Not invalid
+       IF state2.pt = 1 THEN  'Select arg
+        IF .op = taopCheckTag THEN  'If tag do rest
+         IF tag_grabber(.arg, state2) THEN state.need_update = YES
+        ELSE
+         IF intgrabber(.arg, llim(.op), ulim(.op)) THEN state.need_update = YES
+        END IF
+       ELSEIF state2.pt = 2 THEN  'Select arg2
+        'TODO: assuming arg and arg2 have same limits
+        IF intgrabber(.arg2, llim(.op), ulim(.op)) THEN state.need_update = YES
        END IF
       END IF
      END WITH
@@ -1177,7 +1185,8 @@ SUB setanimpattern_refreshmenu(state as MenuState, state2 as MenuState, menu() a
      CASE taopCheckTag
       mitem &= " (" & load_tag_name(.arg) & ")"
      CASE IS <= taopLAST  'Not invalid
-      IF numargs(.op) > 0 THEN mitem &= " " & .arg
+      IF numargs(.op) >= 1 THEN mitem &= " " & .arg
+      IF numargs(.op) >= 2 THEN mitem &= ", " & .arg2
    END SELECT
    a_append menu(), mitem
 
@@ -1207,11 +1216,15 @@ SUB setanimpattern_refreshmenu(state as MenuState, state2 as MenuState, menu() a
     menu2(1) = "Amount: "
     SELECT CASE .op
      CASE taopUp, taopDown, taopLeft, taopRight
-      menu2(1) &= .arg & " Tiles"
+      menu2(1) &= .arg & " tiles"
      CASE taopWait
-      menu2(1) &= .arg & " Ticks"
+      menu2(1) &= .arg & " ticks"
      CASE taopCheckTag
       menu2(1) &= tag_condition_caption(.arg, , "Never")
+     CASE taopShiftTile
+      REDIM PRESERVE menu2(2)
+      menu2(1) = "X offset: " & .arg & " pixels"
+      menu2(2) = "Y offset: " & .arg2 & " pixels"
     END SELECT
    END IF
   END WITH

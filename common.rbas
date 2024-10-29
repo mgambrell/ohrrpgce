@@ -6824,6 +6824,10 @@ SUB animatetileset (tileset as TilesetData)
         .cycle = 0
        END IF
 #ENDIF
+      CASE taopShiftTile
+       .drawoffset.x = cmd.arg
+       .drawoffset.y = cmd.arg2
+       loopvar .pt, 0, lastcmd
       CASE ELSE  'Invalid/Unknown
        IF seen_unknown = NO THEN
         debug "Unknown tile animation op " & cmd.op & " in tileset " & tileset.num

@@ -1,5 +1,10 @@
 WHAT IS NEW?
 
+???uary 28 2??? [J̶u̶m̶u̶l̶e̶n̶t̶ Jocoserious]
+
+  *** New Features
+    * Shift Tile tileset animation command. Non-animated uses likely! [Ralph]
+
 October 28 2024 [Ichorescent]
 
   *** Highlights

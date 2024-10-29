@@ -166,7 +166,8 @@ Enum TileAnimOperator
  taopCheckTag = 6
  taopReset = 7
  taopLoop = 8
- taopLAST = 8
+ taopShiftTile = 9
+ taopLAST = 9
 End Enum
 
 Type TileAnimCmd
@@ -190,6 +191,7 @@ Type TileAnimState
   cycle as integer 'Current tile offset (tile to show)
   pt as integer    'Step number of the next step in the animation
   skip as integer  'Number of ticks left in current wait
+  drawoffset as XYPair 'Offset due to taopShiftTile
 End Type
 
 Type TilesetData
