@@ -1273,7 +1273,7 @@ FUNCTION game_setoption(opt as string, arg as string) as integer
   Achievements.enable_debug = true
   RETURN 1
  ELSEIF opt = "noexit" THEN
-  debug "Disable exit to OS"
+  debuginfo "Disable exit to OS"
   disable_exit = YES
   RETURN 1 'arg not used
  END IF

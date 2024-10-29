@@ -1118,15 +1118,12 @@ SUB reset_game_final_cleanup()
 END SUB
 
 FUNCTION exit_to_os_allowed() as bool
-debug "inside exit_to_os_allowed() function"
-#IF defined(__FB_ANDROID__) OR defined(__FB_JS__) OR defined(__FB_BLACKBOX__)
-debug "disabled by platform"
- RETURN NO
-#ELSE
-debug "disable_exit=" & disable_exit
- IF disable_exit THEN RETURN NO
- RETURN YES
-#ENDIF
+ #IF defined(__FB_ANDROID__) OR defined(MINIMAL_OS)  'Including JS and consoles
+  RETURN NO
+ #ELSE
+  IF disable_exit THEN RETURN NO
+  RETURN YES
+ #ENDIF
 END FUNCTION
 
 FUNCTION exit_from_game_is_allowed() as bool

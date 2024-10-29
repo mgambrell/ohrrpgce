@@ -1281,6 +1281,8 @@ DIM st as MenuState
 
 'If "New game" is an option it is left (st.pt = -1) and cancel is the right one (st.pt = -2),
 'Otherwise "Cancel" is the only button (st.pt = -1).
+'But if exiting the game is disallowed there will instead be only one button on the left
+'(exit can't be disabled when newgame is disabled).
 'Note st.pt is no longer equal to the return value.
 
 st.first = -1  'Note that st.pt can actually go down to -2
@@ -1504,7 +1506,7 @@ FUNCTION picksave_confirm(menu() as string, byval loading as bool, byval newgame
  LOOP
 END FUNCTION
 
-SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as bool, disable_exit as bool=NO, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval page as integer)
+SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as bool, exit_load_disabled as bool=NO, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval page as integer)
  'newgame_opt controls whether there are one (left only) or two buttons (left and right) at the top
  'st.pt = -1 and menu(0) is the left button, st.pt = -2 and menu(1) is the right button
  DIM col as integer
@@ -1520,7 +1522,7 @@ SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as 
  DIM last_slot as integer = UBOUND(pv)
  
  centerbox 50, 11, 80, 14, 1 + 14, page
- IF newgame_opt ANDALSO NOT disable_exit THEN centerbox 270, 11, 80, 14, 1 + 14, page
+ IF newgame_opt ANDALSO NOT exit_load_disabled THEN centerbox 270, 11, 80, 14, 1 + 14, page
  DIM top as integer = large(st.top, 0)
  DIM yoff as integer
  FOR i as integer = top TO small(top + 3, last_slot)
@@ -1562,7 +1564,7 @@ SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as 
  IF st.hover = -1 THEN col = uilook(uiMouseHoverItem)
  col = uilook(IIF(st.pt = -1, uiSelectedItem + tog, uiMenuItem))
  edgeprint menu(0), ancCenter + 50, 6, col, page
- IF newgame_opt ANDALSO NOT disable_exit THEN
+ IF newgame_opt ANDALSO NOT exit_load_disabled THEN
   IF st.hover = -2 THEN col = uilook(uiMouseHoverItem)
   col = uilook(IIF(st.pt = -2, uiSelectedItem + tog, uiMenuItem))
   edgeprint menu(1), ancCenter + 270, 6, col, page
