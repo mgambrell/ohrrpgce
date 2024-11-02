@@ -2524,10 +2524,10 @@ SUB update_battle_menu (bspr as BattleSprite, bslot() as BattleSprite, bat as Ba
   DIM atk as AttackData
   FOR i as integer = 0 TO .batmenu.numitems - 1
    WITH *.batmenu.items[i]
+    .disabled = NO
     IF .t = batmenu_ATTACK THEN
-     .disabled = NO
      loadattackdata atk, .sub_t
-     ' FIXME: isn't this bitset misnamed, since it affects all battle menu attacks?
+     ' FIXME: isn't this bitset misnamed, since it affects all battle menu attacks? (Yes, I agree)
      IF atk.check_costs_as_weapon THEN
       IF atkallowed(atk, bspr.index, 0, 0, bspr) = 0 THEN
        .disabled = YES
