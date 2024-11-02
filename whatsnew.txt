@@ -8,6 +8,7 @@ WHAT IS NEW?
   *** Bug Fixes
     * It is now possible to re-enable any tag disabled battle menu item,
       not just specific attacks [James]
+    * Fix tags menu so you can type spaces without choosing a tag [James]
 
 October 28 2024 [Ichorescent]
 

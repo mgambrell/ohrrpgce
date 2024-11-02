@@ -6666,16 +6666,17 @@ FUNCTION click_dismiss () as bool
 END FUNCTION
 
 'Sometimes space should be used for text input
-FUNCTION enter_click (state as MenuState) as bool
+FUNCTION enter_click_but_not_space (state as MenuState) as bool
  IF menu_click(state) THEN RETURN YES
- RETURN keyval(ccUse) > 1 ORELSE keyval(scAnyEnter) > 1
+ RETURN keyval(scAnyEnter) > 1 ORELSE (keyval(ccUse) > 1 ANDALSO keyval(scSpace) = 0)
 END FUNCTION
 
 'You should call usemenu before calling this, to ensure state.pt is correct!
 'Note: This also includes Ctrl in Game! (And in future, any custom Use key mappings)
 '  To avoid that, call push_and_reset_gfxio_state
 FUNCTION enter_space_click (state as MenuState) as bool
- RETURN enter_click(state) ORELSE keyval(scSpace) > 1
+ IF menu_click(state) THEN RETURN YES
+ RETURN keyval(ccUse) > 1 ORELSE keyval(scAnyEnter) > 1 ORELSE keyval(scSpace) > 1
 END FUNCTION
 
 'NOTE: This also includes Ctrl in Game (see above)!

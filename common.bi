@@ -310,7 +310,7 @@ DECLARE FUNCTION menu_click_outside_with_page(m as MenuDef, viewport_page as int
 DECLARE FUNCTION menu_right_click_close OVERLOAD (menurect as RectType) as bool
 DECLARE FUNCTION menu_right_click_close OVERLOAD (m as MenuDef) as bool
 DECLARE FUNCTION click_dismiss () as bool
-DECLARE FUNCTION enter_click (state as MenuState) as bool
+DECLARE FUNCTION enter_click_but_not_space (state as MenuState) as bool
 DECLARE FUNCTION enter_space_click (state as MenuState) as bool
 DECLARE FUNCTION enter_or_space () as bool
 DECLARE FUNCTION toggle_item (state as MenuState) as bool
