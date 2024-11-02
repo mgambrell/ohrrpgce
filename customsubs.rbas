@@ -154,6 +154,7 @@ FUNCTION tags_menu (byval starttag as integer=0, byval picktag as bool=NO, byval
 
  DIM menuopts as MenuOptions
  menuopts.fullscreen_scrollbar = YES
+ menuopts.highlight_selection = YES
 
  DIM state as MenuState
  state.autosize = YES
