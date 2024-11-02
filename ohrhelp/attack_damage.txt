@@ -247,7 +247,8 @@ actually status effects.
  The more damage inflicted to this,
  the longer the stun duration
  lasts. Each 1 damage is equal to 1
- second of stun.
+ second of stun in active battle mode
+ or 1 turn of stun in turn-based mode
 
  As with Poison, 0% of maximum is
  heavily stunned and 100% is no stun
@@ -270,6 +271,9 @@ actually status effects.
  longer the target will be unable to
  use attacks with the bitset "fail
  if muted" turned on.
+ One point of damage to the mute
+ register is 1 second in active
+ battle mode or 1 turn in turn mode
 
 *************************************
 
