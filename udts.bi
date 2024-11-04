@@ -664,6 +664,7 @@ Enum AttackTagConditionEnum
 	atktagOnHit = 2
 	atktagOnMiss = 3
 	atktagOnKill = 4
+	atktagOnTargettingFailed = 5
 End Enum
 
 Type AttackDataTag

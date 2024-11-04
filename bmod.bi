@@ -18,6 +18,8 @@ END ENUM
 
 declare function battle (byval form as integer) as bool
 declare function checkNoRunBit (bslot() as BattleSprite) as bool
+DECLARE SUB checkAtkTagConds OVERLOAD (attack as AttackData, byval check as AttackTagConditionEnum)
+DECLARE SUB checkAtkTagConds OVERLOAD (atk_id as integer, byval check as AttackTagConditionEnum)
 DECLARE SUB checkTagCond (byref t as AttackDataTag, byval check as AttackTagConditionEnum)
 DECLARE SUB calc_hero_elementals (elemental_resists() as single, byval who as integer)
 declare sub invertstack

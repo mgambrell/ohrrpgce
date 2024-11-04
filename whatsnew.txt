@@ -4,6 +4,7 @@ WHAT IS NEW?
 
   *** New Features
     * Shift Tile tileset animation command. Non-animated uses likely! [Ralph]
+    * Attacks can set a tag if their targetting fails [James]
   
   *** Bug Fixes
     * It is now possible to re-enable any tag disabled battle menu item,

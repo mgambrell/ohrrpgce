@@ -1740,6 +1740,9 @@ FUNCTION autotarget (who as integer, byref atk as AttackData, bslot() as BattleS
   queue_attack atk.id, who, t(), override_blocking, dont_retarget
  END IF
 
+ IF result = NO THEN
+  checkAtkTagConds atk, atktagOnTargettingFailed
+ END IF
  RETURN result
 END FUNCTION
 

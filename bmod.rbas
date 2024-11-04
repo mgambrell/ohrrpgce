@@ -681,8 +681,7 @@ SUB battle_attack_do_inflict(byval targ as integer, byval tcount as integer, byr
 
  DIM i as integer
  'set tag, if there is one
- checkTagCond attack.tagset(0), atktagOnUse
- checkTagCond attack.tagset(1), atktagOnUse
+ checkAtkTagConds attack, atktagOnUse
  
  '--attempt inflict the damage to the target
  DIM h as integer = 0 '--set inside inflict
@@ -716,11 +715,9 @@ SUB battle_attack_do_inflict(byval targ as integer, byval tcount as integer, byr
   ELSEIF attack.force_battle_exit = YES THEN
    bat.away = 11
   END IF
-  checkTagCond attack.tagset(0), atktagOnHit
-  checkTagCond attack.tagset(1), atktagOnHit
+  checkAtkTagConds attack, atktagOnHit
   IF bslot(targ).stat.cur.hp <= 0 THEN
-   checkTagCond attack.tagset(0), atktagOnKill
-   checkTagCond attack.tagset(1), atktagOnKill
+   checkAtkTagConds attack, atktagOnKill
   END IF
 
   IF trytheft(bat, bat.acting, targ, attack, bslot()) THEN
@@ -794,8 +791,7 @@ SUB battle_attack_do_inflict(byval targ as integer, byval tcount as integer, byr
    bslot(targ).harm.text = readglobalstring(122, "fail", 20)
   END IF
 
-  checkTagCond attack.tagset(0), atktagOnMiss
-  checkTagCond attack.tagset(1), atktagOnMiss
+  checkAtkTagConds attack, atktagOnMiss
  END IF
  triggerfade targ, bslot()
  IF bslot(targ).stat.cur.hp > 0 THEN
@@ -951,6 +947,7 @@ SUB battle_targetting(byref bat as BattleState, bslot() as BattleSprite)
 
  'no valid targs available
  IF targetmaskcount(bat.targ.mask()) = 0 THEN
+  checkAtkTagConds bat.targ.atk, atktagOnTargettingFailed
   battle_leave_targetting_mode bat, bslot()
   EXIT SUB
  END IF
@@ -2477,7 +2474,8 @@ SUB append_enemy_attacks_to_battle_menu(ai_attack_list() as integer, byref bspr 
 END SUB
 
 FUNCTION does_battle_menu_have_targets(byref bspr as BattleSprite, bslot() as BattleSprite, bat as BattleState, st() as HeroDef) as bool
- 'Currently only really useful for player controlled enemies.
+ 'This is mainly useful for player controlled enemies,
+ 'but also good for checking "Targetting Failed" tags
  'Does not attempt to check spell menus or items menu
  IF bspr.batmenu.numitems = 0 THEN
   'An empty menu is an unusable menu
@@ -2491,6 +2489,8 @@ FUNCTION does_battle_menu_have_targets(byref bspr as BattleSprite, bslot() as Ba
       DIM atk_id as integer = .sub_t
       IF has_valid_targs(bspr.index, atk_id, bslot(), bat) THEN
        RETURN YES
+      ELSE
+       checkAtkTagConds atk_id, atktagOnTargettingFailed
       END IF
      CASE batmenu_SKIPTURN:
       IF .sub_t = 1 THEN
@@ -2974,6 +2974,18 @@ FUNCTION checkNoRunBit (bslot() as BattleSprite) as bool
  NEXT i
  RETURN NO
 END FUNCTION
+
+SUB checkAtkTagConds (atk_id as integer, byval check as AttackTagConditionEnum)
+ DIM attack as AttackData
+ loadattackdata attack, atk_id
+ checkAtkTagConds attack, atktagOnTargettingFailed
+END SUB
+
+SUB checkAtkTagConds (attack as AttackData, byval check as AttackTagConditionEnum)
+ ' If we add more than 2 tag checks to the attack data, add the new ones here
+ checkTagCond attack.tagset(0), check
+ checkTagCond attack.tagset(1), check
+END SUB
 
 SUB checkTagCond (byref t as AttackDataTag, byval check as AttackTagConditionEnum)
  't.condition - type
@@ -4892,6 +4904,7 @@ SUB setup_targetting (byref bat as BattleState, bslot() as BattleSprite)
 
  'fail if there are no targets
  IF targetmaskcount(bat.targ.mask()) = 0 THEN
+  checkAtkTagConds bat.targ.atk, atktagOnTargettingFailed
   bat.targ.mode = targNONE
   EXIT SUB
  END IF
