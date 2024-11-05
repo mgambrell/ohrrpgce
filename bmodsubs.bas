@@ -356,7 +356,7 @@ FUNCTION inflict (byref h as integer = 0, byref targstat as integer = 0, attacke
  attacker.last_targs(targetslot) = YES
  
  'stored targs
- IF attack.store_targ THEN
+ IF attack.add_store_targ THEN
   attacker.stored_targs(targetslot) = YES
   attacker.stored_targs_can_be_dead = attack_can_hit_dead(attack)
  END IF

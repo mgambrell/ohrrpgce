@@ -835,7 +835,7 @@ Type AttackData
 	ignore_extra_hits as bool
 	erase_rewards as bool
 	show_damage_without_inflicting as bool
-	store_targ as bool
+	add_store_targ as bool
 	delete_stored_targs as bool
 	automatic_targ as bool
 	show_name as bool
