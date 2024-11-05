@@ -4340,6 +4340,15 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
  FOR i = 0 TO 11
   bslot(bat.acting).last_targs(i) = NO
  NEXT i
+
+ IF attack.replace_store_targ THEN
+  'If we are replacing the store targets, reset them all now. They will be added back in inflict.
+  'Note that deleting stored targets also happens in inflict, and overrides both adding and replacing
+  FOR i as integer = 0 TO UBOUND(bslot(bat.acting).stored_targs)
+   bslot(bat.acting).stored_targs(i) = NO
+  NEXT i
+  bslot(bat.acting).stored_targs_can_be_dead = NO
+ END IF
  
  'BIG CRAZY SCRIPT CONSTRUCTION
  'DEBUG debug "begin script construction"

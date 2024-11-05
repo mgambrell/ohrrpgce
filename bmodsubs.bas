@@ -356,10 +356,11 @@ FUNCTION inflict (byref h as integer = 0, byref targstat as integer = 0, attacke
  attacker.last_targs(targetslot) = YES
  
  'stored targs
- IF attack.add_store_targ THEN
+ IF attack.add_store_targ ORELSE attack.replace_store_targ THEN
   attacker.stored_targs(targetslot) = YES
   attacker.stored_targs_can_be_dead = attack_can_hit_dead(attack)
  END IF
+ 'Note that deleting stored targs overrides both adding and replacing
  IF attack.delete_stored_targs THEN
   FOR i as integer = 0 TO UBOUND(attacker.stored_targs)
    attacker.stored_targs(i) = NO

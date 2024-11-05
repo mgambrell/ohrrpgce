@@ -37,11 +37,14 @@ Prevents the attack from being targeted to heroes in certain slots.
 
   Effects: on Attacker
 
-* Store target
-When an attack with this bitset is used, the attacker will memorize the target(s) for later use with attacks that use the "Stored Targets" target class. The targets are ADDED to the list of previously stored targets, rather than replacing them! If you want to SET the stored target, use this together with Delete Stored Targets, below.
+* Add to stored targets
+When an attack with this bitset is used, the attacker will memorize the target(s) for later use with attacks that use the "Stored Targets" target class. The targets are ADDED to the list of previously stored targets.
+
+* Replace stored targets
+When an attack uses this bitset, the attacker will forget about any preivously stored targets and it will store the targets from the current attack. This overrides "Add to stored targets" if both are used at once.
 
 * Delete stored targets
-When an attack with this bitset is used, the attacker will forget any previously stored targets, and will no longer be able to use attacks that use "Stored Target" target class.
+When an attack with this bitset is used, the attacker will forget any previously stored targets, and will no longer be able to use attacks that use "Stored Target" target class. This overrides both Add and Replace stored targets if used on the same attack.
 
 
   Effects: on Target

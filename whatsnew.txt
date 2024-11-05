@@ -5,11 +5,15 @@ WHAT IS NEW?
   *** New Features
     * Shift Tile tileset animation command. Non-animated uses likely! [Ralph]
     * Attacks can set a tag if their targetting fails [James]
+    * New attack bitset "Replace stored targets" [James]
   
   *** Bug Fixes
     * It is now possible to re-enable any tag disabled battle menu item,
       not just specific attacks [James]
     * Fix tags menu so you can type spaces without choosing a tag [James]
+    * Renamed "Store Target" to "Add targets to stored targets" to reflect
+      how it actually works, and fix incorrect documentation about how
+      it interacts with "Delete Stored Targets" [James]
 
 October 28 2024 [Ichorescent]
 

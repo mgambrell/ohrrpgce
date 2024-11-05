@@ -314,6 +314,7 @@ NEXT i
 a_append atkbit(), -1, ""
 a_append atkbit(), -1, " Effects: on Attacker"
 a_append atkbit(), 52, "Add target to stored targets"
+a_append atkbit(), 99, "Replace stored targets"
 a_append atkbit(), 53, "Delete stored targets"
 a_append atkbit(), 92, "Always hide attacker (any attacker animation)"
 a_append atkbit(), 93, "Always unhide attacker (any attacker animation)"
