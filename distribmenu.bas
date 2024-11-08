@@ -2499,7 +2499,7 @@ FUNCTION recreate_web_data_file(js_file as string, data_file as string, from_dir
  DIM metadata as string = "{""files"":["
  FOR i as integer = 0 TO UBOUND(filelist)
   IF i <> 0 THEN metadata &= ","
-  metadata &= "{""filename"":""" & escape_string(pkgpath(i), """") & ""","
+  metadata &= "{""filename"":""" & escape_string(path_with_only_forward_slashes(pkgpath(i)), """") & ""","
   metadata &= """start"":" & offset(i) & ","
   metadata &= """end"":" & offset(i) + size(i) & "}"
  NEXT i
