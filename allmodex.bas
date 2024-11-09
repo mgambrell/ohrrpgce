@@ -12364,6 +12364,15 @@ function running_on_mobile() as bool
 #ENDIF
 end function
 
+function running_on_web() as bool
+#if defined(__FB_JS__)
+	return YES
+#else
+	return NO
+#endif
+end function
+
+
 function get_safe_zone_margin () as integer
 	'--returns and integer from 0 to 10 representing the percentage
 	' of the screen edges reserved for TV safe zones. Only returns non-zero

@@ -14,6 +14,9 @@ WHAT IS NEW?
     * Renamed "Store Target" to "Add targets to stored targets" to reflect
       how it actually works, and fix incorrect documentation about how
       it interacts with "Delete Stored Targets" [James]
+  
+  *** New Plotscripting Features
+    * "running on web" command
 
 October 28 2024 [Ichorescent]
 

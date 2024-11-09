@@ -803,7 +803,7 @@ define function, begin
 767,ps5endstory,0             # (Console only)
 768,setrichpresence,2,0,-1    # (Console/Steam) Set the Friends list status (token_name strid, substitution strid)
 769,findextra,3,0,0,0         # Return index of a value in an extra array, or -1 (handle, value, startindex)
-#770 unused
+770,runningonweb,0            # returns yes if running in a web browser
 #771 unused
 #772 unused
 773,playstationcontroller,1,0 # The specified controller is a playstation-style one

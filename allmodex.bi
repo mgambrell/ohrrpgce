@@ -847,6 +847,7 @@ declare function read_environment_key(key as string) as string
 declare function running_on_console() as bool
 declare function running_on_mobile() as bool
 declare function running_on_ouya() as bool 'Only use this for things that strictly require OUYA, like the OUYA store
+declare function running_on_web() as bool
 
 declare sub ouya_purchase_request (dev_id as string, identifier as string, key_der as string)
 declare function ouya_purchase_is_ready () as bool

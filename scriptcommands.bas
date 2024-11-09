@@ -5320,8 +5320,10 @@ SUB script_commands(byval cmdid as integer)
   IF extravec_ptr THEN
    scriptret = find_extra(*extravec_ptr, retvals(1), retvals(2))
   END IF
+ CASE 770 '--running on web
+  scriptret = IIF(running_on_web(), 1, 0)
 
- 'CASE 770-772 unused
+ 'CASE 771-772 unused
  CASE 773 '--playstation controller
   'TODO
   DIM sys as string = read_environment_key("sys")
