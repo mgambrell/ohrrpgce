@@ -2580,7 +2580,7 @@ FUNCTION web_data_cleanup(output_dir as string) as bool
  END IF
  FOR i as integer = 0 TO UBOUND(rpgfiles)
   src_rpg = join_path(output_dir, rpgfiles(i))
-  dest_rpg = join_path(data_dir, rpgfiles(i))
+  dest_rpg = LCASE(join_path(data_dir, rpgfiles(i)))
   debuginfo "Move " & src_rpg & " -> " & dest_rpg
   IF renamefile(src_rpg, dest_rpg) = NO THEN
    dist_info "ERROR: Could not move " & src_rpg & " to " & dest_rpg : RETURN NO
@@ -2588,7 +2588,7 @@ FUNCTION web_data_cleanup(output_dir as string) as bool
  NEXT i
  
  'Create the ohrrpgce_arguments.txt file
- DIM rpg_name as string = trimextension(trimpath(sourcerpg)) & ".rpg"
+ DIM rpg_name as string = LCASE(trimextension(trimpath(sourcerpg)) & ".rpg")
  string_to_file rpg_name, join_path(data_dir, "ohrrpgce_arguments.txt")
  
  'Delete the midi soundfont if it is unused
