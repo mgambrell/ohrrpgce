@@ -1207,6 +1207,7 @@ TYPE DistribState
   copyright_year as string
   itch_user as string
   itch_gamename as string
+  itch_upload_web as bool
   steam_appid as integer
   omit_readme as bool
   omit_license as bool

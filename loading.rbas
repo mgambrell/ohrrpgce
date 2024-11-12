@@ -5137,6 +5137,7 @@ SUB load_distrib_state(byref distinfo as DistribState, byval node as Reload.Node
   distinfo.copyright_year   = node."copyright_year".string
   distinfo.itch_user        = node."itch_user".string
   distinfo.itch_gamename    = node."itch_gamename".string
+  distinfo.itch_upload_web  = node."itch_upload_web".bool
   distinfo.steam_appid      = node."steam_appid".integer
   distinfo.omit_readme      = node."omit_readme".exists
   distinfo.omit_license     = node."omit_license".exists
@@ -5193,6 +5194,7 @@ SUB save_distrib_state(byref distinfo as DistribState, byval node as Reload.Node
  SetChildNode node, "copyright_year", distinfo.copyright_year
  SetChildNode node, "itch_user",   distinfo.itch_user
  SetChildNode node, "itch_gamename", distinfo.itch_gamename
+ SetChildNode node, "itch_upload_web", IIF(distinfo.itch_upload_web, 1, 0)
  SetChildNode node, "steam_appid", distinfo.steam_appid
  IF distinfo.omit_readme THEN SetChildNode node, "omit_readme", 1
  IF distinfo.omit_license THEN SetChildNode node, "omit_license", 1

@@ -373,6 +373,15 @@ SUB DistribMenu.itch_io_menu ()
  defstr "itch.io game name:", distinfo.itch_gamename, 63
  caption_default_or_str "<defaults to package name>"
  IF edited THEN valuestr = sanitize_url_chunk(valuestr)
+ 
+ defbool "Also upload experimental web build:", distinfo.itch_upload_web
+ captions_bool "No", "Yes"
+ IF distinfo.itch_upload_web THEN
+  defunselectable " In itch.io website you will need to manually set:"
+  defunselectable "  Kind of project: HTML"
+  defunselectable "  Click ""this file will be played in the browser"" on " & distinfo.pkgname & "-web.zip"
+  defunselectable " (Save slots are deleted when browser tab closes)"
+ END IF
 
  IF butler_logged_in THEN
   IF defitem_act("Upload to itch.io now") THEN presave : itch_butler_upload(distinfo)
@@ -2270,26 +2279,45 @@ SUB itch_butler_upload(distinfo as DistribState)
  dist_basicstatus "Exporting for Linux..."
  DIM linux_tarball as string = distribute_game_as_linux_tarball("x86_64", itch_temp_dir)
  IF linux_tarball = "" THEN dist_info "Aborting itch.io upload" : EXIT SUB
+
+ DIM web_zip as string
+ IF distinfo.itch_upload_web THEN
+  dist_basicstatus "Exporting for Web..."
+  web_zip = distribute_game_as_web_zip(itch_temp_dir)
+  IF web_zip = "" THEN dist_info "Aborting itch.io upload" : EXIT SUB
+ END IF
+
  auto_choose_default = NO
 
  debuginfo "Upload exports with butler..."
+ dim did_which as string = ""
 
  dist_basicstatus "Upload " & itch_gametarg(distinfo) & " (Windows) ..."
  run_and_get_output butler & " push " & escape_filename(win_zip) & " " & target & ":windows", out_s, err_s
  IF itch_butler_error_check(out_s, err_s) THEN EXIT SUB
+ did_which &= "Windows"
 
  dist_basicstatus "Upload " & itch_gametarg(distinfo) & " (Mac) ..."
  run_and_get_output butler & " push " & escape_filename(mac_app) & " " & target & ":mac", out_s, err_s
  IF itch_butler_error_check(out_s, err_s) THEN EXIT SUB
+ did_which &= ", Mac"
 
  dist_basicstatus "Upload " & itch_gametarg(distinfo) & " (Linux) ..."
  run_and_get_output butler & " push " & escape_filename(linux_tarball) & " " & target & ":linux", out_s, err_s
  IF itch_butler_error_check(out_s, err_s) THEN EXIT SUB
+ did_which &= ", Linux"
+
+ IF distinfo.itch_upload_web THEN
+  dist_basicstatus "Upload " & itch_gametarg(distinfo) & " (Web) ..."
+  run_and_get_output butler & " push " & escape_filename(web_zip) & " " & target & ":web", out_s, err_s
+  IF itch_butler_error_check(out_s, err_s) THEN EXIT SUB
+  did_which &= ", Web"
+ END IF
 
  dist_basicstatus "Cleaning up temp files..."
  killdir itch_temp_dir
 
- dist_info "Upload of " & itch_gametarg(distinfo) & " to " & itch_game_url(distinfo) & " finished (Windows, Mac, Linux)"
+ dist_info "Upload of " & itch_gametarg(distinfo) & " to " & itch_game_url(distinfo) & " finished (" & did_which & ")"
 
 END SUB
 
