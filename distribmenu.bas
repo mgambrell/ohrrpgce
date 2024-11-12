@@ -2580,7 +2580,7 @@ FUNCTION web_data_cleanup(output_dir as string) as bool
  END IF
  FOR i as integer = 0 TO UBOUND(rpgfiles)
   src_rpg = join_path(output_dir, rpgfiles(i))
-  dest_rpg = LCASE(join_path(data_dir, rpgfiles(i)))
+  dest_rpg = join_path(data_dir, LCASE(rpgfiles(i)))
   debuginfo "Move " & src_rpg & " -> " & dest_rpg
   IF renamefile(src_rpg, dest_rpg) = NO THEN
    dist_info "ERROR: Could not move " & src_rpg & " to " & dest_rpg : RETURN NO
