@@ -1927,6 +1927,15 @@ SUB update_battle_targetting_slices (layer as Slice Ptr, bat as BattleState, bsp
   IF bat.targ.mode > targNONE ANDALSO (bat.targ.selected(.index) = YES ORELSE bat.targ.pointer = .index) THEN
    sl->Visible = YES
   END IF
+
+  'MBG HACK
+  IF cursor <> 0 THEN
+   DIM bobber as Slice Ptr = SliceGetFirstChild(cursor)
+   DIM n as integer = bobber->SelectData->index
+   loopvar n, 0, bobber->NumChildren - 1
+   ChangeSelectSlice bobber, n
+  END IF
+
  END WITH
 END SUB
 
@@ -2144,6 +2153,18 @@ FUNCTION create_default_battle_caption_area () as Slice Ptr
  RETURN area
 END FUNCTION
 
+FUNCTION get_bounce_divider(key as string) as integer
+ DIM bounce_divider as Integer
+ DIM env_value as String
+ env_value = read_environment_key(key)
+ IF env_value = "" THEN
+  bounce_divider = 1
+ ELSE
+  bounce_divider = VAL(env_value)
+ END IF
+ RETURN bounce_divider
+END FUNCTION
+
 FUNCTION create_default_player_turn_overlay_area () as Slice Ptr
  'A slice with the SL_BATTLE_PLAYER_TURN_OVERLAY lookup code is magical.
  'It will change size and position to match the hero or enemy
@@ -2157,13 +2178,22 @@ FUNCTION create_default_player_turn_overlay_area () as Slice Ptr
  cursor_area->AlignHoriz = alignCenter
  cursor_area->AnchorVert = alignBottom
  cursor_area->AlignVert = alignTop
+
  DIM cursor as Slice Ptr
- cursor = NewSliceOfType(slText, cursor_area)
- cursor->Pos = XY(0, 0)
- ChangeTextSlice cursor, CHR(24), uiSelectedItem2 * -1 - 1, YES
- cursor = NewSliceOfType(slText, cursor_area)
- cursor->Pos = XY(0, 2)
- ChangeTextSlice cursor, CHR(24), uiSelectedItem2 * -1 - 1, YES
+ DIM bounce_divider as integer = get_bounce_divider("BATTLE_TOGGLE_BOUNCE_DIVIDER")
+
+ FOR i as Integer = 1 TO bounce_divider
+  cursor = NewSliceOfType(slText, cursor_area)
+  cursor->Pos = XY(0, 0)
+  ChangeTextSlice cursor, CHR(24), uiSelectedItem2 * -1 - 1, YES
+ NEXT
+
+ FOR i as Integer = 1 TO bounce_divider
+  cursor = NewSliceOfType(slText, cursor_area)
+  cursor->Pos = XY(0, 2)
+  ChangeTextSlice cursor, CHR(24), uiSelectedItem2 * -1 - 1, YES
+ NEXT
+
  RETURN area
 END FUNCTION
 
@@ -2179,16 +2209,42 @@ FUNCTION create_default_targetting_overlay_area () as Slice Ptr
  cursor->AnchorVert = alignBottom
  cursor->AlignVert = alignTop
  cursor->Size = XY(0, 0)
- DIM curs as Slice Ptr = NewSliceOfType(slText, cursor)
- curs->Pos = XY(0, 4)
- curs->AnchorHoriz = alignCenter
- curs->AlignHoriz = alignCenter
- curs->AnchorVert = alignBottom
- curs->AlignVert = alignTop
- curs->ClampHoriz = alignBoth
- curs->ClampVert = alignBoth
- curs->ClampToScreen = YES
- ChangeTextSlice curs, CHR(24), uiSelectedItem2 * -1 - 1, YES
+
+ DIM bounceHolder as Slice Ptr = NewSliceOfType(slSelect, cursor)
+ bounceHolder->AnchorHoriz = alignCenter
+ bounceHolder->AlignHoriz = alignCenter
+ bounceHolder->AnchorVert = alignBottom
+ bounceHolder->AlignVert = alignTop
+ bounceHolder->Size = XY(0, 0)
+
+ DIM bounce_divider as integer = get_bounce_divider("BATTLE_TOGGLE_BOUNCE_DIVIDER")
+
+ FOR i as Integer = 1 TO bounce_divider
+  DIM curs as Slice Ptr = NewSliceOfType(slText, bounceHolder)
+  curs->Pos = XY(0, 4)
+  curs->AnchorHoriz = alignCenter
+  curs->AlignHoriz = alignCenter
+  curs->AnchorVert = alignBottom
+  curs->AlignVert = alignTop
+  curs->ClampHoriz = alignBoth
+  curs->ClampVert = alignBoth
+  curs->ClampToScreen = YES
+  ChangeTextSlice curs, CHR(24), uiSelectedItem2 * -1 - 1, YES
+ NEXT
+
+ FOR i as Integer = 1 TO bounce_divider
+  DIM curs as Slice Ptr = NewSliceOfType(slText, bounceHolder)
+  curs->Pos = XY(0, 4+2)
+  curs->AnchorHoriz = alignCenter
+  curs->AlignHoriz = alignCenter
+  curs->AnchorVert = alignBottom
+  curs->AlignVert = alignTop
+  curs->ClampHoriz = alignBoth
+  curs->ClampVert = alignBoth
+  curs->ClampToScreen = YES
+  ChangeTextSlice curs, CHR(24), uiSelectedItem2 * -1 - 1, YES
+ NEXT
+
  DIM targname as Slice Ptr = NewSliceOfType(slText, cursor)
  targname->AnchorHoriz = alignCenter
  targname->AlignHoriz = alignTop
