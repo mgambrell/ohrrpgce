@@ -71,6 +71,7 @@ TYPE BattleSprite
 
   basepos as XYPair
   d as integer
+  divider as integer
   xmov as integer
   ymov as integer
   zmov as integer

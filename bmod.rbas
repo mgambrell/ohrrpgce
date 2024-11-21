@@ -132,6 +132,18 @@ DECLARE SUB instantiate_battle_targ_hover_slices (layer as Slice Ptr)
 DECLARE SUB ExpandTextBattleSprite (code as string, result as string, byval arg0 as ANY ptr=0, byval arg1 as ANY ptr=0, byval arg2 as ANY ptr=0)
 DECLARE SUB ExpandTextBattleState (code as string, result as string, byval arg0 as ANY ptr=0, byval arg1 as ANY ptr=0, byval arg2 as ANY ptr=0)
 
+FUNCTION get_divider(key as string) as integer
+ DIM bounce_divider as Integer
+ DIM env_value as String
+ env_value = read_environment_key(key)
+ IF env_value = "" THEN
+  bounce_divider = 1
+ ELSE
+  bounce_divider = VAL(env_value)
+ END IF
+ RETURN bounce_divider
+END FUNCTION
+
 CONST ANIM_SKIP_SENTINEL = &h6EEFDEEF
 
 'This should be larger than the attack queue length
@@ -1365,7 +1377,11 @@ SUB battle_animate(byref bat as BattleState, bslot() as BattleSprite, st() as He
    IF st(i).skip_victory_dance THEN
     bslot(i).frame = frameVICTORYB
    ELSE
-    IF bslot(i).frame = frameVICTORYB THEN bslot(i).frame = frameVICTORYA ELSE bslot(i).frame = frameVICTORYB
+    bslot(i).divider += 1
+    IF bslot(i).divider = get_divider("BATTLE_PLAYER_ANIM_DIVIDER") THEN
+      bslot(i).divider = 0
+      IF bslot(i).frame = frameVICTORYB THEN bslot(i).frame = frameVICTORYA ELSE bslot(i).frame = frameVICTORYB
+    END IF
    END IF
   END IF
  NEXT i
@@ -2153,18 +2169,6 @@ FUNCTION create_default_battle_caption_area () as Slice Ptr
  RETURN area
 END FUNCTION
 
-FUNCTION get_bounce_divider(key as string) as integer
- DIM bounce_divider as Integer
- DIM env_value as String
- env_value = read_environment_key(key)
- IF env_value = "" THEN
-  bounce_divider = 1
- ELSE
-  bounce_divider = VAL(env_value)
- END IF
- RETURN bounce_divider
-END FUNCTION
-
 FUNCTION create_default_player_turn_overlay_area () as Slice Ptr
  'A slice with the SL_BATTLE_PLAYER_TURN_OVERLAY lookup code is magical.
  'It will change size and position to match the hero or enemy
@@ -2180,7 +2184,7 @@ FUNCTION create_default_player_turn_overlay_area () as Slice Ptr
  cursor_area->AlignVert = alignTop
 
  DIM cursor as Slice Ptr
- DIM bounce_divider as integer = get_bounce_divider("BATTLE_TOGGLE_BOUNCE_DIVIDER")
+ DIM bounce_divider as integer = get_divider("BATTLE_TOGGLE_BOUNCE_DIVIDER")
 
  FOR i as Integer = 1 TO bounce_divider
   cursor = NewSliceOfType(slText, cursor_area)
@@ -2217,7 +2221,7 @@ FUNCTION create_default_targetting_overlay_area () as Slice Ptr
  bounceHolder->AlignVert = alignTop
  bounceHolder->Size = XY(0, 0)
 
- DIM bounce_divider as integer = get_bounce_divider("BATTLE_TOGGLE_BOUNCE_DIVIDER")
+ DIM bounce_divider as integer = get_divider("BATTLE_TOGGLE_BOUNCE_DIVIDER")
 
  FOR i as Integer = 1 TO bounce_divider
   DIM curs as Slice Ptr = NewSliceOfType(slText, bounceHolder)
