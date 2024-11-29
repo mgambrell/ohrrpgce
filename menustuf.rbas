@@ -985,7 +985,8 @@ END SUB
 'toequip: item ID (-1 is invalid)
 'who: hero slot
 'where: equip slot
-SUB doequip (toequip as integer, who as integer, where as integer)
+'Return value YES for success, NO for failure
+FUNCTION doequip (toequip as integer, who as integer, where as integer) as bool
 
  'First remove the item from inventory (unless it is the default weapon)
  IF toequip = gam.hero(who).def_wep - 1 AND where = 0 THEN
@@ -1000,9 +1001,12 @@ SUB doequip (toequip as integer, who as integer, where as integer)
    'Unequipping failed. This is because there was no room to return the item back to inventory
    'Instead, return the original item to inventory (which we can do because we just removed it,
    'and its stack is guaranteed to have room even if the rest of the inventory is full)
+   '
+   '(Also there is no danger of unequip recursively calling doequip again because that
+   ' only happens if the resetdefwep arg is YES and it is NO here)
    getitem toequip
    debug "Failed attempt to unequip " & readitemname(gam.hero(who).equip(where).id) & " and equip " & readitemname(toequip) & " (No room in inventory)"
-   EXIT SUB
+   RETURN NO
   END IF
  END IF
 
@@ -1015,7 +1019,8 @@ SUB doequip (toequip as integer, who as integer, where as integer)
  evalitemtags
  evalherotags  'You could kill someone, right? (Yes, with a negative HP bonus)
  tag_updates
-END SUB
+ RETURN YES
+END FUNCTION
 
 LOCAL FUNCTION getOOBtarg (byval search_direction as integer, byval attacker as integer, byref target as integer, byval atk as integer) as bool
  'Move the hero selection cursor for the target picker for an OOB attack/learning attack.
@@ -2967,7 +2972,10 @@ FUNCTION unequip (who as integer, where as integer, resetdefwep as bool = YES, f
 
   IF where = 0 AND resetdefwep THEN
    '--restore default weapon
-   doequip .def_wep - 1, who, where
+   IF doequip(.def_wep - 1, who, where) = NO THEN
+    'This would be a really weird edge case for this to fail. I don't think it could happen
+    debug "Failed attempt to restore default weapon """ & readitemname(.def_wep - 1) & """ for hero """ & .name & """ after an unequip (That's weird)"
+   END IF
   END IF
  END WITH
 
@@ -3454,7 +3462,10 @@ SUB equip_menu_setup (byref st as EquipMenuState)
 END SUB
 
 SUB equip_menu_do_equip(byval item as integer, byref st as EquipMenuState)
- doequip item, st.who, st.slot
+ IF doequip(item, st.who, st.slot) = NO THEN
+  st.item_info = readglobalstring(305, "No room in inventory", 30)
+  MenuSound gen(genCancelSFX)
+ END IF
  equip_menu_back_to_menu st
 END SUB
 

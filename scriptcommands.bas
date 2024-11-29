@@ -636,7 +636,10 @@ SUB script_commands(byval cmdid as integer)
   IF valid_hero_party(retvals(0)) THEN
    i = retvals(0)
    IF valid_item(retvals(2)) THEN
-    doequip retvals(2), i, bound(retvals(1) - 1, 0, 4)
+    IF doequip(retvals(2), i, bound(retvals(1) - 1, 0, 4)) = NO THEN
+     'This could fail because there is no room in the inventory for whatever item
+     'is being unequipped
+    END IF
    END IF
   END IF
  CASE 32'--show backdrop
@@ -674,10 +677,14 @@ SUB script_commands(byval cmdid as integer)
     gam.hero(retvals(0)).def_wep = newdfw + 1
     IF cureqw <> olddfw THEN
      '--if previously using a weapon, re-equip old weapon
-     doequip cureqw, retvals(0), 0
+     IF doequip(cureqw, retvals(0), 0) = NO THEN
+      'I don't think this can actually fail because default weapon is a special case
+     END IF
     ELSE
-     '--otherwize equip new default weapon
-     doequip newdfw, retvals(0), 0
+     '--otherwise equip new default weapon
+     IF doequip(newdfw, retvals(0), 0) = NO THEN
+      'I don't think this can actually fail because default weapon is a special case
+     END IF
     END IF
    END IF
   END IF
