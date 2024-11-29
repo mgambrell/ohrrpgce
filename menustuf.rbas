@@ -986,24 +986,34 @@ END SUB
 'who: hero slot
 'where: equip slot
 SUB doequip (toequip as integer, who as integer, where as integer)
- IF gam.hero(who).equip(where).id >= 0 THEN
-  unequip who, where, NO  'Removes the default weapon too
- END IF
 
- '--set equipment
- gam.hero(who).equip(where).id = toequip
-
- update_hero_max_and_cur_stats who
-
- '--equipping the default weapon does not delete it from inventory
+ 'First remove the item from inventory (unless it is the default weapon)
  IF toequip = gam.hero(who).def_wep - 1 AND where = 0 THEN
  ELSE
-  '--delete the item from inventory
+  'delete the item from inventory
   delitem toequip
  END IF
 
+ 'Now remove the old equipment (Removes the default weapon too)
+ IF gam.hero(who).equip(where).id >= 0 THEN
+  IF unequip(who, where, NO, NO) = NO THEN
+   'Unequipping failed. This is because there was no room to return the item back to inventory
+   'Instead, return the original item to inventory (which we can do because we just removed it,
+   'and its stack is guaranteed to have room even if the rest of the inventory is full)
+   getitem toequip
+   debug "Failed attempt to unequip " & readitemname(gam.hero(who).equip(where).id) & " and equip " & readitemname(toequip) & " (No room in inventory)"
+   EXIT SUB
+  END IF
+ END IF
+
+ 'set new equipment
+ gam.hero(who).equip(where).id = toequip
+
+ 'Update this hero's stat bonuses
+ update_hero_max_and_cur_stats who
+
  evalitemtags
- evalherotags  'You could kill someone, right?
+ evalherotags  'You could kill someone, right? (Yes, with a negative HP bonus)
  tag_updates
 END SUB
 
@@ -2945,6 +2955,7 @@ FUNCTION unequip (who as integer, where as integer, resetdefwep as bool = YES, f
   IF where = 0 AND .equip(where).id = .def_wep - 1 THEN
   ELSE
    IF getitem(.equip(where).id, , YES) = NO THEN  'ok_to_fail=YES
+    debug "Returning " & readitemname(.equip(where).id) & " to inventory failed (force=" & force & ")"
     IF force = NO THEN RETURN NO
    END IF
   END IF
