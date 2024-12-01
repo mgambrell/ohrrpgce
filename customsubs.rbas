@@ -2241,6 +2241,11 @@ FUNCTION spawn_game(gdb as bool = NO, valgrind as bool = NO) as bool
   arguments = "--from_Custom " & channel_name
  #ENDIF
 
+ IF joysticks_globally_disabled THEN
+  'If Custom was run with -nojoy, then test game should use -nojoy too
+  arguments &= " -nojoy"
+ END IF
+
  IF gdb THEN
   ' Wrap in a gdb call...
   ' channel_wait_for_client_connection is going to time out if Game isn't

@@ -17,6 +17,8 @@ WHAT IS NEW?
       it interacts with "Delete Stored Targets" [James]
     * Replacing equipment when your inventory is full no longer deletes
       the item you are unequipping [James]
+    * If you use the -nojoy command line argument on custom, then -nojoy
+      is passed to "Test Game" also [James]
   
   *** New Plotscripting Features
     * "running on web" command
