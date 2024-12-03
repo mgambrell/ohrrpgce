@@ -8,7 +8,20 @@
 
 extern "C" {
 
+//Syncs are asynchonous, so sometimes we might have to wait for them.
+int sync_to_indexdb_pending = false;
+int sync_from_indexdb_pending = false;
+
+void sync_to_indexdb_done(){
+  sync_to_indexdb_pending = false;
+}
+
+void sync_from_indexdb_done(){
+  sync_from_indexdb_pending = false;
+}
+
 void web_mount_persistent_storage(const char *foldername) {
+  sync_from_indexdb_pending = true;
   EM_ASM_({
     var persistDir = UTF8ToString($0);
     var pathInfo = FS.analyzePath(persistDir);
@@ -17,10 +30,12 @@ void web_mount_persistent_storage(const char *foldername) {
     if (isMounted) {
       console.log("web_mount_persistent_storage:", persistDir, "is already mounted");
     } else {
-      FS.mkdir(persistDir);
+      if (!pathInfo.exists) {
+        FS.mkdir(persistDir);
+      }
       FS.mount(IDBFS, {}, persistDir);
+      console.log("web_mount_persistent_storage: Mounted IDBFS:", persistDir);
     }
-    console.log("web_mount_persistent_storage: Mounted IDBFS:", persistDir);
     // Ask IDBFS to populate the mount with previously saved persistent files
     FS.syncfs(true, function(err) {
       if (err) {
@@ -31,21 +46,52 @@ void web_mount_persistent_storage(const char *foldername) {
         filestAtMount = filestAtMount.filter(item => item !== "." && item !== "..");
         console.log('web_mount_persistent_storage: Folder contents:', filestAtMount);
       }
+      Module.ccall('sync_from_indexdb_done', 'v');
     });
   }, foldername);
+  // Wait for the sync to finish
+  while(sync_from_indexdb_pending){
+    emscripten_sleep(50);
+  }
 }
 
 void web_sync_persistent_storage() {
+  sync_to_indexdb_pending = true;
   EM_ASM_({
-  // Ask IDBFS mounts to save their contents for later sessions
+    // Ask IDBFS mounts to save their contents for later sessions
     FS.syncfs(false, function(err) {
       if (err) {
         console.error("web_sync_persistent_storage: Failed syncing filesystem:", err);
       } else {
         console.log("web_sync_persistent_storage: syncfs to IndexDB succeeded");
       }
+      Module.ccall('sync_to_indexdb_done', 'v');
     });
   });
+}
+
+void web_unmount_persistent_storage(const char *foldername) {
+  // Sync before we unmount (this is just unnecesarry caution, the files are already synced each time an RSAV is written)
+  web_sync_persistent_storage();
+
+  // Wait for the sync to finish
+  while(sync_to_indexdb_pending){
+    emscripten_sleep(50);
+  }
+  
+  EM_ASM_({
+    var persistDir = UTF8ToString($0);
+    var pathInfo = FS.analyzePath(persistDir);
+    var isMounted = (pathInfo.object != null && pathInfo.object.mount.mountpoint == persistDir);
+
+    if (isMounted) {
+      FS.unmount(persistDir);
+      console.log("web_unmount_persistent_storage: unmounted", persistDir);
+    } else {
+      console.log("web_unmount_persistent_storage:", persistDir, "was not mounted, so we can't unmount it");
+    }
+
+  }, foldername);
 }
 
 } // end extern "C"

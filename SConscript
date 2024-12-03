@@ -1225,6 +1225,11 @@ if web:
         #emsdlflags += ['-s', 'ASSERTIONS=1']
         emsdlflags += ['-s', 'USE_SDL_MIXER=2', '-s', 'SDL2_MIXER_FORMATS=["ogg", "mod", "mid"]']
         #emsdlflags += ['-s', 'USE_MODPLUG', '-s', 'USE_MPG123']
+    
+    # This is needed so that javascript can call C++ callbacks
+    EMFLAGS += ["-s", 'EXPORTED_RUNTIME_METHODS=["ccall"]']
+    # C++ Callbacks that will be called from Javascript must be explicity exported to prevent pruning
+    EMFLAGS += ["-s", "EXPORTED_FUNCTIONS=_main,_sync_to_indexdb_done,_sync_from_indexdb_done"]
 
     emlinkflags = sum((['-s',flag] for flag in EMFLAGS), [])
     commonenv['CCLINKFLAGS'] += emlinkflags + emsdlflags
