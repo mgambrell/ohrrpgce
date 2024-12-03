@@ -15,6 +15,9 @@
 #include "common_menus.bi"
 #include "loading.bi"
 
+'Doesn't have any effect unless compiling on web
+#include "web.bi"
+
 USING RELOAD
 
 'Have to avoid circular slices.bi dependency

@@ -1439,6 +1439,9 @@ common_modules += ['blit.cpp',
                    'lib/jo_jpeg.cpp',
                    'lib/ujpeg.c']
 
+if web:
+    common_modules += ['web.cpp']
+
 # The following are compiled up to three times, for Game, Custom and other
 # other utilities using allmodex, with IS_GAME, IS_CUSTOM or neither defined.
 # (All Game/Custom shared FB files are here instead of common_modules so we
