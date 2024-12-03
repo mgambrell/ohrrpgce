@@ -127,6 +127,12 @@ SUB init_save_system()
  ELSE
   savedir = fallback_save_location(savename) & "saves"
  END IF
+ 
+ #IFDEF __FB_JS__
+ 'When running on web, tell the virtual filesystem to storage the saves folder in IndexDB
+ mount_web_persistent_storage(savedir)
+ #ENDIF
+ 
  IF NOT isdir(savedir) THEN makedir savedir
 
  debuginfo "savedir: " & savedir

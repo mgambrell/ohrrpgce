@@ -79,11 +79,6 @@ DECLARE FUNCTION check_nearby_pushable_npc(byval n as integer, byval rank as int
 DECLARE SUB push_nearby_npc(byval n as integer, byval rank as integer=0)
 DECLARE FUNCTION drag_started_on_leader() as bool
 
-#IFDEF __FB_JS__
-'Sets up /saves in the web virtual filesystem
-init_web_persistent_storage()
-#ENDIF
-
 '=================================== Globals ==================================
 
 'shared module variables

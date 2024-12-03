@@ -5,11 +5,14 @@
 
 #include <emscripten.h>
 
-void init_web_persistent_storage() {
-  EM_ASM({
-    var savesDir = '/saves';
+extern "C" {
+
+void mount_web_persistent_storage(const char *foldername) {
+  EM_ASM_({
+    var savesDir = UTF8ToString($0);
     FS.mkdir(savesDir);
     FS.mount(IDBFS, {}, savesDir);
-  });
+  }, foldername);
 }
 
+}
