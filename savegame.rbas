@@ -130,7 +130,7 @@ SUB init_save_system()
  
  #IFDEF __FB_JS__
  'When running on web, tell the virtual filesystem to storage the saves folder in IndexDB
- mount_web_persistent_storage(savedir)
+ web_mount_persistent_storage(savedir)
  #ENDIF
  
  IF NOT isdir(savedir) THEN makedir savedir
@@ -252,6 +252,11 @@ SUB savegame (byval slot as integer, prefix as string="")
  SerializeBin filename, doc
  
  FreeDocument doc
+
+#ifdef __FB_JS__
+web_sync_persistent_storage()
+#endif
+
  current_save_slot = -1
  current_save_prefix = ""
  main_timer.switch(prev_subtimer)
@@ -1352,6 +1357,11 @@ SUB saveglobalvars (byval slot as integer, byval first as integer, byval last as
  SerializeBin filename, doc
  
  FreeDocument doc
+
+#ifdef __FB_JS__
+web_sync_persistent_storage()
+#endif
+
  current_save_slot = -1
 
  main_timer.switch(prev_subtimer)

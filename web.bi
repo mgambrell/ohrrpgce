@@ -10,7 +10,8 @@
 
 extern "C"
 
-declare sub mount_web_persistent_storage(byval foldername as zstring ptr)
+declare sub web_mount_persistent_storage(byval foldername as zstring ptr)
+declare sub web_sync_persistent_storage()
 
 end extern
 

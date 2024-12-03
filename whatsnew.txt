@@ -7,6 +7,8 @@ WHAT IS NEW?
     * Attacks can set a tag if their targetting fails [James]
     * New attack bitset "Replace stored targets" [James]
     * Uploading your game to itch.io now supports web build too [James]
+    * The web port now supports persistent save games. This uses
+      your web browser's IndexDB for storage [James]
   
   *** Bug Fixes
     * It is now possible to re-enable any tag disabled battle menu item,
