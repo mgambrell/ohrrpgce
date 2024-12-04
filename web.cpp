@@ -50,8 +50,8 @@ void web_mount_persistent_storage(const char *foldername) {
     });
   }, foldername);
   // Wait for the sync to finish
-  while(sync_from_indexdb_pending){
-    emscripten_sleep(50);
+  while (sync_from_indexdb_pending) {
+    emscripten_sleep(5);
   }
 }
 
@@ -71,12 +71,12 @@ void web_sync_persistent_storage() {
 }
 
 void web_unmount_persistent_storage(const char *foldername) {
-  // Sync before we unmount (this is just unnecesarry caution, the files are already synced each time an RSAV is written)
+  // Sync before we unmount (this is just unnecessary caution, the files are already synced each time an RSAV is written)
   web_sync_persistent_storage();
 
   // Wait for the sync to finish
-  while(sync_to_indexdb_pending){
-    emscripten_sleep(50);
+  while (sync_to_indexdb_pending) {
+    emscripten_sleep(5);
   }
   
   EM_ASM_({
