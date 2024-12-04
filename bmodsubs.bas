@@ -696,9 +696,12 @@ FUNCTION inflict (byref h as integer = 0, byref targstat as integer = 0, attacke
     NEXT
    END IF
 
-   'enforce stat bounds
-   tstat_cur = large(tstat_cur, 0)
-   astat_cur = large(astat_cur, 0)
+   'Enforce max/min stat bounds.
+   'FIXME: Why do we ignore prefbit(43) "Cap minimum stats at zero"? We're probably going to need a new prefbit.
+   'Normally cap below at zero, but if the stat is already below zero make sure an attempt to decrease it further
+   'doesn't increase it to zero.
+   tstat_cur = large(tstat_cur, small(0, tstat_original))
+   astat_cur = large(astat_cur, small(0, astat_original))
    IF target_is_register OR attack.allow_cure_to_exceed_maximum = NO THEN
     'Cap to max. But if the stat was already above max then instead don't allow
     'it to go higher.
