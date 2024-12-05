@@ -93,7 +93,7 @@ DECLARE FUNCTION fix_mac_app_executable_bit_on_windows(zipfile as string, exec_p
 DECLARE SUB dist_basicstatus (s as string)
 DECLARE FUNCTION extract_web_data_files(js_file as string, data_file as string, output_dir as string) as bool
 DECLARE FUNCTION recreate_web_data_file(js_file as string, data_file as string, from_dir as string) as bool
-DECLARE FUNCTION web_data_cleanup(output_dir as string) as bool
+DECLARE FUNCTION web_data_cleanup(basename as string, output_dir as string) as bool
 
 DECLARE SUB itch_io_options_menu()
 DECLARE FUNCTION itch_game_url(distinfo as DistribState) as string
@@ -2380,7 +2380,7 @@ FUNCTION gather_files_for_web (buildname as string, basename as string, destdir 
   dist_info "ERROR: Failed to extract web data files" : RETURN NO
  END IF
  
- IF NOT web_data_cleanup(destdir) THEN
+ IF NOT web_data_cleanup(basename, destdir) THEN
   dist_info "ERROR: Failed to clean up web data files" : RETURN NO
  END IF
 
@@ -2586,7 +2586,7 @@ FUNCTION add_web_gameplayer(basename as string, destdir as string) as string
  RETURN destexe
 END FUNCTION
 
-FUNCTION web_data_cleanup(output_dir as string) as bool
+FUNCTION web_data_cleanup(basename as string, output_dir as string) as bool
  'Assumes we have already unpacked the web data files into output_dir/data/*
  'Deletes unwanted files, and moves RPG files into the correct place
  'Returns true on success, false on failure
@@ -2616,7 +2616,7 @@ FUNCTION web_data_cleanup(output_dir as string) as bool
  NEXT i
  
  'Create the ohrrpgce_arguments.txt file
- DIM rpg_name as string = LCASE(trimextension(trimpath(sourcerpg)) & ".rpg")
+ DIM rpg_name as string = LCASE(basename & ".rpg")
  string_to_file rpg_name, join_path(data_dir, "ohrrpgce_arguments.txt")
  
  'Delete the midi soundfont if it is unused

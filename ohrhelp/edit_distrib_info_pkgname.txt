@@ -3,3 +3,6 @@ You are editing the package name. This will be the filename of your distribution
 Keep it simple!
 
 It is usually a good idea to leave this the same as your RPG file name.
+
+
+Note that if you use the "run game" scripting command to switch between multiple rpg files you should not change the package name to be different than the rpg name, as it will break rpg file switching.
