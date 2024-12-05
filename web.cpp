@@ -23,7 +23,7 @@ void sync_from_indexdb_done(){
 void web_mount_persistent_storage(const char *foldername) {
   sync_from_indexdb_pending = true;
   EM_ASM_({
-    var persistDir = UTF8ToString($0);
+    var persistDir = AsciiToString($0);
     var pathInfo = FS.analyzePath(persistDir);
     var isMounted = (pathInfo.object != null && pathInfo.object.mount.mountpoint == persistDir);
     
@@ -80,7 +80,7 @@ void web_unmount_persistent_storage(const char *foldername) {
   }
   
   EM_ASM_({
-    var persistDir = UTF8ToString($0);
+    var persistDir = AsciiToString($0);
     var pathInfo = FS.analyzePath(persistDir);
     var isMounted = (pathInfo.object != null && pathInfo.object.mount.mountpoint == persistDir);
 
