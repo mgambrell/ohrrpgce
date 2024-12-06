@@ -8597,6 +8597,11 @@ SUB set_game_config_globals(sourcerpg as string)
  'Custom doesn't save anything in prefsdir, don't bother creating it
 #IFDEF IS_GAME
  IF NOT isdir(prefsdir) THEN makedir prefsdir
+
+#IFDEF __FB_JS__
+ web_mount_persistent_storage(prefsdir)
+#ENDIF
+
 #ENDIF
  IF LEN(app_resources_dir) ANDALSO trimfilename(sourcerpg) = app_resources_dir THEN
   'On Mac, if running a game bundled in the .app look next to the .app

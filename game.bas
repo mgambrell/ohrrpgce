@@ -1074,6 +1074,7 @@ SUB reset_game_final_cleanup()
 
 #IFDEF __FB_JS__
 web_unmount_persistent_storage(savedir)
+web_unmount_persistent_storage(prefsdir)
 #ENDIF
 
  ' This sticky bit is cleared when returning to the file browser
