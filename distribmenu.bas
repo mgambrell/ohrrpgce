@@ -380,7 +380,6 @@ SUB DistribMenu.itch_io_menu ()
   defunselectable " In itch.io website you will need to manually set:"
   defunselectable "  Kind of project: HTML"
   defunselectable "  Click ""this file will be played in the browser"" on " & distinfo.pkgname & "-web.zip"
-  defunselectable " (Save slots are deleted when browser tab closes)"
  END IF
 
  IF butler_logged_in THEN
