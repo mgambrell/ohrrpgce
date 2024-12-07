@@ -2361,7 +2361,6 @@ FUNCTION add_steamworks_lib(libname as string, destdir as string) as string
 END FUNCTION
 
 FUNCTION distribute_game_as_web_zip (dest_override as string = "") as string
- IF dist_yesno("Warning: The web port does not currently support persistent save games. Save slots are deleted when the browser tab closes. Continue anyway?", YES, NO) = NO THEN RETURN ""
  RETURN package_game("", "$pkgname-web.zip", dest_override, NO, @gather_files_for_web)
 END FUNCTION
 
