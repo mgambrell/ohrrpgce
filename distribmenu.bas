@@ -380,6 +380,10 @@ SUB DistribMenu.itch_io_menu ()
   defunselectable " In itch.io website you will need to manually set:"
   defunselectable "  Kind of project: HTML"
   defunselectable "  Click ""this file will be played in the browser"" on " & distinfo.pkgname & "-web.zip"
+  defunselectable "  If you see ""Failed to find index.html"" error on first play,"
+  defunselectable "  go and click ""this file will be played in the browser"" again."
+  defunselectable "  itch.io seems to have a bug where the wrong file zip gets"
+  defunselectable "  selected the first time you choose that option."
  END IF
 
  IF butler_logged_in THEN
