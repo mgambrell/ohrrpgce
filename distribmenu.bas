@@ -189,7 +189,7 @@ SUB DistribMenu.toplevel_menu()
   defunselectable " (requires ar+tar+gzip)"
  END IF
 
- IF defitem_act("Export Web Browser .zip (EXPERIMENTAL)") THEN presave : distribute_game_as_web_zip
+ IF defitem_act("Export Web Browser .zip") THEN presave : distribute_game_as_web_zip
 
  IF defitem_act("Upload this game to itch.io...") THEN enter_submenu "itch_io"
  IF defitem_act("Package for Steam...") THEN enter_submenu "steam"
@@ -374,7 +374,7 @@ SUB DistribMenu.itch_io_menu ()
  caption_default_or_str "<defaults to package name>"
  IF edited THEN valuestr = sanitize_url_chunk(valuestr)
  
- defbool "Also upload experimental web build:", distinfo.itch_upload_web
+ defbool "Also upload web build:", distinfo.itch_upload_web
  captions_bool "No", "Yes"
  IF distinfo.itch_upload_web THEN
   defunselectable " In itch.io website you will need to manually set:"
