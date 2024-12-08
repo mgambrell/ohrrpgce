@@ -3406,6 +3406,11 @@ END FUNCTION
 ' Would return NO to indicate failure (e.g. no web browser installed), but we might
 ' not detect failure on some platforms. Definitely no error for a bad URL.
 FUNCTION open_document (file_or_url as string) as bool
+ #IFDEF __FB_JS__
+ web_open_url file_or_url
+ RETURN YES 'Don't bother trying to check if it worked
+ #ELSE
+
  #IFDEF __FB_WIN32__
   ' safe_shell "START """ & file_or_url & """"
 
@@ -3427,12 +3432,16 @@ FUNCTION open_document (file_or_url as string) as bool
    'xdg-open is part of freedesktop.org so will be present on almost every Linux
    'distro with a WM, and Exists on at least some BSDs too.
    exitcode = safe_shell("xdg-open '" & file_or_url & "'")
+   
+  'End else Mac
   #ENDIF
 
   IF exitcode = 0 THEN RETURN YES
   visible_debug "Couldn't open " & file_or_url
   RETURN NO
-
+ 'End else Windows
+ #ENDIF
+ 'End else JS
  #ENDIF
 END FUNCTION
 

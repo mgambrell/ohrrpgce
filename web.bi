@@ -14,6 +14,9 @@ declare sub web_mount_persistent_storage(byval foldername as zstring ptr)
 declare sub web_sync_persistent_storage()
 declare sub web_unmount_persistent_storage(byval foldername as zstring ptr)
 
+'Don't call this one directly, use url_open() instead.
+declare sub web_open_url(byval url as zstring ptr)
+
 end extern
 
 #endif

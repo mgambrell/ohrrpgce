@@ -94,4 +94,13 @@ void web_unmount_persistent_storage(const char *foldername) {
   }, foldername);
 }
 
+void web_open_url(const char *url){
+  // The Browser's pop-up blocker might not allow this, but at least it will probably notify the user
+  // and give them the option to permit it.
+  EM_ASM_({
+    var url = AsciiToString($0);
+    window.open(url, "_blank");
+  }, url);
+}
+
 } // end extern "C"
