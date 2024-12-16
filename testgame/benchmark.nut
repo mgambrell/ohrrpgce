@@ -5,6 +5,7 @@
 
 NUM_RUNS <- 100
 MICRO_LOOPCOUNT <- 1000
+IS_QUIRREL <- _version_.find("Quirrel") != null)  //string.contains only in Quirrel
 
 
 /****** Helper functions ******/
@@ -374,7 +375,7 @@ function run_benchmark(script, loops, scoremult = 1, init_func = null) {
         times.append(clock() - timing)
     }
 
-    if (_version_.contains("Quirrel"))
+    if (IS_QUIRREL)
         // Quirrel
         printnl(script.getfuncinfos().name)
     else
