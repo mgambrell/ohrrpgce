@@ -478,10 +478,11 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
  '--decrement the animation wait ticks, and don't proceed until they are zero
  IF bat.wait_frames > 0 THEN bat.wait_frames -= 1: IF bat.wait_frames > 0 THEN EXIT SUB
  
- '--special handling when we are waiting for all motion to stop
+ '--anim_waitforall called? We are waiting for all motion to stop
  IF bat.wait_frames = -1 THEN
-  FOR i = 0 TO 23
-   IF bslot(i).xmov <> 0 OR bslot(i).ymov <> 0 OR bslot(i).zmov <> 0 THEN EXIT SUB
+  FOR i = 0 TO UBOUND(bslot)
+   'NULL slices are OK
+   IF SliceIsMoving(bslot(i).sl) ORELSE SliceIsMoving(bslot(i).sprite) THEN EXIT SUB
   NEXT i
  END IF
  bat.wait_frames = 0
@@ -492,7 +493,9 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
  DIM ww as integer
  DIM w1 as integer
  DIM w2 as integer
- 
+ DIM moveticks as XYPair
+ DIM speed as XYPair
+
  DO: 'INTERPRET THE ANIMATION SCRIPT
   act = popdw
   SELECT CASE act
@@ -515,10 +518,12 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
     bat.atk.id = -1
    CASE 2 'setmove(who,xticks,yticks,xstep,ystep)
     ww = popdw
-    bslot(ww).xmov = popdw
-    bslot(ww).ymov = popdw
-    bslot(ww).xspeed = popdw
-    bslot(ww).yspeed = popdw
+    moveticks.x = popdw
+    moveticks.y = popdw
+    speed.x = popdw
+    speed.y = popdw
+    bslot(ww).set_vel_x speed.x, moveticks.x
+    bslot(ww).set_vel_y speed.y, moveticks.y
    CASE 3 'setpos(who,x,y,d)
     ww = popdw
     bslot(ww).x = popdw
@@ -542,13 +547,12 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
     DIM destpos as XYPair
     destpos.x = popdw
     destpos.y = popdw
-    DIM moveticks as XYPair
     moveticks.x = popdw
     moveticks.y = popdw
-    bslot(ww).xspeed = (destpos.x - bslot(ww).x) / moveticks.x
-    bslot(ww).yspeed = (destpos.y - bslot(ww).y) / moveticks.y
-    bslot(ww).xmov = moveticks.x
-    bslot(ww).ymov = moveticks.y
+    'Warning: won't reach destpos exactly due to rounding error.
+    'Can't use SetSliceTarg since x/y ticks may differ
+    bslot(ww).set_vel_x (destpos.x - bslot(ww).x) / moveticks.x, moveticks.x
+    bslot(ww).set_vel_y (destpos.y - bslot(ww).y) / moveticks.y, moveticks.y
    CASE 9 'waitforall()
     bat.wait_frames = -1
    CASE 10 'inflict(targ, target_count)
@@ -568,8 +572,9 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
     IF is_hero(ww) THEN bslot(ww).walk XOR= 1
    CASE 15 'zmove(who,zticks,zstep)
     ww = popdw
-    bslot(ww).zmov = popdw
-    bslot(ww).zspeed = popdw
+    DIM as integer zmov = popdw
+    DIM as integer zspeed = popdw
+    bslot(ww).set_vel_z zspeed, zmov
    CASE 16 'sound(which)
     DIM soundnum as integer = popdw
     stopsfx(soundnum)  'Restart the sound effect
@@ -612,14 +617,15 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
    DIM movedist as XYPair
    movedist.x = popdw
    movedist.y = popdw
-   DIM moveticks as XYPair
    moveticks.x = popdw
    moveticks.y = popdw
    with bslot(ww)
-    if moveticks.x <> 0 then .xspeed = movedist.x / moveticks.x else .xspeed = 0
-    if moveticks.y <> 0 then .yspeed = movedist.y / moveticks.y else .yspeed = 0
-    .xmov = moveticks.x
-    .ymov = moveticks.y
+    'Warning: won't move exactly movedist due to rounding error.
+    'Can't use SetSliceTarg since x/y ticks may differ
+    if moveticks.x <> 0 then speed.x = movedist.x / moveticks.x else speed.x = 0
+    if moveticks.y <> 0 then speed.y = movedist.y / moveticks.y else speed.y = 0
+    .set_vel_x speed.x, moveticks.x
+    .set_vel_y speed.y, moveticks.y
    end with
   CASE 21 'setdir(who, d)
    ww = popdw
@@ -651,8 +657,10 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
    ww = popdw
    DIM destz as integer = popdw
    DIM moveticks as integer = popdw
-   bslot(ww).zspeed = (destz - bslot(ww).z) / moveticks
-   bslot(ww).zmov = moveticks
+   'bslot(ww).set_vel_z (destz - bslot(ww).z) / moveticks, moveticks
+   IF bslot(ww).sprite THEN
+    SetSliceTarg bslot(ww).sprite, 0, -destz * SGN(moveticks), ABS(moveticks)
+   END IF
   CASE 25 'anim_checkpoint
     IF autotestmode THEN write_checkpoint
   CASE 26 'hide(who)
@@ -1373,13 +1381,7 @@ SUB battle_animate(byref bat as BattleState, bslot() as BattleSprite, st() as He
   END IF
  NEXT i
  '--Then apply movement forces for all things, heroes, enemies, attacks, weapons
- FOR i = 0 TO 23
-  WITH bslot(i)
-   IF .xmov <> 0 THEN .x = .x + (.xspeed * SGN(.xmov)): .xmov = .xmov - SGN(.xmov)
-   IF .ymov <> 0 THEN .y = .y + (.yspeed * SGN(.ymov)): .ymov = .ymov - SGN(.ymov)
-   IF .zmov <> 0 THEN .z = .z + (.zspeed * SGN(.zmov)): .zmov = .zmov - SGN(.zmov)
-  END WITH
- NEXT i
+ AdvanceSlice bat.root_sl
  '--then, stuff that only attacks can do
  FOR i = 12 TO 23 '--for each attack sprite
   IF bslot(i).vis THEN
@@ -3225,8 +3227,7 @@ SUB flinch_anim_eachtick(byval who as integer, bslot() as BattleSprite)
   IF .flinch_anim = 3 THEN
    DIM flinch_x_dist as integer = IIF(is_enemy(who), 3, -3)
    'anim_setmove who, flinch_x_dist, 0, 2, 0
-   .xmov = flinch_x_dist  'xticks
-   .xspeed = 2  'xstep
+   .set_vel_x 2, flinch_x_dist
    'anim_setframe who, frameSTAND
    .frame = frameSTAND
    IF is_hero(who) THEN .walk = 0
@@ -5508,8 +5509,7 @@ SUB battle_animate_running_away (bslot() as BattleSprite)
   IF gam.hero(i).id >= 0 ANDALSO bslot(i).stat.cur.hp > 0 THEN
    WITH bslot(i)
     IF .vis THEN
-     .xmov = 10
-     .xspeed = 6
+     .set_vel_x 6, 10
      .walk = 1
      .d = 1
     END IF

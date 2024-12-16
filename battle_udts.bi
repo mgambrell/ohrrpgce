@@ -69,14 +69,12 @@ TYPE BattleSprite
   DECLARE PROPERTY frame() as integer
   DECLARE PROPERTY frame(fr as integer)
 
+  DECLARE SUB set_vel_x(xspeed as integer, xticks as integer)
+  DECLARE SUB set_vel_y(yspeed as integer, yticks as integer)
+  DECLARE SUB set_vel_z(zspeed as integer, zticks as integer)
+
   basepos as XYPair
   d as integer
-  xmov as integer
-  ymov as integer
-  zmov as integer
-  xspeed as integer
-  yspeed as integer
-  zspeed as integer
   vis as bool   'Roughly, but not exactly, liveness:
                 'For combatants: Is alive (or dying interruptted).
                 '  Gets set to YES while an enemy is performing an on-death attack.

@@ -93,6 +93,29 @@ PROPERTY BattleSprite.frame(fr as integer)
  IF sprite THEN ChangeSpriteSlice sprite, , , , fr
 END PROPERTY
 
+' For ABS(xticks) ticks, move xspeed (aka xstep) pixels in the direction SGN(xticks)
+' TODO: move the sign bit from xticks to xspeed
+SUB BattleSprite.set_vel_x(xspeed as integer, xticks as integer)
+ IF sl THEN
+  sl->Velocity.X = xspeed * SGN(xticks)
+  sl->VelTicks.X = ABS(xticks)
+ END IF
+END SUB
+
+SUB BattleSprite.set_vel_y(yspeed as integer, yticks as integer)
+ IF sl THEN
+  sl->Velocity.Y = yspeed * SGN(yticks)
+  sl->VelTicks.Y = ABS(yticks)
+ END IF
+END SUB
+
+SUB BattleSprite.set_vel_z(zspeed as integer, zticks as integer)
+ IF sprite THEN
+  sprite->Velocity.Y = -zspeed * SGN(zticks)
+  sprite->VelTicks.Y = ABS(zticks)
+ END IF
+END SUB
+
 FUNCTION BattleSprite.deathtime() as integer
  IF _deathtime <= 0 THEN RETURN default_dissolve_time(deathtype, w, h)
  RETURN _deathtime
