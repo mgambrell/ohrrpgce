@@ -493,7 +493,7 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
  DIM ww as integer
  DIM w1 as integer
  DIM w2 as integer
- DIM moveticks as XYPair
+ DIM ticks as integer
  DIM speed as XYPair
 
  DO: 'INTERPRET THE ANIMATION SCRIPT
@@ -516,11 +516,11 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
      formdata.slots(i).pos = bslot(4 + i).pos
     NEXT i
     bat.atk.id = -1
-   CASE 2 'setmove(who,ticks,xstep,ystep)  (ticks is positive)
+   CASE 2 'setmove(who,xstep,ystep,ticks)
     ww = popdw
-    DIM ticks as integer = popdw
     speed.x = popdw
     speed.y = popdw
+    ticks = popdw
     bslot(ww).set_vel_x speed.x, ticks
     bslot(ww).set_vel_y speed.y, ticks
    CASE 3 'setpos(who,x,y,d)
@@ -541,14 +541,14 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
     DIM fr as integer = popdw
     bslot(ww).frame = fr
     IF is_hero(ww) THEN bslot(ww).walk = 0
-   CASE 8 'absmove(who,x,y,ticks)  (ticks is positive)
+   CASE 8 'absmove(who,x,y,ticks)
     ww = popdw
     DIM destpos as XYPair
     destpos.x = popdw
     destpos.y = popdw
-    DIM ticks as integer = popdw
-    'bslot(ww).set_vel_x (destpos.x - bslot(ww).x) / moveticks.x, moveticks.x
-    'bslot(ww).set_vel_y (destpos.y - bslot(ww).y) / moveticks.y, moveticks.y
+    ticks = popdw
+    'bslot(ww).set_vel_x (destpos.x - bslot(ww).x) / ticks, ticks
+    'bslot(ww).set_vel_y (destpos.y - bslot(ww).y) / ticks, ticks
     IF bslot(ww).sl THEN
      SetSliceTarg bslot(ww).sl, destpos.x, destpos.y, ticks
     END IF
@@ -569,11 +569,11 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
     ww = popdw
     bslot(ww).frame = frameSTAND
     IF is_hero(ww) THEN bslot(ww).walk XOR= 1
-   CASE 15 'zmove(who,zticks,zstep)
+   CASE 15 'zmove(who,zstep,zticks)
     ww = popdw
-    DIM as integer zmov = popdw
     DIM as integer zspeed = popdw
-    bslot(ww).set_vel_z zspeed, zmov
+    ticks = popdw
+    bslot(ww).set_vel_z zspeed, ticks
    CASE 16 'sound(which)
     DIM soundnum as integer = popdw
     stopsfx(soundnum)  'Restart the sound effect
@@ -651,10 +651,10 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
   CASE 24 'anim_abszmove(who,z,zticks)
    ww = popdw
    DIM destz as integer = popdw
-   DIM moveticks as integer = popdw
-   'bslot(ww).set_vel_z (destz - bslot(ww).z) / moveticks, moveticks
+   ticks = popdw
+   'bslot(ww).set_vel_z (destz - bslot(ww).z) / ticks, ticks
    IF bslot(ww).sprite THEN
-    SetSliceTarg bslot(ww).sprite, 0, -destz * SGN(moveticks), ABS(moveticks)
+    SetSliceTarg bslot(ww).sprite, 0, -destz, ticks
    END IF
   CASE 25 'anim_checkpoint
     IF autotestmode THEN write_checkpoint
@@ -3121,8 +3121,8 @@ SUB anim_unhide(byval who as integer)
 END SUB
 
 ' For `ticks` ticks, move at velocity XY(xstep,ystep)
-SUB anim_setmove(who as integer, ticks as integer, xstep as integer, ystep as integer)
- pushdw 2: pushdw who: pushdw ticks: pushdw xstep: pushdw ystep
+SUB anim_setmove(who as integer, xstep as integer, ystep as integer, ticks as integer)
+ pushdw 2: pushdw who: pushdw xstep: pushdw ystep: pushdw ticks
 END SUB
 
 ' Move to an XY position in `ticks` ticks
@@ -3130,14 +3130,14 @@ SUB anim_absmove(byval who as integer, byval tox as integer, byval toy as intege
  pushdw 8: pushdw who: pushdw tox: pushdw toy: pushdw ticks
 END SUB
 
-' Move to an Z position in ABS(zticks) ticks.
+' Move to an Z position in zticks ticks.
 SUB anim_abszmove(byval who as integer, byval toz as integer, byval zticks as integer)
  pushdw 24: pushdw who: pushdw toz: pushdw zticks
 END SUB
 
-' For ABS(zticks) ticks, move zstep pixels in the direction SGN(zticks)
-SUB anim_zmove(byval who as integer, byval zticks as integer, byval zstep as integer)
- pushdw 15: pushdw who: pushdw zticks: pushdw zstep
+' For zticks ticks, move zstep pixels/tick
+SUB anim_zmove(byval who as integer, byval zstep as integer, byval zticks as integer)
+ pushdw 15: pushdw who: pushdw zstep: pushdw zticks
 END SUB
 
 SUB anim_wait(byval ticks as integer)
@@ -3200,7 +3200,7 @@ SUB anim_flinchstart(byval who as integer, bslot() as BattleSprite, byref attack
  '--If enemy can flinch and if attack allows flinching
  IF bslot(who).never_flinch = NO AND attack.targ_does_not_flinch = NO THEN
   DIM xvelocity as integer = IIF(is_enemy(who), -2, 2)
-  anim_setmove who, 3, xvelocity, 0
+  anim_setmove who, xvelocity, 0, 3
   IF is_hero(who) THEN
    IF attack.cure_instead_of_harm = NO THEN
     '--Show Harmed frame
@@ -3219,7 +3219,7 @@ SUB flinch_anim_eachtick(byval who as integer, bslot() as BattleSprite)
   'After 3 ticks we start the slide back to the initial position
   IF .flinch_anim = 3 THEN
    DIM xvelocity as integer = IIF(is_enemy(who), 2, -2)
-   'anim_setmove who, 3, xvelocity, 0
+   'anim_setmove who, xvelocity, 0, 3
    .set_vel_x xvelocity, 3
    'anim_setframe who, frameSTAND
    .frame = frameSTAND
@@ -4445,7 +4445,7 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
      anim_absmove 12 + i, targetpos.x - bslot(t(i)).w, targetpos.y, 3
     END IF
     IF attack.attack_anim = atkAnimDrop THEN
-     anim_zmove 12 + i, -drop_ticks, drop_speed
+     anim_zmove 12 + i, -drop_speed, drop_ticks
     END IF
     IF attack.attack_anim = atkAnimScatter THEN
      ' Move to a random point
@@ -4603,7 +4603,7 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
      anim_abszmove 12 + i, projectile_start.z, 6
     END IF
     IF attack.attack_anim = atkAnimMeteor THEN
-     anim_zmove 12 + i, -meteor_ticks, meteor_speed
+     anim_zmove 12 + i, -meteor_speed, meteor_ticks
     END IF
    NEXT i
    IF attack.sound_effect > 0 THEN anim_sound(attack.sound_effect - 1)
@@ -4779,7 +4779,7 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
    'Stagger the time each sprite starts to move
    FOR i = 0 TO 11
     anim_appear 12 + i
-    anim_setmove 12 + i, ticks, x_velocity, 0
+    anim_setmove 12 + i, x_velocity, 0, ticks
     anim_wait 1
    NEXT i
    anim_checkpoint

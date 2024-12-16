@@ -93,26 +93,25 @@ PROPERTY BattleSprite.frame(fr as integer)
  IF sprite THEN ChangeSpriteSlice sprite, , , , fr
 END PROPERTY
 
-' For ABS(xticks) ticks, move xspeed (aka xstep) pixels in the direction SGN(xticks)
-' TODO: move the sign bit from xticks to xspeed
+' For xticks ticks, move xspeed pixels/tick
 SUB BattleSprite.set_vel_x(xspeed as integer, xticks as integer)
  IF sl THEN
-  sl->Velocity.X = xspeed * SGN(xticks)
-  sl->VelTicks.X = ABS(xticks)
+  sl->Velocity.X = xspeed
+  sl->VelTicks.X = xticks
  END IF
 END SUB
 
 SUB BattleSprite.set_vel_y(yspeed as integer, yticks as integer)
  IF sl THEN
-  sl->Velocity.Y = yspeed * SGN(yticks)
-  sl->VelTicks.Y = ABS(yticks)
+  sl->Velocity.Y = yspeed
+  sl->VelTicks.Y = yticks
  END IF
 END SUB
 
 SUB BattleSprite.set_vel_z(zspeed as integer, zticks as integer)
  IF sprite THEN
-  sprite->Velocity.Y = -zspeed * SGN(zticks)
-  sprite->VelTicks.Y = ABS(zticks)
+  sprite->Velocity.Y = -zspeed
+  sprite->VelTicks.Y = zticks
  END IF
 END SUB
 
@@ -1480,7 +1479,7 @@ SUB anim_advance (byval who as integer, attack as AttackData, bslot() as BattleS
   IF is_hero(who) THEN
    ' Walk forward 20 pixels
    anim_walktoggle who
-   anim_setmove who, 5, -4, 0
+   anim_setmove who, -4, 0, 5
    anim_waitforall
   END IF
 
@@ -1559,7 +1558,7 @@ SUB anim_hero (byval who as integer, attack as AttackData, bslot() as BattleSpri
   CASE atkrAnimJump
    anim_setframe who, frameJUMP
    anim_relmove who, -26, 0, 13
-   anim_zmove who, 13, 18
+   anim_zmove who, 18, 13
    anim_waitforall
    anim_hide who
    anim_setframe who, frameSTAND
@@ -1570,7 +1569,7 @@ SUB anim_hero (byval who as integer, attack as AttackData, bslot() as BattleSpri
    anim_unhide who
    anim_setcenter who, t(0), 0, 0
    anim_align who, t(0), dirDown, 0
-   anim_zmove who, -10, 20
+   anim_zmove who, -20, 10
    anim_waitforall
    anim_setframe who, frameHURT
 
@@ -1615,14 +1614,14 @@ SUB anim_enemy (byval who as integer, attack as AttackData, bslot() as BattleSpr
   NEXT ii
  CASE atkrAnimJump
   anim_absmove who, bslot(who).x + 50, bslot(who).y, 7
-  anim_zmove who, 10, 20
+  anim_zmove who, 20, 10
   anim_waitforall
   anim_hide who
  CASE atkrAnimLand
   anim_setz who, 200
   anim_unhide who
   anim_setpos who, bslot(t(0)).x, bslot(t(0)).y, 0
-  anim_zmove who, -10, 20
+  anim_zmove who, -20, 10
   anim_waitforall
  CASE atkrAnimRunAndHide
   anim_setdir who, 1
@@ -1657,7 +1656,7 @@ SUB anim_retreat (byval who as integer, attack as AttackData, bslot() as BattleS
   CASE atkrAnimStrike, atkrAnimCast
    ' Walk back 20 pixels
    anim_walktoggle who
-   anim_setmove who, 5, 4, 0
+   anim_setmove who, 4, 0, 5
    anim_waitforall
    anim_setframe who, frameSTAND
   CASE atkrAnimDashIn, atkrAnimLand
