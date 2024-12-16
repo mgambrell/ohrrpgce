@@ -5,7 +5,12 @@
 
 NUM_RUNS <- 100
 MICRO_LOOPCOUNT <- 1000
-IS_QUIRREL <- _version_.find("Quirrel") != null)  //string.contains only in Quirrel
+IS_QUIRREL <- true
+try {
+    "string".contains
+} catch(x) {
+    IS_QUIRREL = false
+}
 
 
 /****** Helper functions ******/
