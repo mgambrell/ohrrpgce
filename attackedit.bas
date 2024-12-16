@@ -2038,7 +2038,6 @@ SUB attack_editor_build_appearance_menu(recbuf() as integer, workmenu() as integ
   DIM anim as integer = recbuf(AtkDatAnimAttacker)
   IF     anim = atkrAnimStrike _
   ORELSE anim = atkrAnimDashIn _
-  ORELSE anim = atkrAnimSpinStrike _
   ORELSE anim = atkrAnimTeleport _
   ORELSE anim = atkrAnimStandingStrike _
   THEN
