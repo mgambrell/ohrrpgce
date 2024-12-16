@@ -1480,7 +1480,7 @@ SUB anim_advance (byval who as integer, attack as AttackData, bslot() as BattleS
   IF is_hero(who) THEN
    ' Walk forward 20 pixels
    anim_walktoggle who
-   anim_setmove who, -5, 0, 4, 0
+   anim_setmove who, 5, -4, 0
    anim_waitforall
   END IF
 
@@ -1489,9 +1489,9 @@ SUB anim_advance (byval who as integer, attack as AttackData, bslot() as BattleS
   IF t(0) = who THEN EXIT SUB
   anim_walktoggle who
   IF is_enemy(who) THEN
-   anim_absmove who, target->x - bslot(who).w, target->y + target->h - bslot(who).h + 2, 6, 6
+   anim_absmove who, target->x - bslot(who).w, target->y + target->h - bslot(who).h + 2, 6
   ELSE
-   anim_absmove who, target->x + target->w, target->y + target->h - bslot(who).h + 2, 6, 6
+   anim_absmove who, target->x + target->w, target->y + target->h - bslot(who).h + 2, 6
   END IF
   anim_waitforall
  
@@ -1558,7 +1558,7 @@ SUB anim_hero (byval who as integer, attack as AttackData, bslot() as BattleSpri
 
   CASE atkrAnimJump
    anim_setframe who, frameJUMP
-   anim_relmove who, -26, 0, 13, 0
+   anim_relmove who, -26, 0, 13
    anim_zmove who, 13, 18
    anim_waitforall
    anim_hide who
@@ -1577,7 +1577,7 @@ SUB anim_hero (byval who as integer, attack as AttackData, bslot() as BattleSpri
   CASE atkrAnimRunAndHide
    anim_setframe who, frameJUMP
    anim_setdir who, 1
-   anim_absmove who, 320 + bslot(t(0)).w / 2, bslot(t(0)).y, 10, 1
+   anim_absmove who, 320 + bslot(t(0)).w / 2, bslot(t(0)).y, 10
    anim_waitforall
    anim_hide who
    anim_setframe who, frameSTAND
@@ -1588,7 +1588,7 @@ SUB anim_hero (byval who as integer, attack as AttackData, bslot() as BattleSpri
    anim_setpos who, 320 + bslot(t(0)).w / 2, bslot(t(0)).y, 0
    anim_setframe who, frameSTAND
    anim_unhide who
-   anim_absmove who, bslot(t(0)).x, bslot(t(0)).y, 10, 1
+   anim_absmove who, bslot(t(0)).x, bslot(t(0)).y, 10
    anim_waitforall
 
   CASE atkrAnimNull
@@ -1614,7 +1614,7 @@ SUB anim_enemy (byval who as integer, attack as AttackData, bslot() as BattleSpr
    anim_wait 1
   NEXT ii
  CASE atkrAnimJump
-  anim_absmove who, bslot(who).x + 50, bslot(who).y, 7, 7
+  anim_absmove who, bslot(who).x + 50, bslot(who).y, 7
   anim_zmove who, 10, 20
   anim_waitforall
   anim_hide who
@@ -1626,7 +1626,7 @@ SUB anim_enemy (byval who as integer, attack as AttackData, bslot() as BattleSpr
   anim_waitforall
  CASE atkrAnimRunAndHide
   anim_setdir who, 1
-  anim_absmove who, 0 - bslot(t(0)).w / 2, bslot(t(0)).y, 10, 1
+  anim_absmove who, 0 - bslot(t(0)).w / 2, bslot(t(0)).y, 10
   anim_waitforall
   anim_hide who
   anim_setdir who, 0
@@ -1634,7 +1634,7 @@ SUB anim_enemy (byval who as integer, attack as AttackData, bslot() as BattleSpr
   anim_setz who, 0
   anim_setpos who, 0 - bslot(t(0)).w / 2, bslot(t(0)).y, 0
   anim_unhide who
-  anim_absmove who, bslot(t(0)).x, bslot(t(0)).y, 10, 1
+  anim_absmove who, bslot(t(0)).x, bslot(t(0)).y, 10
   anim_waitforall
  CASE atkrAnimDashIn, atkrAnimNull, atkrAnimStandingCast, atkrAnimTeleport, atkrAnimStandingStrike
   ' nothing
@@ -1647,7 +1647,7 @@ SUB anim_retreat (byval who as integer, attack as AttackData, bslot() as BattleS
  IF is_enemy(who) THEN
   IF attack.attacker_anim = atkrAnimDashIn OR attack.attacker_anim = atkrAnimLand THEN
    anim_setz who, 0
-   anim_absmove who, bslot(who).x, bslot(who).y, 6, 6
+   anim_absmove who, bslot(who).x, bslot(who).y, 6
    anim_waitforall
   END IF
  END IF
@@ -1657,14 +1657,14 @@ SUB anim_retreat (byval who as integer, attack as AttackData, bslot() as BattleS
   CASE atkrAnimStrike, atkrAnimCast
    ' Walk back 20 pixels
    anim_walktoggle who
-   anim_setmove who, 5, 0, 4, 0
+   anim_setmove who, 5, 4, 0
    anim_waitforall
    anim_setframe who, frameSTAND
   CASE atkrAnimDashIn, atkrAnimLand
    anim_setframe who, frameSTAND
    anim_walktoggle who
    anim_setz who, 0
-   anim_absmove who, bslot(who).x, bslot(who).y, 6, 6
+   anim_absmove who, bslot(who).x, bslot(who).y, 6
    anim_waitforall
    anim_setframe who, frameSTAND
   CASE atkrAnimStandingCast, atkrAnimStandingStrike
