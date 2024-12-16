@@ -564,7 +564,7 @@ SUB process_wait_conditions()
      DIM sl as Slice ptr
      sl = get_handle_slice(.waitarg, serrWarn)
      IF sl THEN
-      IF sl->Velocity = 0 ANDALSO sl->TargTicks = 0 THEN
+      IF SliceIsMoving(sl) = NO THEN
        script_stop_waiting()
       END IF
      ELSE
@@ -3322,11 +3322,7 @@ SUB script_commands(byval cmdid as integer)
  CASE 509'--slice is moving
   sl = get_arg_slice(0)
   IF sl THEN
-   WITH *sl
-    IF .Velocity.X <> 0 ORELSE .Velocity.Y <> 0 ORELSE .TargTicks > 0 THEN
-     scriptret = 1
-    END IF
-   END WITH
+   IF SliceIsMoving(sl) THEN scriptret = 1
   END IF
  CASE 510 '--create ellipse
   sl = NewSliceOfType(slEllipse, SliceTable.scriptsprite)

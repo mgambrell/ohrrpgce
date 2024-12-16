@@ -645,6 +645,7 @@ DECLARE Sub DrawSlice(byval s as slice ptr, byval page as integer)
 DECLARE Sub DrawSliceAt(byval s as slice ptr, byval x as integer, byval y as integer, byval w as integer = 100, byval h as integer = 100, byval page as integer, byval ignore_offset as bool = NO)
 
 DECLARE Sub SetSliceTarg(byval s as slice ptr, byval x as integer, byval y as integer, byval ticks as integer)
+DECLARE Function SliceIsMoving(byval sl as Slice ptr) as bool
 DECLARE Sub AdvanceSlice(byval s as slice ptr)
 
 DECLARE Sub InsertSliceBefore(byval sl as slice ptr, byval newsl as slice ptr)
