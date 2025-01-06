@@ -30,6 +30,8 @@ WHAT IS NEW?
       is passed to "Test Game" also [James]
     * An attack which tries to decrease a stat that's below zero no longer
       increases it to zero (it keeps it unchanged) [Ralph]
+    * The hero-picker menu now automatically gets taller to accomidate
+      tall hero sprites [James]
   
 
 October 28 2024 [Ichorescent]
