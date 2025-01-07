@@ -664,6 +664,7 @@ Enum AttackTagConditionEnum
 	atktagOnHit = 2
 	atktagOnMiss = 3
 	atktagOnKill = 4
+	atktagOnTargettingFailed = 5
 End Enum
 
 Type AttackDataTag
@@ -834,7 +835,8 @@ Type AttackData
 	ignore_extra_hits as bool
 	erase_rewards as bool
 	show_damage_without_inflicting as bool
-	store_targ as bool
+	add_store_targ as bool
+	replace_store_targ as bool
 	delete_stored_targs as bool
 	automatic_targ as bool
 	show_name as bool
@@ -1205,6 +1207,7 @@ TYPE DistribState
   copyright_year as string
   itch_user as string
   itch_gamename as string
+  itch_upload_web as bool
   steam_appid as integer
   omit_readme as bool
   omit_license as bool

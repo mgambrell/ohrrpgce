@@ -1,0 +1,23 @@
+This option uploads your game directly to itch.io
+
+You must create your itch.io account first. You will need to type your itch username, but the ohrrpgce never knows your password, that is handled with the browser.
+
+First create a project for your game in the itch.io dashboard.
+
+Game details and screenshots and options for selling or donating have to be set up in the itch.io website.
+
+
+This menu will simply upload the latest version of your game to the project you have already set up in itch.io
+
+
+
+= Experimental Web Build =
+
+
+The web build is experimental. Currently, save slots are deleted when the browser window is closed.
+
+
+You must change your project type from "Downloadable" to "HTML"
+
+
+After the first time you have uploaded your game from this menu, you should mark gamename-web.zip as "this file will be played in the browser"

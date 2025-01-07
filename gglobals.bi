@@ -29,6 +29,7 @@ EXTERN modified_lumps as string vector
 EXTERN lump_reloading as LumpReloadOptions
 EXTERN force_prefsdir_save as bool
 EXTERN persist_reld_doc as DocPtr
+EXTERN disable_exit as bool
 
 'Game state globals
 EXTERN gam as GameState

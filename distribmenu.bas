@@ -93,7 +93,7 @@ DECLARE FUNCTION fix_mac_app_executable_bit_on_windows(zipfile as string, exec_p
 DECLARE SUB dist_basicstatus (s as string)
 DECLARE FUNCTION extract_web_data_files(js_file as string, data_file as string, output_dir as string) as bool
 DECLARE FUNCTION recreate_web_data_file(js_file as string, data_file as string, from_dir as string) as bool
-DECLARE FUNCTION web_data_cleanup(output_dir as string) as bool
+DECLARE FUNCTION web_data_cleanup(basename as string, output_dir as string) as bool
 
 DECLARE SUB itch_io_options_menu()
 DECLARE FUNCTION itch_game_url(distinfo as DistribState) as string
@@ -189,7 +189,7 @@ SUB DistribMenu.toplevel_menu()
   defunselectable " (requires ar+tar+gzip)"
  END IF
 
- IF defitem_act("Export Web Browser .zip (EXPERIMENTAL)") THEN presave : distribute_game_as_web_zip
+ IF defitem_act("Export Web Browser .zip") THEN presave : distribute_game_as_web_zip
 
  IF defitem_act("Upload this game to itch.io...") THEN enter_submenu "itch_io"
  IF defitem_act("Package for Steam...") THEN enter_submenu "steam"
@@ -373,6 +373,18 @@ SUB DistribMenu.itch_io_menu ()
  defstr "itch.io game name:", distinfo.itch_gamename, 63
  caption_default_or_str "<defaults to package name>"
  IF edited THEN valuestr = sanitize_url_chunk(valuestr)
+ 
+ defbool "Also upload web build:", distinfo.itch_upload_web
+ captions_bool "No", "Yes"
+ IF distinfo.itch_upload_web THEN
+  defunselectable " In itch.io website you will need to manually set:"
+  defunselectable "  Kind of project: HTML"
+  defunselectable "  Click ""this file will be played in the browser"" on " & distinfo.pkgname & "-web.zip"
+  defunselectable "  If you see ""Failed to find index.html"" error on first play,"
+  defunselectable "  go and click ""this file will be played in the browser"" again."
+  defunselectable "  itch.io seems to have a bug where the wrong file zip gets"
+  defunselectable "  selected the first time you choose that option."
+ END IF
 
  IF butler_logged_in THEN
   IF defitem_act("Upload to itch.io now") THEN presave : itch_butler_upload(distinfo)
@@ -1513,7 +1525,7 @@ SUB write_debian_control_file(controlfile as string, basename as string, pkgver 
  PUT #fh, , "Installed-Size: " & size_in_kibibytes & LF
  'FIXME: the Depends: line could vary depending on gfx and music backends
  'This minimum libc version is taken from "scons portable=1" output (see nightly build logs)
- PUT #fh, , "Depends: libc6 (>= 2.14), libncurses5 (>= 5.4), libsdl2-mixer-2.0-0 (>= 2.0.1), libsdl2-2.0-0 (>= 2.0.5), libx11-6, libxext6, libxpm4, libxrandr2, libxrender1" & LF
+ PUT #fh, , "Depends: libc6 (>= 2.14), libsdl2-mixer-2.0-0 (>= 2.0.1), libsdl2-2.0-0 (>= 2.0.5), libx11-6, libxext6, libxpm4, libxrandr2, libxrender1" & LF
  IF LEN(website) > 0 THEN
   PUT #fh, , "Homepage: " & website & LF
  END IF
@@ -2270,26 +2282,45 @@ SUB itch_butler_upload(distinfo as DistribState)
  dist_basicstatus "Exporting for Linux..."
  DIM linux_tarball as string = distribute_game_as_linux_tarball("x86_64", itch_temp_dir)
  IF linux_tarball = "" THEN dist_info "Aborting itch.io upload" : EXIT SUB
+
+ DIM web_zip as string
+ IF distinfo.itch_upload_web THEN
+  dist_basicstatus "Exporting for Web..."
+  web_zip = distribute_game_as_web_zip(itch_temp_dir)
+  IF web_zip = "" THEN dist_info "Aborting itch.io upload" : EXIT SUB
+ END IF
+
  auto_choose_default = NO
 
  debuginfo "Upload exports with butler..."
+ dim did_which as string = ""
 
  dist_basicstatus "Upload " & itch_gametarg(distinfo) & " (Windows) ..."
  run_and_get_output butler & " push " & escape_filename(win_zip) & " " & target & ":windows", out_s, err_s
  IF itch_butler_error_check(out_s, err_s) THEN EXIT SUB
+ did_which &= "Windows"
 
  dist_basicstatus "Upload " & itch_gametarg(distinfo) & " (Mac) ..."
  run_and_get_output butler & " push " & escape_filename(mac_app) & " " & target & ":mac", out_s, err_s
  IF itch_butler_error_check(out_s, err_s) THEN EXIT SUB
+ did_which &= ", Mac"
 
  dist_basicstatus "Upload " & itch_gametarg(distinfo) & " (Linux) ..."
  run_and_get_output butler & " push " & escape_filename(linux_tarball) & " " & target & ":linux", out_s, err_s
  IF itch_butler_error_check(out_s, err_s) THEN EXIT SUB
+ did_which &= ", Linux"
+
+ IF distinfo.itch_upload_web THEN
+  dist_basicstatus "Upload " & itch_gametarg(distinfo) & " (Web) ..."
+  run_and_get_output butler & " push " & escape_filename(web_zip) & " " & target & ":web", out_s, err_s
+  IF itch_butler_error_check(out_s, err_s) THEN EXIT SUB
+  did_which &= ", Web"
+ END IF
 
  dist_basicstatus "Cleaning up temp files..."
  killdir itch_temp_dir
 
- dist_info "Upload of " & itch_gametarg(distinfo) & " to " & itch_game_url(distinfo) & " finished (Windows, Mac, Linux)"
+ dist_info "Upload of " & itch_gametarg(distinfo) & " to " & itch_game_url(distinfo) & " finished (" & did_which & ")"
 
 END SUB
 
@@ -2333,7 +2364,6 @@ FUNCTION add_steamworks_lib(libname as string, destdir as string) as string
 END FUNCTION
 
 FUNCTION distribute_game_as_web_zip (dest_override as string = "") as string
- IF dist_yesno("Warning: The web port does not currently support persistent save games. Save slots are deleted when the browser tab closes. Continue anyway?", YES, NO) = NO THEN RETURN ""
  RETURN package_game("", "$pkgname-web.zip", dest_override, NO, @gather_files_for_web)
 END FUNCTION
 
@@ -2352,7 +2382,7 @@ FUNCTION gather_files_for_web (buildname as string, basename as string, destdir 
   dist_info "ERROR: Failed to extract web data files" : RETURN NO
  END IF
  
- IF NOT web_data_cleanup(destdir) THEN
+ IF NOT web_data_cleanup(basename, destdir) THEN
   dist_info "ERROR: Failed to clean up web data files" : RETURN NO
  END IF
 
@@ -2499,7 +2529,7 @@ FUNCTION recreate_web_data_file(js_file as string, data_file as string, from_dir
  DIM metadata as string = "{""files"":["
  FOR i as integer = 0 TO UBOUND(filelist)
   IF i <> 0 THEN metadata &= ","
-  metadata &= "{""filename"":""" & escape_string(pkgpath(i), """") & ""","
+  metadata &= "{""filename"":""" & escape_string(path_with_only_forward_slashes(pkgpath(i)), """") & ""","
   metadata &= """start"":" & offset(i) & ","
   metadata &= """end"":" & offset(i) + size(i) & "}"
  NEXT i
@@ -2558,7 +2588,7 @@ FUNCTION add_web_gameplayer(basename as string, destdir as string) as string
  RETURN destexe
 END FUNCTION
 
-FUNCTION web_data_cleanup(output_dir as string) as bool
+FUNCTION web_data_cleanup(basename as string, output_dir as string) as bool
  'Assumes we have already unpacked the web data files into output_dir/data/*
  'Deletes unwanted files, and moves RPG files into the correct place
  'Returns true on success, false on failure
@@ -2580,7 +2610,7 @@ FUNCTION web_data_cleanup(output_dir as string) as bool
  END IF
  FOR i as integer = 0 TO UBOUND(rpgfiles)
   src_rpg = join_path(output_dir, rpgfiles(i))
-  dest_rpg = join_path(data_dir, rpgfiles(i))
+  dest_rpg = join_path(data_dir, LCASE(rpgfiles(i)))
   debuginfo "Move " & src_rpg & " -> " & dest_rpg
   IF renamefile(src_rpg, dest_rpg) = NO THEN
    dist_info "ERROR: Could not move " & src_rpg & " to " & dest_rpg : RETURN NO
@@ -2588,7 +2618,7 @@ FUNCTION web_data_cleanup(output_dir as string) as bool
  NEXT i
  
  'Create the ohrrpgce_arguments.txt file
- DIM rpg_name as string = trimextension(trimpath(sourcerpg)) & ".rpg"
+ DIM rpg_name as string = LCASE(basename & ".rpg")
  string_to_file rpg_name, join_path(data_dir, "ohrrpgce_arguments.txt")
  
  'Delete the midi soundfont if it is unused

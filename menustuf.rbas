@@ -52,8 +52,8 @@ DECLARE SUB spells_menu_control(sp as SpellsMenuState)
 DECLARE SUB spells_menu_paint (byref sp as SpellsMenuState)
 
 DECLARE FUNCTION picksaveload (byval loading as bool, byval newgame_opt as bool = YES, byval beep_if_no_saves as bool = NO) as integer
-DECLARE SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as bool, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval page as integer)
-DECLARE FUNCTION picksave_confirm(menu() as string, byval loading as bool, byval newgame_opt as bool, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval holdscreen as integer, byval page as integer) as bool
+DECLARE SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as bool, disable_exit as bool=NO, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval page as integer)
+DECLARE FUNCTION picksave_confirm(menu() as string, byval loading as bool, byval newgame_opt as bool, exit_load_disabled as bool=NO, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval holdscreen as integer, byval page as integer) as bool
 DECLARE SUB picksave_update_mouse(st as MenuState, byval newgame_opt as bool, byref drag_start_top as integer)
 DECLARE SUB sellstuff_refresh(byval last_stuff as integer, byval recordsize as integer, permask() as integer, price() as integer, stuffdata() as integer)
 DECLARE SUB sellstuff_infostr(byval ic as integer, info as string, b() as integer, permask() as integer, price() as integer, byval stuff_count as integer, byval recordsize as integer)
@@ -83,12 +83,7 @@ SUB buystuff (byval shop_id as integer, byval shoptype as integer, storebuf() as
  
  load_shop_stuff shop_id, buyst.stuff_list
 
- '--Preserve the screen underneath
- DIM page as integer
- DIM holdscreen as integer
- page = compatpage
- holdscreen = allocatepage
- copypage page, holdscreen
+ DIM holdscreen as integer = duplicatepage(vpage)
 
  '--walking frame numbers used for animating heroes
  DIM walks(15) as integer
@@ -207,17 +202,17 @@ SUB buystuff (byval shop_id as integer, byval shoptype as integer, storebuf() as
 
 
   'Draw the screen
-  copypage holdscreen, page
+  copypage holdscreen, vpage
   'Draw menu first so it goes below pricebox in case of overlap
-  draw_menu menu, st, page
-  DrawSlice buyst.root_sl, page
-  draw_menu buyst.info, buyst.info_st, page
+  draw_menu menu, st, vpage
+  DrawSlice buyst.root_sl, vpage
+  draw_menu buyst.info, buyst.info_st, vpage
   setvispage vpage
+
   dowait
  LOOP
 
  '--Restore the saved screen
- freepage page
  freepage holdscreen
 
  DeleteSlice @(buyst.root_sl)
@@ -478,8 +473,8 @@ SUB buystuff_init_info_menu(buyst as ShopBuyState)
   debug "buyst.info_sl null ptr"
  ELSE
   WITH buyst.info
-   .offset.x = buyst.info_sl->ScreenX - 160 + buyst.info_sl->Width / 2
-   .offset.y = buyst.info_sl->ScreenY - 102
+   .offset.x = buyst.info_sl->ScreenX - (vpages(vpage)->w / 2) + buyst.info_sl->Width / 2
+   .offset.y = buyst.info_sl->ScreenY - (vpages(vpage)->h / 2 + 2)
    .anchorvert = alignTop
    .bordersize = -8
    .maxrows = buyst.info_sl->Height / 8
@@ -677,6 +672,7 @@ FUNCTION is_shop_empty(byval shop_id as integer, byval shoptype as integer) as b
 END FUNCTION
 
 SUB buystuff_refresh_menu (buyst as ShopBuyState, menu as MenuDef, st as MenuState)
+
  DIM thing as NodePtr
  DIM id as integer
  ClearMenuData menu
@@ -989,27 +985,42 @@ END SUB
 'toequip: item ID (-1 is invalid)
 'who: hero slot
 'where: equip slot
-SUB doequip (toequip as integer, who as integer, where as integer)
- IF gam.hero(who).equip(where).id >= 0 THEN
-  unequip who, where, NO  'Removes the default weapon too
- END IF
+'Return value YES for success, NO for failure
+FUNCTION doequip (toequip as integer, who as integer, where as integer) as bool
 
- '--set equipment
- gam.hero(who).equip(where).id = toequip
-
- update_hero_max_and_cur_stats who
-
- '--equipping the default weapon does not delete it from inventory
+ 'First remove the item from inventory (unless it is the default weapon)
  IF toequip = gam.hero(who).def_wep - 1 AND where = 0 THEN
  ELSE
-  '--delete the item from inventory
+  'delete the item from inventory
   delitem toequip
  END IF
 
+ 'Now remove the old equipment (Removes the default weapon too)
+ IF gam.hero(who).equip(where).id >= 0 THEN
+  IF unequip(who, where, NO, NO) = NO THEN
+   'Unequipping failed. This is because there was no room to return the item back to inventory
+   'Instead, return the original item to inventory (which we can do because we just removed it,
+   'and its stack is guaranteed to have room even if the rest of the inventory is full)
+   '
+   '(Also there is no danger of unequip recursively calling doequip again because that
+   ' only happens if the resetdefwep arg is YES and it is NO here)
+   getitem toequip
+   debug "Failed attempt to unequip " & readitemname(gam.hero(who).equip(where).id) & " and equip " & readitemname(toequip) & " (No room in inventory)"
+   RETURN NO
+  END IF
+ END IF
+
+ 'set new equipment
+ gam.hero(who).equip(where).id = toequip
+
+ 'Update this hero's stat bonuses
+ update_hero_max_and_cur_stats who
+
  evalitemtags
- evalherotags  'You could kill someone, right?
+ evalherotags  'You could kill someone, right? (Yes, with a negative HP bonus)
  tag_updates
-END SUB
+ RETURN YES
+END FUNCTION
 
 LOCAL FUNCTION getOOBtarg (byval search_direction as integer, byval attacker as integer, byref target as integer, byval atk as integer) as bool
  'Move the hero selection cursor for the target picker for an OOB attack/learning attack.
@@ -1285,6 +1296,8 @@ DIM st as MenuState
 
 'If "New game" is an option it is left (st.pt = -1) and cancel is the right one (st.pt = -2),
 'Otherwise "Cancel" is the only button (st.pt = -1).
+'But if exiting the game is disallowed there will instead be only one button on the left
+'(exit can't be disabled when newgame is disabled).
 'Note st.pt is no longer equal to the return value.
 
 st.first = -1  'Note that st.pt can actually go down to -2
@@ -1331,6 +1344,8 @@ FOR i as integer = 0 TO last_slot
  END IF
 NEXT i
 
+DIM exit_load_disabled as bool = NO
+
 IF loading THEN
  'Check for no saves
  DIM nosaves as bool = YES
@@ -1344,6 +1359,8 @@ IF loading THEN
  END IF
 END IF
 
+IF loading ANDALSO newgame_opt ANDALSO NOT exit_from_game_is_allowed() THEN exit_load_disabled = YES
+
 'FIXME: using need_fade_in to trigger the sound effect seems like a bad idea
 IF gam.need_fade_in = NO THEN MenuSound gen(genAcceptSFX)
 setkeys
@@ -1353,8 +1370,13 @@ DO
  IF loading = NO THEN playtimer
  IF game_check_cancel_key() THEN
   MenuSound gen(genCancelSFX)
-  ret_slot = -2
-  EXIT DO
+  IF exit_load_disabled THEN
+   'No nothing if exiting is not allowed from the initital loadgame screen
+  ELSE
+   'Cancel and exit out of the load menu
+   ret_slot = -2
+   EXIT DO
+  END IF
  END IF
 
  'Make menu position -2 appear as -1 to usemenu
@@ -1367,8 +1389,13 @@ DO
   picksave_update_mouse st, newgame_opt, drag_start_top
  END IF
  IF st.pt < 0 AND newgame_opt THEN
-  IF carray(ccLeft) > 1 THEN st.pt = -1: MenuSound gen(genCursorSFX)
-  IF carray(ccRight) > 1 THEN st.pt = -2: MenuSound gen(genCursorSFX)
+  IF exit_load_disabled THEN
+   'If exit is disabled, then new game is the only option (exit can't be disabled when newgame is disabled)
+   st.pt = -1
+  ELSE
+   IF carray(ccLeft) > 1 THEN st.pt = -1: MenuSound gen(genCursorSFX)
+   IF carray(ccRight) > 1 THEN st.pt = -2: MenuSound gen(genCursorSFX)
+  END IF
  END IF
 
  IF game_check_use_key() ORELSE (get_gen_bool("/mouse/mouse_menus") ANDALSO (readmouse.release AND mouseLeft) ANDALSO readmouse.drag_dist < 10 ANDALSO (readmouse.buttons AND mouseRight) = 0 ) THEN
@@ -1380,8 +1407,13 @@ DO
   ELSEIF st.pt < 0 THEN
    'Selected "Cancel" or "Exit"
    MenuSound gen(genCancelSFX)
-   ret_slot = -2
-   EXIT DO
+   IF exit_load_disabled THEN
+    'Do nothing if exiting is not allowed from the initial loadgame screen
+   ELSE
+    'Cancel and exit out of the load menu
+    ret_slot = -2
+    EXIT DO
+   END IF
   ELSE
    allow = YES
    IF loading THEN
@@ -1389,7 +1421,7 @@ DO
     IF pv(st.pt).valid = 0 THEN allow = NO
    ELSE
     '--normal save in a slot
-    IF pv(st.pt).valid THEN allow = picksave_confirm(menu(), loading, newgame_opt, sprites(), pv(), mapname(), lev(), st, holdscreen, page)
+    IF pv(st.pt).valid THEN allow = picksave_confirm(menu(), loading, newgame_opt, exit_load_disabled, sprites(), pv(), mapname(), lev(), st, holdscreen, page)
    END IF
    IF allow = YES THEN
     MenuSound gen(genAcceptSFX)
@@ -1401,7 +1433,7 @@ DO
   END IF
  END IF
  copypage holdscreen, page
- picksave_draw menu(), loading, newgame_opt, sprites(), pv(), mapname(), lev(), st, page
+ picksave_draw menu(), loading, newgame_opt, exit_load_disabled, sprites(), pv(), mapname(), lev(), st, page
  setvispage vpage
  check_for_queued_fade_in
  dowait
@@ -1422,7 +1454,7 @@ RETURN ret_slot
 END FUNCTION
 
 'Returns YES if overwrite is allowed, NO if canceled
-FUNCTION picksave_confirm(menu() as string, byval loading as bool, byval newgame_opt as bool, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval holdscreen as integer, byval page as integer) as bool
+FUNCTION picksave_confirm(menu() as string, byval loading as bool, byval newgame_opt as bool, exit_load_disabled as bool=NO, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval holdscreen as integer, byval page as integer) as bool
 
  DIM confirmboxY as integer = 14 + (44 * (st.pt - st.top))
  DIM tog as integer
@@ -1475,7 +1507,7 @@ FUNCTION picksave_confirm(menu() as string, byval loading as bool, byval newgame
   END IF
  
   copypage holdscreen, page
-  picksave_draw menu(), loading, newgame_opt, sprites(), pv(), mapname(), lev(), st, page
+  picksave_draw menu(), loading, newgame_opt, exit_load_disabled, sprites(), pv(), mapname(), lev(), st, page
   centerbox 160, confirmboxY, 40 + (LEN(replacedat) * 8) + menuwidth, 24, 3, page
   edgeprint replacedat, 200 - (LEN(replacedat) * 8), confirmboxY - 5, uilook(uiText), page
   FOR i as integer = 0 TO 1
@@ -1489,7 +1521,7 @@ FUNCTION picksave_confirm(menu() as string, byval loading as bool, byval newgame
  LOOP
 END FUNCTION
 
-SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as bool, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval page as integer)
+SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as bool, exit_load_disabled as bool=NO, sprites() as GraphicPair, pv() as SaveSlotPreview, mapname() as string, lev() as string, byref st as MenuState, byval page as integer)
  'newgame_opt controls whether there are one (left only) or two buttons (left and right) at the top
  'st.pt = -1 and menu(0) is the left button, st.pt = -2 and menu(1) is the right button
  DIM col as integer
@@ -1505,7 +1537,7 @@ SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as 
  DIM last_slot as integer = UBOUND(pv)
  
  centerbox 50, 11, 80, 14, 1 + 14, page
- IF newgame_opt THEN centerbox 270, 11, 80, 14, 1 + 14, page
+ IF newgame_opt ANDALSO NOT exit_load_disabled THEN centerbox 270, 11, 80, 14, 1 + 14, page
  DIM top as integer = large(st.top, 0)
  DIM yoff as integer
  FOR i as integer = top TO small(top + 3, last_slot)
@@ -1547,7 +1579,7 @@ SUB picksave_draw(menu() as string, byval loading as bool, byval newgame_opt as 
  IF st.hover = -1 THEN col = uilook(uiMouseHoverItem)
  col = uilook(IIF(st.pt = -1, uiSelectedItem + tog, uiMenuItem))
  edgeprint menu(0), ancCenter + 50, 6, col, page
- IF newgame_opt THEN
+ IF newgame_opt ANDALSO NOT exit_load_disabled THEN
   IF st.hover = -2 THEN col = uilook(uiMouseHoverItem)
   col = uilook(IIF(st.pt = -2, uiSelectedItem + tog, uiMenuItem))
   edgeprint menu(1), ancCenter + 270, 6, col, page
@@ -2928,6 +2960,7 @@ FUNCTION unequip (who as integer, where as integer, resetdefwep as bool = YES, f
   IF where = 0 AND .equip(where).id = .def_wep - 1 THEN
   ELSE
    IF getitem(.equip(where).id, , YES) = NO THEN  'ok_to_fail=YES
+    debug "Returning " & readitemname(.equip(where).id) & " to inventory failed (force=" & force & ")"
     IF force = NO THEN RETURN NO
    END IF
   END IF
@@ -2939,7 +2972,10 @@ FUNCTION unequip (who as integer, where as integer, resetdefwep as bool = YES, f
 
   IF where = 0 AND resetdefwep THEN
    '--restore default weapon
-   doequip .def_wep - 1, who, where
+   IF doequip(.def_wep - 1, who, where) = NO THEN
+    'This would be a really weird edge case for this to fail. I don't think it could happen
+    debug "Failed attempt to restore default weapon """ & readitemname(.def_wep - 1) & """ for hero """ & .name & """ after an unequip (That's weird)"
+   END IF
   END IF
  END WITH
 
@@ -3426,7 +3462,10 @@ SUB equip_menu_setup (byref st as EquipMenuState)
 END SUB
 
 SUB equip_menu_do_equip(byval item as integer, byref st as EquipMenuState)
- doequip item, st.who, st.slot
+ IF doequip(item, st.who, st.slot) = NO THEN
+  st.item_info = readglobalstring(305, "No room in inventory", 30)
+  MenuSound gen(genCancelSFX)
+ END IF
  equip_menu_back_to_menu st
 END SUB
 
@@ -3734,7 +3773,7 @@ FUNCTION menu_attack_targ_picker(byval attack_id as integer, byval learn_id as i
      centerbox 160, 100, small(LEN(caption) * 8 + 16, 320), 24, 1, page
      edgeprint caption, pCenteredLeft, 95, uilook(uiText), page
      IF learn_attack.learn_sound_effect > 0 THEN playsfx learn_attack.learn_sound_effect - 1
-     setvispage page
+     setvispage vpage
      waitforanykey
      menu_attack_targ_picker = YES
     ELSE

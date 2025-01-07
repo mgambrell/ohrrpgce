@@ -1225,6 +1225,12 @@ if web:
         #emsdlflags += ['-s', 'ASSERTIONS=1']
         emsdlflags += ['-s', 'USE_SDL_MIXER=2', '-s', 'SDL2_MIXER_FORMATS=["ogg", "mod", "mid"]']
         #emsdlflags += ['-s', 'USE_MODPLUG', '-s', 'USE_MPG123']
+    
+    # ccall is needed so that javascript can call C++ callbacks
+    # AsciiToString is needed for converting strings pacced from fb+c code to Js code
+    EMFLAGS += ["-s", 'EXPORTED_RUNTIME_METHODS=["ccall","AsciiToString"]']
+    # C++ Callbacks that will be called from Javascript must be explicity exported to prevent pruning
+    EMFLAGS += ["-s", "EXPORTED_FUNCTIONS=_main,_sync_to_indexdb_done,_sync_from_indexdb_done"]
 
     emlinkflags = sum((['-s',flag] for flag in EMFLAGS), [])
     commonenv['CCLINKFLAGS'] += emlinkflags + emsdlflags
@@ -1438,6 +1444,9 @@ common_modules += ['blit.cpp',
                    'lib/gif.cpp',
                    'lib/jo_jpeg.cpp',
                    'lib/ujpeg.c']
+
+if web:
+    common_modules += ['web.cpp']
 
 # The following are compiled up to three times, for Game, Custom and other
 # other utilities using allmodex, with IS_GAME, IS_CUSTOM or neither defined.

@@ -15,6 +15,9 @@
 #include "common_menus.bi"
 #include "loading.bi"
 
+'Doesn't have any effect unless compiling on web
+#include "web.bi"
+
 USING RELOAD
 
 'Have to avoid circular slices.bi dependency
@@ -149,9 +152,9 @@ DECLARE FUNCTION createminimap OVERLOAD (tiles() as TileMap, tilesets() as Tiles
 DECLARE FUNCTION createminimap OVERLOAD (layer as TileMap, tileset as TilesetData ptr, byref zoom as integer = -1, algorithm as MinimapAlgorithmEnum = minimapScaled) as Frame ptr
 
 DECLARE SUB animatetilesets (tilesets() as TilesetData ptr)
-DECLARE SUB cycletile (tanim_state() as TileAnimState, tastuf() as integer)
+DECLARE SUB animatetileset (tileset as TilesetData)
 DECLARE SUB reloadtileanimations (tilesets() as TilesetData ptr, gmap() as integer)
-DECLARE SUB reset_tile_anims (tileset as TilesetData ptr)
+DECLARE SUB reset_tile_anims (tileset as TilesetData)
 
 DECLARE SUB loadtilesetdata (tilesets() as TilesetData ptr, byval layer as integer, byval tilesetnum as integer)
 DECLARE SUB unloadtilesetdata (byref tileset as TilesetData ptr)
@@ -304,11 +307,13 @@ DECLARE FUNCTION boolgrabber (byref thebool as bool, byref state as MenuState) a
 DECLARE FUNCTION booleangrabber (byref thebool as boolean, byref state as MenuState) as bool
 
 DECLARE FUNCTION menu_click (state as MenuState) as bool
-DECLARE FUNCTION menu_click_outside(m as MenuDef) as bool
+DECLARE FUNCTION menu_click_outside OVERLOAD (menurect as RectType, menu_age as integer = 30) as bool
+DECLARE FUNCTION menu_click_outside OVERLOAD (m as MenuDef) as bool
 DECLARE FUNCTION menu_click_outside_with_page(m as MenuDef, viewport_page as integer) as bool
-DECLARE FUNCTION menu_right_click_close(m as MenuDef) as bool
+DECLARE FUNCTION menu_right_click_close OVERLOAD (menurect as RectType) as bool
+DECLARE FUNCTION menu_right_click_close OVERLOAD (m as MenuDef) as bool
 DECLARE FUNCTION click_dismiss () as bool
-DECLARE FUNCTION enter_click (state as MenuState) as bool
+DECLARE FUNCTION enter_click_but_not_space (state as MenuState) as bool
 DECLARE FUNCTION enter_space_click (state as MenuState) as bool
 DECLARE FUNCTION enter_or_space () as bool
 DECLARE FUNCTION toggle_item (state as MenuState) as bool

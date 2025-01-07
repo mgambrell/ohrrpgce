@@ -17,6 +17,7 @@ DECLARE SUB evalitemtags ()
 
 DECLARE FUNCTION averagelev () as integer
 DECLARE SUB get_max_levelmp (ret() as integer, byval hero_level as integer)
+DECLARE FUNCTION max_levelmp_for_hero(byref hero as HeroState, lmp_slot as integer) as integer
 
 DECLARE FUNCTION consumeitem (byval invslot as integer) as bool
 DECLARE FUNCTION countitem (byval item_id as integer) as integer

@@ -69,6 +69,10 @@ TYPE BattleSprite
   DECLARE PROPERTY frame() as integer
   DECLARE PROPERTY frame(fr as integer)
 
+  DECLARE SUB set_vel_x(xspeed as integer, xticks as integer)
+  DECLARE SUB set_vel_y(yspeed as integer, yticks as integer)
+  DECLARE SUB set_vel_z(zspeed as integer, zticks as integer)
+
   basepos as XYPair
   d as integer
   divider as integer
@@ -111,6 +115,7 @@ TYPE BattleSprite
                            'Set to 1 for dead heroes, to make them visible and use death frame, and does not count down (yuck)
   dissolve_appear as integer 'Counts ticks *up* to appeartime while enemy appears
   fleeing as bool          'Sprite is animating running away (not to be confused with BattleState.flee)
+  flinch_anim as integer   'Flinch animation ticks left to play (initially 6, reverse direction at 3, 0 for none)
   attack_succeeded as bool
   walk as integer 'used by heroes when animating walking
   anim_pattern as integer 'used by attack sprites
@@ -178,7 +183,6 @@ TYPE BattleSprite
   self_bequesting as bool ' Only for self-targeted bequest attacks. Reset when the attack ends
                          'If the bequested attack is a self-targeting cure attack, or a
                          'transmogrify attack the attacker's death can be cancelled.
-  flinch_anim as integer
 END TYPE
 
 'This type stores the state of the currently animating attack

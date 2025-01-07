@@ -93,6 +93,28 @@ PROPERTY BattleSprite.frame(fr as integer)
  IF sprite THEN ChangeSpriteSlice sprite, , , , fr
 END PROPERTY
 
+' For xticks ticks, move xspeed pixels/tick
+SUB BattleSprite.set_vel_x(xspeed as integer, xticks as integer)
+ IF sl THEN
+  sl->Velocity.X = xspeed
+  sl->VelTicks.X = xticks
+ END IF
+END SUB
+
+SUB BattleSprite.set_vel_y(yspeed as integer, yticks as integer)
+ IF sl THEN
+  sl->Velocity.Y = yspeed
+  sl->VelTicks.Y = yticks
+ END IF
+END SUB
+
+SUB BattleSprite.set_vel_z(zspeed as integer, zticks as integer)
+ IF sprite THEN
+  sprite->Velocity.Y = -zspeed
+  sprite->VelTicks.Y = zticks
+ END IF
+END SUB
+
 FUNCTION BattleSprite.deathtime() as integer
  IF _deathtime <= 0 THEN RETURN default_dissolve_time(deathtype, w, h)
  RETURN _deathtime
@@ -356,10 +378,11 @@ FUNCTION inflict (byref h as integer = 0, byref targstat as integer = 0, attacke
  attacker.last_targs(targetslot) = YES
  
  'stored targs
- IF attack.store_targ THEN
+ IF attack.add_store_targ ORELSE attack.replace_store_targ THEN
   attacker.stored_targs(targetslot) = YES
   attacker.stored_targs_can_be_dead = attack_can_hit_dead(attack)
  END IF
+ 'Note that deleting stored targs overrides both adding and replacing
  IF attack.delete_stored_targs THEN
   FOR i as integer = 0 TO UBOUND(attacker.stored_targs)
    attacker.stored_targs(i) = NO
@@ -695,9 +718,12 @@ FUNCTION inflict (byref h as integer = 0, byref targstat as integer = 0, attacke
     NEXT
    END IF
 
-   'enforce stat bounds
-   tstat_cur = large(tstat_cur, 0)
-   astat_cur = large(astat_cur, 0)
+   'Enforce max/min stat bounds.
+   'FIXME: Why do we ignore prefbit(43) "Cap minimum stats at zero"? We're probably going to need a new prefbit.
+   'Normally cap below at zero, but if the stat is already below zero make sure an attempt to decrease it further
+   'doesn't increase it to zero.
+   tstat_cur = large(tstat_cur, small(0, tstat_original))
+   astat_cur = large(astat_cur, small(0, astat_original))
    IF target_is_register OR attack.allow_cure_to_exceed_maximum = NO THEN
     'Cap to max. But if the stat was already above max then instead don't allow
     'it to go higher.
@@ -1453,7 +1479,7 @@ SUB anim_advance (byval who as integer, attack as AttackData, bslot() as BattleS
   IF is_hero(who) THEN
    ' Walk forward 20 pixels
    anim_walktoggle who
-   anim_setmove who, -5, 0, 4, 0
+   anim_velocity who, -4, 0, 5
    anim_waitforall
   END IF
 
@@ -1462,9 +1488,9 @@ SUB anim_advance (byval who as integer, attack as AttackData, bslot() as BattleS
   IF t(0) = who THEN EXIT SUB
   anim_walktoggle who
   IF is_enemy(who) THEN
-   anim_absmove who, target->x - bslot(who).w, target->y + target->h - bslot(who).h + 2, 6, 6
+   anim_absmove who, target->x - bslot(who).w, target->y + target->h - bslot(who).h + 2, 6
   ELSE
-   anim_absmove who, target->x + target->w, target->y + target->h - bslot(who).h + 2, 6, 6
+   anim_absmove who, target->x + target->w, target->y + target->h - bslot(who).h + 2, 6
   END IF
   anim_waitforall
  
@@ -1531,8 +1557,8 @@ SUB anim_hero (byval who as integer, attack as AttackData, bslot() as BattleSpri
 
   CASE atkrAnimJump
    anim_setframe who, frameJUMP
-   anim_relmove who, -26, 0, 13, 0
-   anim_zmove who, 13, 18
+   anim_relmove who, -26, 0, 13
+   anim_zvelocity who, 18, 13
    anim_waitforall
    anim_hide who
    anim_setframe who, frameSTAND
@@ -1543,14 +1569,14 @@ SUB anim_hero (byval who as integer, attack as AttackData, bslot() as BattleSpri
    anim_unhide who
    anim_setcenter who, t(0), 0, 0
    anim_align who, t(0), dirDown, 0
-   anim_zmove who, -10, 20
+   anim_zvelocity who, -20, 10
    anim_waitforall
    anim_setframe who, frameHURT
 
   CASE atkrAnimRunAndHide
    anim_setframe who, frameJUMP
    anim_setdir who, 1
-   anim_absmove who, 320 + bslot(t(0)).w / 2, bslot(t(0)).y, 10, 1
+   anim_absmove who, 320 + bslot(t(0)).w / 2, bslot(t(0)).y, 10
    anim_waitforall
    anim_hide who
    anim_setframe who, frameSTAND
@@ -1561,7 +1587,7 @@ SUB anim_hero (byval who as integer, attack as AttackData, bslot() as BattleSpri
    anim_setpos who, 320 + bslot(t(0)).w / 2, bslot(t(0)).y, 0
    anim_setframe who, frameSTAND
    anim_unhide who
-   anim_absmove who, bslot(t(0)).x, bslot(t(0)).y, 10, 1
+   anim_absmove who, bslot(t(0)).x, bslot(t(0)).y, 10
    anim_waitforall
 
   CASE atkrAnimNull
@@ -1587,19 +1613,19 @@ SUB anim_enemy (byval who as integer, attack as AttackData, bslot() as BattleSpr
    anim_wait 1
   NEXT ii
  CASE atkrAnimJump
-  anim_absmove who, bslot(who).x + 50, bslot(who).y, 7, 7
-  anim_zmove who, 10, 20
+  anim_absmove who, bslot(who).x + 50, bslot(who).y, 7
+  anim_zvelocity who, 20, 10
   anim_waitforall
   anim_hide who
  CASE atkrAnimLand
   anim_setz who, 200
   anim_unhide who
   anim_setpos who, bslot(t(0)).x, bslot(t(0)).y, 0
-  anim_zmove who, -10, 20
+  anim_zvelocity who, -20, 10
   anim_waitforall
  CASE atkrAnimRunAndHide
   anim_setdir who, 1
-  anim_absmove who, 0 - bslot(t(0)).w / 2, bslot(t(0)).y, 10, 1
+  anim_absmove who, 0 - bslot(t(0)).w / 2, bslot(t(0)).y, 10
   anim_waitforall
   anim_hide who
   anim_setdir who, 0
@@ -1607,7 +1633,7 @@ SUB anim_enemy (byval who as integer, attack as AttackData, bslot() as BattleSpr
   anim_setz who, 0
   anim_setpos who, 0 - bslot(t(0)).w / 2, bslot(t(0)).y, 0
   anim_unhide who
-  anim_absmove who, bslot(t(0)).x, bslot(t(0)).y, 10, 1
+  anim_absmove who, bslot(t(0)).x, bslot(t(0)).y, 10
   anim_waitforall
  CASE atkrAnimDashIn, atkrAnimNull, atkrAnimStandingCast, atkrAnimTeleport, atkrAnimStandingStrike
   ' nothing
@@ -1620,7 +1646,7 @@ SUB anim_retreat (byval who as integer, attack as AttackData, bslot() as BattleS
  IF is_enemy(who) THEN
   IF attack.attacker_anim = atkrAnimDashIn OR attack.attacker_anim = atkrAnimLand THEN
    anim_setz who, 0
-   anim_absmove who, bslot(who).x, bslot(who).y, 6, 6
+   anim_absmove who, bslot(who).x, bslot(who).y, 6
    anim_waitforall
   END IF
  END IF
@@ -1630,14 +1656,14 @@ SUB anim_retreat (byval who as integer, attack as AttackData, bslot() as BattleS
   CASE atkrAnimStrike, atkrAnimCast
    ' Walk back 20 pixels
    anim_walktoggle who
-   anim_setmove who, 5, 0, 4, 0
+   anim_velocity who, 4, 0, 5
    anim_waitforall
    anim_setframe who, frameSTAND
   CASE atkrAnimDashIn, atkrAnimLand
    anim_setframe who, frameSTAND
    anim_walktoggle who
    anim_setz who, 0
-   anim_absmove who, bslot(who).x, bslot(who).y, 6, 6
+   anim_absmove who, bslot(who).x, bslot(who).y, 6
    anim_waitforall
    anim_setframe who, frameSTAND
   CASE atkrAnimStandingCast, atkrAnimStandingStrike
@@ -1740,6 +1766,9 @@ FUNCTION autotarget (who as integer, byref atk as AttackData, bslot() as BattleS
   queue_attack atk.id, who, t(), override_blocking, dont_retarget
  END IF
 
+ IF result = NO THEN
+  checkAtkTagConds atk, atktagOnTargettingFailed
+ END IF
  RETURN result
 END FUNCTION
 

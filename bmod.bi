@@ -18,6 +18,8 @@ END ENUM
 
 declare function battle (byval form as integer) as bool
 declare function checkNoRunBit (bslot() as BattleSprite) as bool
+DECLARE SUB checkAtkTagConds OVERLOAD (attack as AttackData, byval check as AttackTagConditionEnum)
+DECLARE SUB checkAtkTagConds OVERLOAD (atk_id as integer, byval check as AttackTagConditionEnum)
 DECLARE SUB checkTagCond (byref t as AttackDataTag, byval check as AttackTagConditionEnum)
 DECLARE SUB calc_hero_elementals (elemental_resists() as single, byval who as integer)
 declare sub invertstack
@@ -34,16 +36,16 @@ DECLARE SUB anim_unhide(byval who as integer)
 DECLARE SUB anim_setframe(byval who as integer, byval frame as integer)
 DECLARE SUB anim_setpos(byval who as integer, byval x as integer, byval y as integer, byval d as integer)
 DECLARE SUB anim_setz(byval who as integer, byval z as integer)
-DECLARE SUB anim_setmove(who as integer, xmove_ticks as integer, ymove_ticks as integer, xstep as integer, ystep as integer)
-DECLARE SUB anim_absmove(byval who as integer, byval tox as integer, byval toy as integer, byval xspeed as integer, byval yspeed as integer)
+DECLARE SUB anim_velocity(who as integer, xstep as integer, ystep as integer, ticks as integer)
+DECLARE SUB anim_absmove(byval who as integer, byval tox as integer, byval toy as integer, byval ticks as integer)
 DECLARE SUB anim_abszmove(byval who as integer, byval toz as integer, byval zticks as integer)
-DECLARE SUB anim_zmove(byval who as integer, byval zm as integer, byval zstep as integer)
+DECLARE SUB anim_zvelocity(byval who as integer, byval zstep as integer, byval zticks as integer)
 DECLARE SUB anim_walktoggle(byval who as integer)
 DECLARE SUB anim_sound(byval which as integer)
 DECLARE SUB anim_align(byval who as integer, byval target as integer, byval dire as integer, byval offset as integer)
 DECLARE SUB anim_setcenter(byval who as integer, byval target as integer, byval offx as integer, byval offy as integer)
 DECLARE SUB anim_align2(byval who as integer, byval target as integer, byval edgex as integer, byval edgey as integer, byval offx as integer, byval offy as integer)
-DECLARE SUB anim_relmove(byval who as integer, byval tox as integer, byval toy as integer, byval xspeed as integer, byval yspeed as integer)
+DECLARE SUB anim_relmove(byval who as integer, byval tox as integer, byval toy as integer, byval ticks as integer)
 DECLARE SUB anim_setdir(byval who as integer, byval d as integer)
 
 DECLARE SUB setup_enemy_slice(byref bspr as BattleSprite, bat as BattleState, keep_existing as bool = NO)

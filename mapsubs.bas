@@ -1118,13 +1118,13 @@ DO
 
      'Don't animate if it would accomplish nothing
      DIM pattern as integer = tile_anim_pattern_number(oldtile)
-     IF pattern = -1 ANDALSO tile_anim_is_empty(i, st.tilesets(st.layer)->tastuf()) THEN CONTINUE FOR
+     IF pattern = -1 ANDALSO tile_anim_is_empty(i, st.tilesets(st.layer)->tanim()) THEN CONTINUE FOR
 
      'Returns -1 if can't be done
-     newtile = tile_anim_animate_tile(oldtile, i, st.tilesets(st.layer)->tastuf())
+     newtile = tile_anim_animate_tile(oldtile, i, st.tilesets(st.layer)->tanim())
      IF newtile = oldtile THEN
       'It was already animated with this pattern, so instead toggle to a non-animated tile
-      newtile = tile_anim_deanimate_tile(oldtile, st.tilesets(st.layer)->tastuf())
+      newtile = tile_anim_deanimate_tile(oldtile, st.tilesets(st.layer)->tanim())
      END IF
      IF newtile >= 0 THEN
       IF keyval(scCtrl) = 0 THEN
@@ -2089,7 +2089,7 @@ DO
    st.zones_needupdate = YES
   END IF
   '--Draw NPC zones
-  drawmap st.zoneoverlaymap, st.mapx, st.mapy, st.overlaytileset, dpage, YES, , , 20
+  drawmap st.zoneoverlaymap, st.mapx, st.mapy, st.overlaytileset, , dpage, YES, , , 20
 
   '--Draw npcs, if not done already
   IF draw_npcs_overlaid THEN
@@ -2174,14 +2174,16 @@ DO
  IF st.editmode = zone_mode THEN
   IF st.zonesubmode = zone_edit_mode THEN
    'Draw a single zone
-   drawmap st.zoneoverlaymap, st.mapx, st.mapy, st.overlaytileset, dpage, YES, , , 20
+   drawmap st.zoneoverlaymap, st.mapx, st.mapy, st.overlaytileset, , dpage, YES, , , 20
   ELSE
    'Draw all zones on this tile
-   drawmap st.zoneviewmap, st.mapx, st.mapy, st.zonetileset(st.zoneviewtileset), dpage, YES, , , 20, , YES
+   drawmap st.zoneviewmap, st.mapx, st.mapy, st.zonetileset(st.zoneviewtileset), , dpage, YES, , , 20, , YES
    IF st.showzonehints THEN
-    'Overlay 'hints' at hidden zones
-    setanim ABS(st.gauze_ticker \ 5 - 4), 0
-    drawmap st.zoneoverlaymap, st.mapx, st.mapy, st.overlaytileset, dpage, YES, , , 20
+    'Overlay animated 'hints' at hidden zones, using animated tiles,
+    'setting the state of the animation manually using a dummy TilesetData.
+    DIM tsanim as TilesetData
+    tsanim.tanim_state(0).cycle = ABS(st.gauze_ticker \ 5 - 4)
+    drawmap st.zoneoverlaymap, st.mapx, st.mapy, st.overlaytileset, @tsanim, dpage, YES, , , 20
    END IF
   END IF
  END IF
@@ -3564,15 +3566,16 @@ SUB mapedit_gmapdata(st as MapEditState)
   standardmenu cast(BasicMenuItem vector, menu_display), state, 4, 4, dpage, menuopts
   IF map.gmap(10) THEN
    'Harm tile flash color preview
-   rectangle 4 + 8 * LEN(menu[midx(10)].text), 4 + 9 * (midx(10) - state.top), 8, 8, map.gmap(10), dpage
+   rectangle 4 + 8 * LEN(menu[midx(10)].text), 4 + 10 * (midx(10) - state.top), 8, 8, map.gmap(10), dpage
   END IF
   IF need_default_edge_tile(st.map) THEN
-   'Show default edge tile
+   'Show default edge tile (possibly animated)
    writeblock sampmap, 0, 0, map.gmap(6)
-   DIM tilepos as XYPair = (12 + 8 * LEN(menu[midx(6)].text), 4 + 9 * (midx(6) - state.top))
+   animatetilesets st.tilesets()
+   DIM tilepos as XYPair = (12 + 8 * LEN(menu[midx(6)].text), 4 + 10 * (midx(6) - state.top))
    DIM tileview as Frame ptr
    tileview = frame_new_view(vpages(dpage), tilepos.x, tilepos.y, 20, 20)
-   drawmap sampmap, 0, 0, st.tilesets(0)->spr, tileview ', NO, 0, NULL, NO
+   drawmap sampmap, 0, 0, st.tilesets(0)->spr, st.tilesets(0), tileview ', NO, 0, NULL, NO
    frame_unload @tileview
   END IF
   SWAP vpage, dpage
@@ -4656,7 +4659,7 @@ SUB color_for_each_tile (tileset as TilesetData ptr, colors() as RGBcolor)
  'Then handle animated tiles by making them the same colour as the first tile in the animation
  FOR tile as integer = 160 TO 255
   DIM basetile as integer
-  basetile = tile_anim_deanimate_tile(tile, tileset->tastuf())
+  basetile = tile_anim_deanimate_tile(tile, tileset->tanim())
   colors(tile) = colors(basetile)
  NEXT
 END SUB
@@ -4720,8 +4723,7 @@ SUB mapedit_export_map_image(st as MapEditState)
 
  FOR layer as integer = 0 TO UBOUND(st.map.tiles)
   IF LayerIsEnabled(st.map.gmap(), layer) THEN
-   setanim st.tilesets(layer)
-   drawmap st.map.tiles(layer), 0, 0, st.tilesets(layer)->spr, dest, _
+   drawmap st.map.tiles(layer), 0, 0, st.tilesets(layer), page, _
            layer > 0, IIF(layer > 0, 0, 1), @st.map.pass
   END IF
   'Draw NPCs?
@@ -4730,8 +4732,7 @@ SUB mapedit_export_map_image(st as MapEditState)
   END IF
  NEXT
  IF LayerIsEnabled(st.map.gmap(), 0) THEN
-   setanim st.tilesets(0)
-   drawmap st.map.tiles(0), 0, 0, st.tilesets(0)->spr, dest, _
+   drawmap st.map.tiles(0), 0, 0, st.tilesets(0), page, _
            NO, 2, @st.map.pass
  END IF
 
@@ -5634,7 +5635,7 @@ SUB calculatepassblock(st as MapEditState, x as integer, y as integer)
  FOR i as integer = 0 TO UBOUND(st.map.tiles)
   tilenum = readblock(st.map.tiles(i), x, y)
   IF i = 0 OR tilenum > 0 THEN
-   n = n OR st.defaultwalls[i][tile_anim_deanimate_tile(tilenum, st.tilesets(i)->tastuf())]
+   n = n OR st.defaultwalls[i][tile_anim_deanimate_tile(tilenum, st.tilesets(i)->tanim())]
   END IF
  NEXT i
  DIM oldval as integer = readblock(st.map.pass, x, y)
@@ -5705,7 +5706,7 @@ SUB mapedit_pickblock_setup_tileset(st as MapEditState, tilesetview as TileMap, 
  '3 rows each.
  DIM tiley as integer = 10
  FOR pattern as integer = 0 TO 1
-  IF tile_anim_is_empty(pattern, tilesetdata->tastuf()) = NO THEN
+  IF tile_anim_is_empty(pattern, tilesetdata->tanim()) = NO THEN
    FOR i as integer = 0 TO 47
     DIM tileid as integer = 160 + 48 * pattern + i
     DIM tilepos as XYPair = (i MOD 16, tiley + i \ 16)
@@ -5840,10 +5841,7 @@ SUB mapedit_pickblock(st as MapEditState)
   IF dowait THEN
    tog = tog XOR 1
    chequer_scroll += 1
-   IF st.animations_enabled THEN
-    'Update tile animations
-    cycletile tilesetdata->anim(), tilesetdata->tastuf()
-   END IF
+   IF st.animations_enabled THEN animatetilesets st.tilesets()
   END IF
  LOOP
  unloadtilemap tilesetview

@@ -131,6 +131,7 @@ DECLARE SUB update_battle_targ_hover_slices (layer as Slice Ptr, bat as BattleSt
 DECLARE SUB instantiate_battle_targ_hover_slices (layer as Slice Ptr)
 DECLARE SUB ExpandTextBattleSprite (code as string, result as string, byval arg0 as ANY ptr=0, byval arg1 as ANY ptr=0, byval arg2 as ANY ptr=0)
 DECLARE SUB ExpandTextBattleState (code as string, result as string, byval arg0 as ANY ptr=0, byval arg1 as ANY ptr=0, byval arg2 as ANY ptr=0)
+DECLARE SUB force_retargetting_for_attacker (byref bat as BattleState, bslot() as BattleSprite, index as integer)
 
 FUNCTION get_divider(key as string) as integer
  DIM bounce_divider as Integer
@@ -489,10 +490,11 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
  '--decrement the animation wait ticks, and don't proceed until they are zero
  IF bat.wait_frames > 0 THEN bat.wait_frames -= 1: IF bat.wait_frames > 0 THEN EXIT SUB
  
- '--special handling when we are waiting for all motion to stop
+ '--anim_waitforall called? We are waiting for all motion to stop
  IF bat.wait_frames = -1 THEN
-  FOR i = 0 TO 23
-   IF bslot(i).xmov <> 0 OR bslot(i).ymov <> 0 OR bslot(i).zmov <> 0 THEN EXIT SUB
+  FOR i = 0 TO UBOUND(bslot)
+   'NULL slices are OK
+   IF SliceIsMoving(bslot(i).sl) ORELSE SliceIsMoving(bslot(i).sprite) THEN EXIT SUB
   NEXT i
  END IF
  bat.wait_frames = 0
@@ -503,7 +505,9 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
  DIM ww as integer
  DIM w1 as integer
  DIM w2 as integer
- 
+ DIM ticks as integer
+ DIM speed as XYPair
+
  DO: 'INTERPRET THE ANIMATION SCRIPT
   act = popdw
   SELECT CASE act
@@ -524,12 +528,13 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
      formdata.slots(i).pos = bslot(4 + i).pos
     NEXT i
     bat.atk.id = -1
-   CASE 2 'setmove(who,xticks,yticks,xstep,ystep)
+   CASE 2 'velocity(who,xstep,ystep,ticks)
     ww = popdw
-    bslot(ww).xmov = popdw
-    bslot(ww).ymov = popdw
-    bslot(ww).xspeed = popdw
-    bslot(ww).yspeed = popdw
+    speed.x = popdw
+    speed.y = popdw
+    ticks = popdw
+    bslot(ww).set_vel_x speed.x, ticks
+    bslot(ww).set_vel_y speed.y, ticks
    CASE 3 'setpos(who,x,y,d)
     ww = popdw
     bslot(ww).x = popdw
@@ -548,18 +553,17 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
     DIM fr as integer = popdw
     bslot(ww).frame = fr
     IF is_hero(ww) THEN bslot(ww).walk = 0
-   CASE 8 'absmove(who,x,y,xticks,yticks)
+   CASE 8 'absmove(who,x,y,ticks)
     ww = popdw
     DIM destpos as XYPair
     destpos.x = popdw
     destpos.y = popdw
-    DIM moveticks as XYPair
-    moveticks.x = popdw
-    moveticks.y = popdw
-    bslot(ww).xspeed = (destpos.x - bslot(ww).x) / moveticks.x
-    bslot(ww).yspeed = (destpos.y - bslot(ww).y) / moveticks.y
-    bslot(ww).xmov = moveticks.x
-    bslot(ww).ymov = moveticks.y
+    ticks = popdw
+    'bslot(ww).set_vel_x (destpos.x - bslot(ww).x) / ticks, ticks
+    'bslot(ww).set_vel_y (destpos.y - bslot(ww).y) / ticks, ticks
+    IF bslot(ww).sl THEN
+     SetSliceTarg bslot(ww).sl, destpos.x, destpos.y, ticks
+    END IF
    CASE 9 'waitforall()
     bat.wait_frames = -1
    CASE 10 'inflict(targ, target_count)
@@ -577,10 +581,11 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
     ww = popdw
     bslot(ww).frame = frameSTAND
     IF is_hero(ww) THEN bslot(ww).walk XOR= 1
-   CASE 15 'zmove(who,zticks,zstep)
+   CASE 15 'zvelocity(who,zstep,zticks)
     ww = popdw
-    bslot(ww).zmov = popdw
-    bslot(ww).zspeed = popdw
+    DIM as integer zspeed = popdw
+    ticks = popdw
+    bslot(ww).set_vel_z zspeed, ticks
    CASE 16 'sound(which)
     DIM soundnum as integer = popdw
     stopsfx(soundnum)  'Restart the sound effect
@@ -618,20 +623,17 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
    else
     bslot(w1).y = bslot(w2).y + popdw
    end if
-  CASE 20 'relmove(who, x, y, xticks, yticks)
+  CASE 20 'relmove(who, x, y, ticks)
    ww = popdw  'who
    DIM movedist as XYPair
    movedist.x = popdw
    movedist.y = popdw
-   DIM moveticks as XYPair
-   moveticks.x = popdw
-   moveticks.y = popdw
-   with bslot(ww)
-    if moveticks.x <> 0 then .xspeed = movedist.x / moveticks.x else .xspeed = 0
-    if moveticks.y <> 0 then .yspeed = movedist.y / moveticks.y else .yspeed = 0
-    .xmov = moveticks.x
-    .ymov = moveticks.y
-   end with
+   DIM ticks as integer = popdw
+   WITH bslot(ww)
+    IF .sl THEN
+     SetSliceTarg .sl, .x + movedist.x, .y + movedist.y, ticks
+    END IF
+   END WITH
   CASE 21 'setdir(who, d)
    ww = popdw
    DIM newdir as integer = popdw
@@ -661,9 +663,11 @@ SUB battle_attack_anim_playback (byref attack as AttackData, byref bat as Battle
   CASE 24 'anim_abszmove(who,z,zticks)
    ww = popdw
    DIM destz as integer = popdw
-   DIM moveticks as integer = popdw
-   bslot(ww).zspeed = (destz - bslot(ww).z) / moveticks
-   bslot(ww).zmov = moveticks
+   ticks = popdw
+   'bslot(ww).set_vel_z (destz - bslot(ww).z) / ticks, ticks
+   IF bslot(ww).sprite THEN
+    SetSliceTarg bslot(ww).sprite, 0, -destz, ticks
+   END IF
   CASE 25 'anim_checkpoint
     IF autotestmode THEN write_checkpoint
   CASE 26 'hide(who)
@@ -692,8 +696,7 @@ SUB battle_attack_do_inflict(byval targ as integer, byval tcount as integer, byr
 
  DIM i as integer
  'set tag, if there is one
- checkTagCond attack.tagset(0), atktagOnUse
- checkTagCond attack.tagset(1), atktagOnUse
+ checkAtkTagConds attack, atktagOnUse
  
  '--attempt inflict the damage to the target
  DIM h as integer = 0 '--set inside inflict
@@ -727,11 +730,9 @@ SUB battle_attack_do_inflict(byval targ as integer, byval tcount as integer, byr
   ELSEIF attack.force_battle_exit = YES THEN
    bat.away = 11
   END IF
-  checkTagCond attack.tagset(0), atktagOnHit
-  checkTagCond attack.tagset(1), atktagOnHit
+  checkAtkTagConds attack, atktagOnHit
   IF bslot(targ).stat.cur.hp <= 0 THEN
-   checkTagCond attack.tagset(0), atktagOnKill
-   checkTagCond attack.tagset(1), atktagOnKill
+   checkAtkTagConds attack, atktagOnKill
   END IF
 
   IF trytheft(bat, bat.acting, targ, attack, bslot()) THEN
@@ -753,6 +754,7 @@ SUB battle_attack_do_inflict(byval targ as integer, byval tcount as integer, byr
     END IF
   END SELECT
 
+  DIM oldval as bool = bslot(targ).turncoat_attacker
   SELECT CASE attack.change_turncoat
    CASE 1: 'Turncoat
     bslot(targ).turncoat_attacker = YES
@@ -765,6 +767,10 @@ SUB battle_attack_do_inflict(byval targ as integer, byval tcount as integer, byr
      bslot(targ).turncoat_attacker = bslot(targ).enemy.turncoat_attacker
     END IF
   END SELECT
+  IF bslot(targ).turncoat_attacker <> oldval THEN
+   'Turncoat status has changed, force a retarget of any current commands
+   force_retargetting_for_attacker bat, bslot(), targ
+  END IF
 
   SELECT CASE attack.change_defector
    CASE 1: 'Defector
@@ -800,8 +806,7 @@ SUB battle_attack_do_inflict(byval targ as integer, byval tcount as integer, byr
    bslot(targ).harm.text = readglobalstring(122, "fail", 20)
   END IF
 
-  checkTagCond attack.tagset(0), atktagOnMiss
-  checkTagCond attack.tagset(1), atktagOnMiss
+  checkAtkTagConds attack, atktagOnMiss
  END IF
  triggerfade targ, bslot()
  IF bslot(targ).stat.cur.hp > 0 THEN
@@ -957,6 +962,7 @@ SUB battle_targetting(byref bat as BattleState, bslot() as BattleSprite)
 
  'no valid targs available
  IF targetmaskcount(bat.targ.mask()) = 0 THEN
+  checkAtkTagConds bat.targ.atk, atktagOnTargettingFailed
   battle_leave_targetting_mode bat, bslot()
   EXIT SUB
  END IF
@@ -1386,13 +1392,7 @@ SUB battle_animate(byref bat as BattleState, bslot() as BattleSprite, st() as He
   END IF
  NEXT i
  '--Then apply movement forces for all things, heroes, enemies, attacks, weapons
- FOR i = 0 TO 23
-  WITH bslot(i)
-   IF .xmov <> 0 THEN .x = .x + (.xspeed * SGN(.xmov)): .xmov = .xmov - SGN(.xmov)
-   IF .ymov <> 0 THEN .y = .y + (.yspeed * SGN(.ymov)): .ymov = .ymov - SGN(.ymov)
-   IF .zmov <> 0 THEN .z = .z + (.zspeed * SGN(.zmov)): .zmov = .zmov - SGN(.zmov)
-  END WITH
- NEXT i
+ AdvanceSlice bat.root_sl
  '--then, stuff that only attacks can do
  FOR i = 12 TO 23 '--for each attack sprite
   IF bslot(i).vis THEN
@@ -1408,7 +1408,7 @@ SUB battle_animate(byref bat as BattleState, bslot() as BattleSprite, st() as He
    END WITH
   END IF
  NEXT i
- '--Then death animations
+ '--Then death animations and fleeing enemies (fleeing heroes are handled in battle_animate_running_away)
  FOR i = 0 TO 11
   WITH bslot(i)
    IF .dissolve > 0 THEN
@@ -2531,7 +2531,8 @@ SUB append_enemy_attacks_to_battle_menu(ai_attack_list() as integer, byref bspr 
 END SUB
 
 FUNCTION does_battle_menu_have_targets(byref bspr as BattleSprite, bslot() as BattleSprite, bat as BattleState, st() as HeroDef) as bool
- 'Currently only really useful for player controlled enemies.
+ 'This is mainly useful for player controlled enemies,
+ 'but also good for checking "Targetting Failed" tags
  'Does not attempt to check spell menus or items menu
  IF bspr.batmenu.numitems = 0 THEN
   'An empty menu is an unusable menu
@@ -2545,6 +2546,8 @@ FUNCTION does_battle_menu_have_targets(byref bspr as BattleSprite, bslot() as Ba
       DIM atk_id as integer = .sub_t
       IF has_valid_targs(bspr.index, atk_id, bslot(), bat) THEN
        RETURN YES
+      ELSE
+       checkAtkTagConds atk_id, atktagOnTargettingFailed
       END IF
      CASE batmenu_SKIPTURN:
       IF .sub_t = 1 THEN
@@ -2578,10 +2581,10 @@ SUB update_battle_menu (bspr as BattleSprite, bslot() as BattleSprite, bat as Ba
   DIM atk as AttackData
   FOR i as integer = 0 TO .batmenu.numitems - 1
    WITH *.batmenu.items[i]
+    .disabled = NO
     IF .t = batmenu_ATTACK THEN
-     .disabled = NO
      loadattackdata atk, .sub_t
-     ' FIXME: isn't this bitset misnamed, since it affects all battle menu attacks?
+     ' FIXME: isn't this bitset misnamed, since it affects all battle menu attacks? (Yes, I agree)
      IF atk.check_costs_as_weapon THEN
       IF atkallowed(atk, bspr.index, 0, 0, bspr) = 0 THEN
        .disabled = YES
@@ -3029,6 +3032,18 @@ FUNCTION checkNoRunBit (bslot() as BattleSprite) as bool
  RETURN NO
 END FUNCTION
 
+SUB checkAtkTagConds (atk_id as integer, byval check as AttackTagConditionEnum)
+ DIM attack as AttackData
+ loadattackdata attack, atk_id
+ checkAtkTagConds attack, atktagOnTargettingFailed
+END SUB
+
+SUB checkAtkTagConds (attack as AttackData, byval check as AttackTagConditionEnum)
+ ' If we add more than 2 tag checks to the attack data, add the new ones here
+ checkTagCond attack.tagset(0), check
+ checkTagCond attack.tagset(1), check
+END SUB
+
 SUB checkTagCond (byref t as AttackDataTag, byval check as AttackTagConditionEnum)
  't.condition - type
  'check = condition type
@@ -3165,24 +3180,29 @@ SUB anim_unhide(byval who as integer)
  pushdw 27: pushdw who
 END SUB
 
-' For ABS(xmove_ticks) ticks, move xstep pixels in the direction SGN(xmove_ticks), and ditto for ymove_ticks/ystep.
-SUB anim_setmove(who as integer, xmove_ticks as integer, ymove_ticks as integer, xstep as integer, ystep as integer)
- pushdw 2: pushdw who: pushdw xmove_ticks: pushdw ymove_ticks: pushdw xstep: pushdw ystep
+' For `ticks` ticks, move at velocity XY(xstep,ystep)
+SUB anim_velocity(who as integer, xstep as integer, ystep as integer, ticks as integer)
+ pushdw 2: pushdw who: pushdw xstep: pushdw ystep: pushdw ticks
 END SUB
 
-' Move to an X position in ABS(xticks) ticks, ditto for Y.
-SUB anim_absmove(byval who as integer, byval tox as integer, byval toy as integer, byval xticks as integer, byval yticks as integer)
- pushdw 8: pushdw who: pushdw tox: pushdw toy: pushdw xticks: pushdw yticks
+' Move to an XY position in `ticks` ticks
+SUB anim_absmove(byval who as integer, byval tox as integer, byval toy as integer, byval ticks as integer)
+ pushdw 8: pushdw who: pushdw tox: pushdw toy: pushdw ticks
 END SUB
 
-' Move to an Z position in ABS(zticks) ticks.
+' Move relative from the current position in `ticks` ticks.
+SUB anim_relmove(byval who as integer, byval byx as integer, byval byy as integer, byval ticks as integer)
+ pushdw 20: pushdw who: pushdw byx: pushdw byy: pushdw ticks
+END SUB
+
+' For zticks ticks, move zstep pixels/tick
+SUB anim_zvelocity(byval who as integer, byval zstep as integer, byval zticks as integer)
+ pushdw 15: pushdw who: pushdw zstep: pushdw zticks
+END SUB
+
+' Move to an Z position in zticks ticks.
 SUB anim_abszmove(byval who as integer, byval toz as integer, byval zticks as integer)
  pushdw 24: pushdw who: pushdw toz: pushdw zticks
-END SUB
-
-' For ABS(zticks) ticks, move zstep pixels in the direction SGN(zticks)
-SUB anim_zmove(byval who as integer, byval zticks as integer, byval zstep as integer)
- pushdw 15: pushdw who: pushdw zticks: pushdw zstep
 END SUB
 
 SUB anim_wait(byval ticks as integer)
@@ -3219,11 +3239,6 @@ SUB anim_align2(byval who as integer, byval target as integer, byval edgex as in
  pushdw 19: pushdw who: pushdw target: pushdw edgex: pushdw edgey: pushdw offx: pushdw offy
 END SUB
 
-' Move relative from the current X position in ABS(xticks) ticks, ditto for Y.
-SUB anim_relmove(byval who as integer, byval byx as integer, byval byy as integer, byval xticks as integer, byval yticks as integer)
- pushdw 20: pushdw who: pushdw byx: pushdw byy: pushdw xticks: pushdw yticks
-END SUB
-
 SUB anim_setdir(byval who as integer, byval d as integer)
  pushdw 21: pushdw who: pushdw d
 END SUB
@@ -3244,10 +3259,8 @@ END SUB
 SUB anim_flinchstart(byval who as integer, bslot() as BattleSprite, byref attack as AttackData)
  '--If enemy can flinch and if attack allows flinching
  IF bslot(who).never_flinch = NO AND attack.targ_does_not_flinch = NO THEN
-  DIM flinch_x_dist as integer
-  flinch_x_dist = 3
-  IF is_enemy(who) THEN flinch_x_dist = -3
-  anim_setmove who, flinch_x_dist, 0, 2, 0
+  DIM xvelocity as integer = IIF(is_enemy(who), -2, 2)
+  anim_velocity who, xvelocity, 0, 3
   IF is_hero(who) THEN
    IF attack.cure_instead_of_harm = NO THEN
     '--Show Harmed frame
@@ -3265,10 +3278,9 @@ SUB flinch_anim_eachtick(byval who as integer, bslot() as BattleSprite)
  WITH bslot(who)
   'After 3 ticks we start the slide back to the initial position
   IF .flinch_anim = 3 THEN
-   DIM flinch_x_dist as integer = IIF(is_enemy(who), 3, -3)
-   'anim_setmove who, flinch_x_dist, 0, 2, 0
-   .xmov = flinch_x_dist  'xticks
-   .xspeed = 2  'xstep
+   DIM xvelocity as integer = IIF(is_enemy(who), 2, -2)
+   'anim_velocity who, xvelocity, 0, 3
+   .set_vel_x xvelocity, 3
    'anim_setframe who, frameSTAND
    .frame = frameSTAND
    IF is_hero(who) THEN .walk = 0
@@ -4382,6 +4394,15 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
  FOR i = 0 TO 11
   bslot(bat.acting).last_targs(i) = NO
  NEXT i
+
+ IF attack.replace_store_targ THEN
+  'If we are replacing the store targets, reset them all now. They will be added back in inflict.
+  'Note that deleting stored targets also happens in inflict, and overrides both adding and replacing
+  FOR i as integer = 0 TO UBOUND(bslot(bat.acting).stored_targs)
+   bslot(bat.acting).stored_targs(i) = NO
+  NEXT i
+  bslot(bat.acting).stored_targs_can_be_dead = NO
+ END IF
  
  'BIG CRAZY SCRIPT CONSTRUCTION
  'DEBUG debug "begin script construction"
@@ -4481,14 +4502,14 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
     anim_appear 12 + i
     IF attack.attack_anim = atkAnimRing THEN
      ' Appear left of the target; will circle in a "ring"
-     anim_absmove 12 + i, targetpos.x - bslot(t(i)).w, targetpos.y, 3, 3
+     anim_absmove 12 + i, targetpos.x - bslot(t(i)).w, targetpos.y, 3
     END IF
     IF attack.attack_anim = atkAnimDrop THEN
-     anim_zmove 12 + i, -drop_ticks, drop_speed
+     anim_zvelocity 12 + i, -drop_speed, drop_ticks
     END IF
     IF attack.attack_anim = atkAnimScatter THEN
      ' Move to a random point
-     anim_relmove 12 + i, randint(240) - 120, randint(150) - 75, 6, 6
+     anim_relmove 12 + i, randint(240) - 120, randint(150) - 75, 6
     END IF
    NEXT i
    IF attack.sound_effect > 0 THEN anim_sound(attack.sound_effect - 1)
@@ -4504,17 +4525,17 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
     ' We don't modify z position, set above. The attacks will circle behind the targets too.
     FOR i = 0 TO tcount - 1
      targetpos = attack_placement_over_target(attack, t(i), bat, bslot(), atkimgdirection)
-     anim_absmove 12 + i, targetpos.x, targetpos.y + bslot(t(i)).w, 3, 3
+     anim_absmove 12 + i, targetpos.x, targetpos.y + bslot(t(i)).w, 3
     NEXT i
     anim_waitforall
     FOR i = 0 TO tcount - 1
      targetpos = attack_placement_over_target(attack, t(i), bat, bslot(), atkimgdirection)
-     anim_absmove 12 + i, targetpos.x + bslot(t(i)).w, targetpos.y, 3, 3
+     anim_absmove 12 + i, targetpos.x + bslot(t(i)).w, targetpos.y, 3
     NEXT i
     anim_waitforall
     FOR i = 0 TO tcount - 1
      targetpos = attack_placement_over_target(attack, t(i), bat, bslot(), atkimgdirection)
-     anim_absmove 12 + i, targetpos.x, targetpos.y - bslot(t(i)).w, 3, 3
+     anim_absmove 12 + i, targetpos.x, targetpos.y - bslot(t(i)).w, 3
     NEXT i
     anim_waitforall
    END IF
@@ -4559,7 +4580,7 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
     'find the target's position
     targetpos = attack_placement_over_target(attack, t(i), bat, bslot(), atkimgdirection)
     'make the projectile move to the target
-    anim_absmove 12, targetpos.x, targetpos.y, 5, 5
+    anim_absmove 12, targetpos.x, targetpos.y, 5
     anim_abszmove 12, targetpos.z, 5
     anim_waitforall
     'inflict damage
@@ -4575,10 +4596,10 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
    'after all hits are done, projectile flies off the side of the screen (towards the center)
    DIM offscreen as RectPoints = battle_offscreen_bounds(bslot(12).size)
    IF is_hero(bat.acting) THEN
-    anim_absmove 12, offscreen.left, 100, 5, 5
+    anim_absmove 12, offscreen.left, 100, 5
    END IF
    IF is_enemy(bat.acting) THEN
-    anim_absmove 12, offscreen.right, 100, 5, 5
+    anim_absmove 12, offscreen.right, 100, 5
    END IF
    anim_waitforall
    anim_checkpoint
@@ -4595,13 +4616,14 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
  '----PROJECTILE, REVERSE PROJECTILE and METEOR
  IF attack.attack_anim = atkAnimProjectile OR attack.attack_anim = atkAnimReverseProjectile OR attack.attack_anim = atkAnimMeteor THEN
   DIM offscreen as RectPoints = battle_offscreen_bounds(bslot(12).size)
-  DIM meteor_ticks as integer = 6  'Note actually displayed for 12 ticks
+  CONST flight_ticks as integer = 6  'Note actually displayed for 12 ticks, so a long hover time
   DIM meteor_speed as integer 'px/tick
-  meteor_speed = (130 - offscreen.top) \ meteor_ticks  'Originally 30
+  meteor_speed = (130 - offscreen.top) \ flight_ticks  'Originally 30
   DIM projectile_start as XYZTriple
   projectile_start = projectile_start_position(attack, bat.acting, bat, bslot(), atkimgdirection)
   anim_advance bat.acting, attack, bslot(), t()
   FOR j as integer = 1 TO numhits
+   'Set initial positions but don't show the attack sprites yet
    FOR i = 0 TO tcount - 1
     targetpos = attack_placement_over_target(attack, t(i), bat, bslot(), atkimgdirection)
     IF attack.attack_anim = atkAnimProjectile THEN
@@ -4620,7 +4642,7 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
      IF is_enemy(bat.acting) THEN
       anim_setpos 12 + i, offscreen.left, 100, atkimgdirection
      END IF
-     anim_setz 12 + i, meteor_ticks * meteor_speed  'Will take 6 ticks to get to z=0
+     anim_setz 12 + i, flight_ticks * meteor_speed
     END IF
    NEXT i
    IF is_hero(bat.acting) THEN anim_hero bat.acting, attack, bslot(), t()
@@ -4633,15 +4655,11 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
    FOR i = 0 TO tcount - 1
     targetpos = attack_placement_over_target(attack, t(i), bat, bslot(), atkimgdirection)
     IF attack.attack_anim = atkAnimProjectile OR attack.attack_anim = atkAnimMeteor THEN
-     anim_absmove 12 + i, targetpos.x, targetpos.y, 6, 6
-     anim_abszmove 12 + i, targetpos.z, 6
-    END IF
-    IF attack.attack_anim = atkAnimReverseProjectile THEN
-     anim_absmove 12 + i, projectile_start.x, projectile_start.y, 6, 6
-     anim_abszmove 12 + i, projectile_start.z, 6
-    END IF
-    IF attack.attack_anim = atkAnimMeteor THEN
-     anim_zmove 12 + i, -meteor_ticks, meteor_speed
+     anim_absmove 12 + i, targetpos.x, targetpos.y, flight_ticks
+     anim_abszmove 12 + i, targetpos.z, flight_ticks
+    ELSE  'attack.attack_anim = atkAnimReverseProjectile
+     anim_absmove 12 + i, projectile_start.x, projectile_start.y, flight_ticks
+     anim_abszmove 12 + i, projectile_start.z, flight_ticks
     END IF
    NEXT i
    IF attack.sound_effect > 0 THEN anim_sound(attack.sound_effect - 1)
@@ -4696,7 +4714,7 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
    FOR i = 0 TO tcount - 1
     anim_appear 12 + i
     targetpos = attack_placement_over_target(attack, t(i), bat, bslot(), atkimgdirection)
-    anim_absmove 12 + i, targetpos.x, targetpos.y, 8, 8
+    anim_absmove 12 + i, targetpos.x, targetpos.y, 8
     ' Z values are constant
    NEXT i
    anim_checkpoint
@@ -4712,10 +4730,10 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
     anim_flinchstart t(i), bslot(), attack
     targetpos = attack_placement_over_target(attack, t(i), bat, bslot(), atkimgdirection)
     IF is_hero(bat.acting) THEN
-     anim_absmove 12 + i, offscreen.left, targetpos.y, 5, 7
+     anim_absmove 12 + i, offscreen.left, targetpos.y, 5
     END IF
     IF is_enemy(bat.acting) THEN
-     anim_absmove 12 + i, offscreen.right, targetpos.y, 5, 7
+     anim_absmove 12 + i, offscreen.right, targetpos.y, 5
     END IF
     ' Z values are constant
    NEXT i
@@ -4725,7 +4743,7 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
    FOR i = 0 TO tcount - 1
     anim_disappear 12 + i
    NEXT i
-   anim_wait 3
+   anim_wait 5
    anim_skip_ahead_if_targetless
   NEXT j
   anim_skip_to_here
@@ -4759,7 +4777,7 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
    ' Move attacks into the target
    FOR aslot as integer = 0 TO 7
     anim_appear 12 + aslot
-    anim_absmove 12 + aslot, targetpos.x, targetpos.y, 4, 4
+    anim_absmove 12 + aslot, targetpos.x, targetpos.y, 4
     'Z values remain constant
    NEXT aslot
    IF attack.sound_effect > 0 THEN anim_sound(attack.sound_effect - 1)
@@ -4793,8 +4811,7 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
   wave_start_x = offscreen.left
   IF is_hero(bat.acting) THEN wave_start_x = offscreen.right
   DIM x_velocity as integer
-  x_velocity = 24
-  IF is_hero(bat.acting) THEN x_velocity = -24
+  x_velocity = IIF(is_hero(bat.acting), -16, 16)
   ' Time it takes each sprite to move across screen, total time is more
   DIM ticks as integer = 1 + (offscreen.right - offscreen.left) \ ABS(x_velocity)
   ' Only use targetpos.y, and then only if there's just one target.
@@ -4815,9 +4832,10 @@ SUB generate_atkscript(byref attack as AttackData, byref bat as BattleState, bsl
    IF is_hero(bat.acting) THEN anim_hero bat.acting, attack, bslot(), t()
    IF is_enemy(bat.acting) THEN anim_enemy bat.acting, attack, bslot(), t()
    IF attack.sound_effect > 0 THEN anim_sound(attack.sound_effect - 1)
+   'Stagger the time each sprite starts to move
    FOR i = 0 TO 11
     anim_appear 12 + i
-    anim_setmove 12 + i, x_velocity, 0, ticks, 0
+    anim_velocity 12 + i, x_velocity, 0, ticks
     anim_wait 1
    NEXT i
    anim_checkpoint
@@ -4946,6 +4964,7 @@ SUB setup_targetting (byref bat as BattleState, bslot() as BattleSprite)
 
  'fail if there are no targets
  IF targetmaskcount(bat.targ.mask()) = 0 THEN
+  checkAtkTagConds bat.targ.atk, atktagOnTargettingFailed
   bat.targ.mode = targNONE
   EXIT SUB
  END IF
@@ -5378,8 +5397,32 @@ SUB clear_attack_queue_slot(byval slot as integer)
  END WITH
 END SUB
 
-' This is drawn at the top of the screen, rather than the top of the compatpage
 SUB display_attack_queue (bslot() as BattleSprite)
+ ' Visualize the queue's targetting data with lines
+ DIM as integer x1, y1, x2, y2, col
+ FOR i as integer = 0 TO UBOUND(atkq)
+  WITH atkq(i)
+   IF .used THEN
+    IF is_hero(.attacker) THEN
+     col = findrgb(small(.attacker * 20, 255), 255, small(.attacker * 20, 255))
+    ELSE
+     col = findrgb(255, small(.attacker * 20, 255), small(.attacker * 20, 255))
+    END IF
+    x1 = bslot(.attacker).x + bslot(.attacker).w / 2
+    y1 = bslot(.attacker).y + bslot(.attacker).h / 2
+    FOR j as integer = 0 TO UBOUND(.t)
+     IF .t(j) > -1 THEN
+      x2 = bslot(.t(j)).x + bslot(.t(j)).w / 2
+      y2 = bslot(.t(j)).y + bslot(.t(j)).h / 2
+      drawline x1, y1, x2, y2, col, vpage
+     END IF
+    NEXT j
+   END IF
+  END WITH
+ NEXT i
+
+ ' Display the queue as text
+ ' This is drawn at the top of the screen, rather than the top of the compatpage
  DIM s as string
  DIM targstr as string
  FOR i as integer = 0 TO UBOUND(atkq)
@@ -5516,8 +5559,7 @@ SUB battle_animate_running_away (bslot() as BattleSprite)
   IF gam.hero(i).id >= 0 ANDALSO bslot(i).stat.cur.hp > 0 THEN
    WITH bslot(i)
     IF .vis THEN
-     .xmov = 10
-     .xspeed = 6
+     .set_vel_x 6, 10
      .walk = 1
      .d = 1
     END IF
@@ -5562,6 +5604,18 @@ SUB battle_check_delays(byref bat as BattleState, bslot() as BattleSprite)
      bat.anim_ready = NO
      clear_attack_queue_slot i
      EXIT FOR
+    END IF
+   END IF
+  END WITH
+ NEXT i
+END SUB
+
+SUB force_retargetting_for_attacker (byref bat as BattleState, bslot() as BattleSprite, index as integer)
+ FOR i as integer = 0 TO UBOUND(atkq)
+  WITH atkq(i)
+   IF .used THEN
+    IF .attacker = index THEN
+     autotarget .attacker, .attack, bslot(), bat, .t(), NO
     END IF
    END IF
   END WITH

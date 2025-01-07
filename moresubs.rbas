@@ -1182,6 +1182,15 @@ IF skip_if_alone ANDALSO active_party_size() <= 1 THEN
  RETURN who
 END IF
 
+DIM tallness as integer = 20
+DIM spr_sl as Slice Ptr
+FOR party_slot as integer = 0 TO active_party_slots - 1
+ IF gam.hero(party_slot).id >= 0 THEN
+  spr_sl = LookupSliceSafe(SL_WALKABOUT_SPRITE_COMPONENT, gam.hero(party_slot).sl)
+  tallness = large(tallness, spr_sl->height)
+ END IF
+NEXT
+
 menusound gen(genAcceptSFX)
 copypage vpage, dpage
 DIM page as integer = compatpage
@@ -1213,7 +1222,7 @@ DO
   DIM old_who as integer = who
   DIM hover as integer = -1
   FOR i as integer = 0 TO 3
-   IF rect_collide_point(XYWH(100 + i * 30 - 5, 100 - 5, 30, 30), readmouse.pos) THEN
+   IF rect_collide_point(XYWH(100 + i * 30 - 5, 110 - tallness/2 - 5, 30, 10 + tallness), readmouse.pos) THEN
     hover = i
    END IF
   NEXT i
@@ -1237,7 +1246,7 @@ DO
      menusound gen(genCancelSFX)
     END IF
    ELSE
-    IF NOT rect_collide_point(Type(90, 74, 140, 52), readmouse.pos) THEN
+    IF NOT rect_collide_point(Type(90, 84 - tallness/2, 140, 32 + tallness), readmouse.pos) THEN
      'left clicked outside the rectangle
      do_exit = YES
     END IF
@@ -1252,17 +1261,17 @@ DO
   EXIT DO
  END IF
 
- centerbox 160, 100, 140, 52, 1, page
+ centerbox 160, 100, 140, 32 + tallness, 1, page
  FOR party_slot as integer = 0 TO active_party_slots - 1
   IF gam.hero(party_slot).id >= 0 THEN
    DIM walkframe as integer
    IF who = party_slot THEN walkframe = wtog_to_frame(wtog) ELSE walkframe = 0
    set_walkabout_frame gam.hero(party_slot).sl, dirDown, walkframe
-   DrawSliceAt LookupSliceSafe(SL_WALKABOUT_SPRITE_COMPONENT, gam.hero(party_slot).sl), 100 + party_slot * 30, 100, 20, 20, page, YES
+   DrawSliceAt LookupSliceSafe(SL_WALKABOUT_SPRITE_COMPONENT, gam.hero(party_slot).sl), 100 + party_slot * 30, 110 - tallness/2, 20, tallness, page, YES
   END IF
  NEXT
- edgeprint CHR(25), 106 + who * 30, 90, uilook(uiSelectedItem + tog), page
- wrapprint caption, pCentered, 80, uilook(uiText), page
+ edgeprint CHR(25), 106 + who * 30, 100 - tallness/2, uilook(uiSelectedItem + tog), page
+ wrapprint caption, pCentered, 90 - tallness/2, uilook(uiText), page
  setvispage vpage
  dowait
 LOOP
@@ -1605,6 +1614,14 @@ END SUB
 SUB reset_levelmp (byref hero as HeroState)
  get_max_levelmp(hero.levelmp(), hero.lev)
 END SUB
+
+FUNCTION max_levelmp_for_hero(byref hero as HeroState, lmp_slot as integer) as integer
+ 'Currently this is the same for all heros based on level,
+ 'but it would be lovely to have a way to customize that in the future
+ DIM maxes(UBOUND(hero.levelmp)) as integer
+ get_max_levelmp maxes(), hero.lev
+ RETURN maxes(lmp_slot)
+END FUNCTION 
 
 SUB shop (byval id as integer)
 

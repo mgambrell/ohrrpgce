@@ -1,8 +1,66 @@
 WHAT IS NEW?
 
-???? ? 2024 [Ichorescent]
+???uary 28 2??? [J̶u̶m̶u̶l̶e̶n̶t̶ Jocoserious]
 
   *** New Features
+    * Shift Tile tileset animation command. Non-animated uses likely! [Ralph]
+
+   * Battle Features
+    * Attacks can set a tag if their targetting fails [James]
+    * New attack bitset "Replace stored targets" [James]
+
+   * Ports
+    * Uploading your game to itch.io now supports web build too [James]
+    * The web port now supports persistent save games. This uses
+      your web browser's IndexDB for storage [James]
+
+   * Plotscripting Features
+    * "running on web" command
+  
+  *** Bugfixes
+    * It is now possible to re-enable any tag disabled battle menu item,
+      not just specific attacks [James]
+    * Fix tags menu so you can type spaces without choosing a tag [James]
+    * Renamed "Store Target" to "Add targets to stored targets" to reflect
+      how it actually works, and fix incorrect documentation about how
+      it interacts with "Delete Stored Targets" [James]
+    * Replacing equipment when your inventory is full no longer deletes
+      the item you are unequipping [James]
+    * If you use the -nojoy command line argument on custom, then -nojoy
+      is passed to "Test Game" also [James]
+    * An attack which tries to decrease a stat that's below zero no longer
+      increases it to zero (it keeps it unchanged) [Ralph]
+    * The hero-picker menu now automatically gets taller to accomidate
+      tall hero sprites [James]
+  
+
+October 28 2024 [Ichorescent]
+
+  *** Highlights
+    * Ports
+      * New experimental web port (lacks save game support)
+      * Steam Achievements support
+      * Distribute to itch.io option
+      * Commercial console ports such as Switch, PS4/5 and XBox
+      * Android port doesn't currently work on Android 12 or newer
+       (don't worry this will get fixed in the future)
+      * Linux packages and games will now work without installing libraries
+      * Builds to support ancient Win95 PCs
+    * Marvellous new features and fixes, including but not limited to:
+      * New battle features including Turncoat and Defector
+      * New script commands including variable length extra data arrays
+      * New slice features and improved slice editor GUI
+      * Improved support for screen resolutions other than 320x200
+      * Improved mouse/touch support
+      * Improvements to both fullscreen and windowed modes
+      * Debug tools including slice and script profiling
+    * Source code license has been changed to Dual GPLv2+ & MIT license
+    * And more, detailed below!
+
+  *** New Features
+    * Experimental Web (wasm) port! You can export your game to a .zip including
+      an .html file from the Distribute Game menu. However saved games aren't
+      yet kept after closing the page [Blain Maguire, Ralph, James]
     * From the "Distribute Game" menu, you can upload your game directly to
       itch.io [James]
     * gfx_fb backend (the one noone uses) supports non 320x200 games now [Ralph]
@@ -74,7 +132,7 @@ WHAT IS NEW?
       add a column for time each script spends on one command [Ralph]
     * Number of script strings increased from 100 to 256 (IDs 0-255)
     * Attacks can directly spawn an enemy (if there is room) [James]
-    * New attack starget class "Most recently spawned by attack" allows
+    * New attack target class "Most recently spawned by attack" allows
       attack chains to target newly spawned enemies [James]
     * "Battles display at 320x200" battle/backcompat bit (default on) which you
       can turn off to make battles run at a higher resolution. Everything
@@ -109,6 +167,18 @@ WHAT IS NEW?
     * Attack bit "Ignore damage cap" [Ralph]
     * Bitset "Ignore key repeats for confirm, cancel, and menu" and also
       exception bitset "Always allow key repeat for confirm in battles" [James]
+    * Tile animation patterns can be up to 50 commands long rather than just 9
+      (whew). Added Reset and Loop (without Reset) commands. And made the
+      pattern editor a little faster to use. [Ralph]
+    * Support for Steam Achievements (editor under General Game Data). The
+      achievements system currently has no effect in games not distributed via
+      Steam, but will in future! [Mike, Ralph]
+    * Games, and the engine itself, packaged for Linux (except Debian .deb) now
+      include all libraries and should run an any system [Ralph]
+    * "win-win95" engine builds which support Windows 95 or later and Pentium
+      Pro or later. (Regular gfx_sdl2 Windows builds require Win XP and a
+      Pentium 4 (SSE2) CPU but run faster.) For now you need to manually
+      download and combine your .rpg with ohrrpgce-player-*-win95.zip [Ralph]
 
    * New Plotscripting Features
     * "dir X", "dir Y" [Ralph]
@@ -166,6 +236,8 @@ WHAT IS NEW?
       "stop song", "current song"
     * "script layer" alias to "sprite layer", and "sl:sprite layer" alias to
       "sl:script layer"
+    * "get current map autorun script", "get current map autorun script argument"
+      [James]
 
   *** Changes
     * Removed support for optional prefixes on .ini config settings (e.g.
@@ -264,12 +336,19 @@ WHAT IS NEW?
     * A multi-hit Drop attack kept falling downwards from the target instead of
       the sky on the 2nd and later hits [Ralph]
     * You couldn't disable the Windowed/Fullscreen options with a tag [Ralph/RMZ]
+    * After creating or moving an NPC the position of its walkabout slice wasn't
+      immediately correct when checked by a script [Ralph]
+    * Map General Settings menu now actually shows animated map edge tiles [Ralph]
+    * Our most infamous crash bug (Bug #1060), "Occasional MIDI crash when
+      looping on Windows", is fixed after over a decade! Some very short or blank
+      MIDIs crashed very often. Credit to the SDL_Mixer team.
+    * You could activate NPCs while riding a vehicle by clicking on them [James]
 
   *** Stuff Only Developers Will Notice
     * Source code license has been changed to Dual GPLv2+ & MIT license
-      by unanimous consent of all OHRRPGCE contributors [James, Ralph,
+      by unanimous consent of all previous OHRRPGCE contributors [James, Ralph,
       Mike, Simon, David, Yuriy, Jay, Matthias, Adam, Lakan, Taoki,
-      Daniel, SwordPlay, zzo38]
+      Daniel, SwordPlay, zzo38, Lenny]
     * FreeBASIC 1.04+ now required to compile
     * UI in Battle (Hero names, meters, HP, status icons) are now all
       slice-based instead of hardcoded. It still looks the same by
@@ -279,6 +358,10 @@ WHAT IS NEW?
     * gfx_fb and gfx_console take a --nogfx arg, combine with --print to create
       commandline programs [Ralph]
     * Help pages can include template_name.txt using {{name}} syntax [Ralph]
+    * New system for packaging the engine [Ralph]
+    * Ratalaika Games has private (commercial) ports of the OHRRPGCE to consoles
+      including PS4/5, Switch and XBox One/Series X, and made many improvements
+      that will make future ports easier [Matt Gambrell, Ralph]
 
 
 September 13 2021 [Hróðvitnir]

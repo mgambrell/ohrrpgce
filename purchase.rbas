@@ -608,6 +608,9 @@ SUB write_persist_reld()
  IF persist_reld_doc THEN
   DIM filename as string = prefsdir & SLASH & "persist.reld"
   SerializeBin filename, persist_reld_doc
+#IFDEF __FB_JS__
+  web_sync_persistent_storage()
+#ENDIF
  END IF
 END SUB
 

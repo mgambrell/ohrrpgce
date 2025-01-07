@@ -308,6 +308,18 @@
           // application robust, you may want to override this behavior before shipping!
           // See http://www.khronos.org/registry/webgl/specs/latest/1.0/#5.15.2
           canvas.addEventListener("webglcontextlost", function(e) { alert('WebGL context lost. You will need to reload the page.'); e.preventDefault(); }, false);
+          
+          console.log("Adding a one-time click listener callback.");
+          canvas.addEventListener('click', () => {
+            console.log("Running first-click handler.");
+            let mouseEnterEvent = new MouseEvent("mouseenter", {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+            });
+            canvas.dispatchEvent(mouseEnterEvent);
+            console.log("Simulated a mouseenter event to fix cursor hovering.")
+          }, { once: true });
 
           return canvas;
         })(),

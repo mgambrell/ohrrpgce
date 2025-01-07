@@ -313,7 +313,8 @@ NEXT i
 
 a_append atkbit(), -1, ""
 a_append atkbit(), -1, " Effects: on Attacker"
-a_append atkbit(), 52, "Store target"
+a_append atkbit(), 52, "Add target to stored targets"
+a_append atkbit(), 99, "Replace stored targets"
 a_append atkbit(), 53, "Delete stored targets"
 a_append atkbit(), 92, "Always hide attacker (any attacker animation)"
 a_append atkbit(), 93, "Always unhide attacker (any attacker animation)"
@@ -629,7 +630,7 @@ max(AtkLimTag) = max_tag()
 min(AtkLimTag) = -max_tag()
 
 CONST AtkLimTagIf = 24
-max(AtkLimTagIf) = 4
+max(AtkLimTagIf) = 5
 menucapoff(AtkTagIf) = capindex
 'Indices are AttackTagConditionEnum
 addcaption caption(), capindex, "Never:"    '0
@@ -637,6 +638,7 @@ addcaption caption(), capindex, "On Use:"   '1
 addcaption caption(), capindex, "On Hit:"   '2
 addcaption caption(), capindex, "On Miss:"  '3
 addcaption caption(), capindex, "On Kill:"  '4
+addcaption caption(), capindex, "On Targetting Failed:"  '5
 
 CONST AtkLimTagAnd = 25
 max(AtkLimTag) = max_tag()
@@ -2036,7 +2038,6 @@ SUB attack_editor_build_appearance_menu(recbuf() as integer, workmenu() as integ
   DIM anim as integer = recbuf(AtkDatAnimAttacker)
   IF     anim = atkrAnimStrike _
   ORELSE anim = atkrAnimDashIn _
-  ORELSE anim = atkrAnimSpinStrike _
   ORELSE anim = atkrAnimTeleport _
   ORELSE anim = atkrAnimStandingStrike _
   THEN

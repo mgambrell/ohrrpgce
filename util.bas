@@ -1987,6 +1987,14 @@ FUNCTION normalize_path(filename as string) as string
   RETURN ret
 END FUNCTION
 
+FUNCTION path_with_only_forward_slashes(filename as string) as string
+  DIM ret as string = filename
+  FOR i as integer = 0 TO LEN(ret) - 1 
+    IF ret[i] = ASC("\") THEN ret[i] = ASC("/")
+  NEXT
+  RETURN ret
+END FUNCTION
+
 #IFDEF __FB_MAIN__
 
 #DEFINE testjoin(path1, path2, expected) testEqual(join_path(path1, path2), expected)

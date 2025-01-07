@@ -3932,6 +3932,12 @@ end Function
 '=============================================================================
 '                                Slice Velocity
 
+'Slice has velocity. Note returns true if it's paused. Returns false without error if sl=0.
+Function SliceIsMoving(byval sl as Slice ptr) as bool
+ if sl = 0 then return NO
+ return sl->Velocity <> 0 orelse sl->TargTicks > 0
+end function
+
 Sub SetSliceTarg(byval s as Slice ptr, byval x as integer, byval y as integer, byval ticks as integer)
  if s = 0 then debug "SetSliceTarg null ptr": exit sub
  with *s

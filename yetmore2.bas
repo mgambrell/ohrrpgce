@@ -396,7 +396,7 @@ FUNCTION titlescreen () as bool
   ' Draw the screen at least once and fade in before skipping the title screen
   ' (This is not required to avoid any bug, it simply ensures this function acts consistently.)
   IF gam.need_fade_in = NO THEN
-   IF game_check_cancel_key() THEN
+   IF game_check_cancel_key() ANDALSO exit_from_game_is_allowed() THEN
     ret = NO
     EXIT DO
    END IF
@@ -1272,6 +1272,10 @@ FUNCTION game_setoption(opt as string, arg as string) as integer
  ELSEIF opt = "debug-achieve" THEN
   Achievements.enable_debug = true
   RETURN 1
+ ELSEIF opt = "noexit" THEN
+  debuginfo "Disable exit to OS"
+  disable_exit = YES
+  RETURN 1 'arg not used
  END IF
  RETURN 0
 END FUNCTION

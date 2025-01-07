@@ -54,11 +54,11 @@ DECLARE SUB tileedit_show_neighbouring_tiles(byref ts as TileEditState, byval bg
 DECLARE SUB tileedit_show_tile_tiled(byref ts as TileEditState, byval bgcolor as bgType, byval chequer_scroll as integer)
 
 ' Tileset animation editor
-DECLARE SUB testanimpattern (tastuf() as integer, byref taset as integer)
-DECLARE SUB setanimpattern (tastuf() as integer, taset as integer, tilesetnum as integer)
-DECLARE SUB setanimpattern_refreshmenu(state as MenuState, menu() as string, menu2() as string, tastuf() as integer, byval taset as integer, llim() as integer, ulim() as integer)
-DECLARE SUB setanimpattern_forcebounds(tastuf() as integer, byval taset as integer, llim() as integer, ulim() as integer)
-DECLARE SUB tile_anim_set_range(tastuf() as integer, byval taset as integer, byval tilesetnum as integer)
+DECLARE SUB testanimpattern (tanim() as TileAnimPattern, byref taset as integer)
+DECLARE SUB setanimpattern (tanim() as TileAnimPattern, taset as integer, tilesetnum as integer)
+DECLARE SUB setanimpattern_refreshmenu(state as MenuState, state2 as MenuState, menu() as string, menu2() as string, tanim() as TileAnimPattern, byval taset as integer, animop() as string, numargs() as integer, llim() as integer, ulim() as integer)
+DECLARE SUB setanimpattern_forcebounds(tanim() as TileAnimPattern, byval taset as integer, numargs() as integer, llim() as integer, ulim() as integer)
+DECLARE SUB tile_anim_set_range(tanim() as TileAnimPattern, byval taset as integer, byval tilesetnum as integer)
 DECLARE SUB tile_animation(byval tilesetnum as integer)
 DECLARE SUB tile_edit_mode_picker(byval tilesetnum as integer, mapfile as string, byref bgcolor as bgType)
 
@@ -878,9 +878,9 @@ SUB tile_edit_mode_picker(byval tilesetnum as integer, mapfile as string, byref 
 END SUB
 
 SUB tile_animation(byval tilesetnum as integer)
- DIM tastuf(40) as integer
+ DIM tanim(1) as TileAnimPattern
  DIM taset as integer = 0
- load_tile_anims tilesetnum, tastuf()
+ load_tile_anims tilesetnum, tanim()
 
  DIM menu(5) as string 
  menu(0) = "Previous Menu"
@@ -900,21 +900,21 @@ SUB tile_animation(byval tilesetnum as integer)
   IF keyval(scF1) > 1 THEN show_help "maptile_tileanim"
   IF usemenu(state) THEN state.need_update = YES
   IF state.pt = 4 THEN
-   IF tag_grabber(tastuf(1 + 20 * taset), state) THEN state.need_update = YES
+   IF tag_grabber(tanim(taset).disable_tag, state) THEN state.need_update = YES
   ELSE
    IF intgrabber(taset, 0, 1) THEN state.need_update = YES
   END IF
   IF enter_space_click(state) THEN
    SELECT CASE state.pt
     CASE 0: EXIT DO
-    CASE 2: tile_anim_set_range tastuf(), taset, tilesetnum
-    CASE 3: setanimpattern tastuf(), taset, tilesetnum
-    CASE 5: testanimpattern tastuf(), taset
+    CASE 2: tile_anim_set_range tanim(), taset, tilesetnum
+    CASE 3: setanimpattern tanim(), taset, tilesetnum
+    CASE 5: testanimpattern tanim(), taset
    END SELECT
   END IF
   IF state.need_update THEN
    menu(1) = CHR(27) & "Animation Set " & taset & CHR(26)
-   menu(4) = tag_condition_caption(tastuf(1 + 20 * taset), "Disable if Tag", "No tag check")
+   menu(4) = tag_condition_caption(tanim(taset).disable_tag, "Disable if Tag", "No tag check")
    state.need_update = YES
   END IF
   clearpage dpage
@@ -923,10 +923,10 @@ SUB tile_animation(byval tilesetnum as integer)
   setvispage vpage
   dowait
  LOOP
- save_tile_anims tilesetnum, tastuf()
+ save_tile_anims tilesetnum, tanim()
 END SUB
 
-SUB tile_anim_set_range(tastuf() as integer, byval taset as integer, byval tilesetnum as integer)
+SUB tile_anim_set_range(tanim() as TileAnimPattern, byval taset as integer, byval tilesetnum as integer)
  DIM tog as integer
  DIM over_esc as bool  'Mouse over 'ESC when done'
 
@@ -937,35 +937,35 @@ SUB tile_anim_set_range(tastuf() as integer, byval taset as integer, byval tiles
   tog = tog XOR 1
   IF keyval(ccCancel) > 1 OR enter_or_space() THEN EXIT DO
   IF keyval(scF1) > 1 THEN show_help "maptile_setanimrange"
-  IF keyval(ccUp) > 1 THEN tastuf(0 + 20 * taset) = large(tastuf(0 + 20 * taset) - 16, 0)
-  IF keyval(ccDown) > 1 THEN tastuf(0 + 20 * taset) = small(tastuf(0 + 20 * taset) + 16, 112)
-  IF keyval(ccLeft) > 1 THEN tastuf(0 + 20 * taset) = large(tastuf(0 + 20 * taset) - 1, 0)
-  IF keyval(ccRight) > 1 THEN tastuf(0 + 20 * taset) = small(tastuf(0 + 20 * taset) + 1, 112)
+  IF keyval(ccUp) > 1 THEN tanim(taset).range_start = large(tanim(taset).range_start - 16, 0)
+  IF keyval(ccDown) > 1 THEN tanim(taset).range_start = small(tanim(taset).range_start + 16, 112)
+  IF keyval(ccLeft) > 1 THEN tanim(taset).range_start = large(tanim(taset).range_start - 1, 0)
+  IF keyval(ccRight) > 1 THEN tanim(taset).range_start = small(tanim(taset).range_start + 1, 112)
   WITH readmouse
    over_esc = rect_collide_point(str_rect("ESC when done", pInfoX, pInfoY), .pos)
    IF (.release AND mouseleft) ANDALSO over_esc THEN
     EXIT DO
    ELSEIF (.buttons AND mouseLeft) ANDALSO .pos < XY(320, 200) THEN
-    tastuf(0 + 20 * taset) = small(.x \ 20 + (.y \ 20) * 16, 160 - 48)  '48 is the size of the range
+    tanim(taset).range_start = small(.x \ 20 + (.y \ 20) * 16, 160 - 48)  '48 is the size of the range
    END IF
   END WITH
   clearpage dpage
   copypage 3, dpage
-  tile_anim_draw_range tastuf(), taset, dpage
+  tile_anim_draw_range tanim(), taset, dpage
   edgeprint "ESC when done", pInfoX, pInfoY, uilook(IIF(over_esc, uiMouseHoverItem, uiMenuItem)), dpage
   SWAP vpage, dpage
   setvispage vpage
   dowait
  LOOP
- save_tile_anims tilesetnum, tastuf()
+ save_tile_anims tilesetnum, tanim()
 END SUB
 
-SUB tile_anim_draw_range(tastuf() as integer, byval taset as integer, byval page as integer)
+SUB tile_anim_draw_range(tanim() as TileAnimPattern, byval taset as integer, byval page as integer)
  DIM animpos as XYPair
  animpos.x = 0
  animpos.y = 0
  FOR i as integer = 0 TO 159
-  IF i < tastuf(0 + 20 * taset) OR i > tastuf(0 + 20 * taset) + 47 THEN
+  IF i < tanim(taset).range_start OR i > tanim(taset).range_start + 47 THEN
    fuzzyrect animpos.x * 20, animpos.y * 20, 20, 20, uilook(uiText), page
   END IF
   animpos.x += 1
@@ -997,96 +997,13 @@ FUNCTION mouseover (byval mousex as integer, byval mousey as integer, byref zox 
 END FUNCTION
 
 'Edit a tile animation's pattern
-SUB setanimpattern (tastuf() as integer, taset as integer, tilesetnum as integer)
- DIM menu(10) as string
- DIM menu2(1) as string
- menu(0) = "Previous Menu"
+SUB setanimpattern (tanim() as TileAnimPattern, taset as integer, tilesetnum as integer)
+ 'Anim ops start at menu(0).
+ 'If the pattern is full, then menu(maxTileAnimCmds + 1) is a dummy 'loop' op which can't be edited.
+ REDIM menu(-1 TO -1) as string
+ REDIM menu2(0) as string
 
- 'These are the parameter limits for each tile animation op
- DIM llim(7) as integer
- DIM ulim(7) as integer
- FOR i as integer = 1 TO 2
-  llim(i) = 0
-  ulim(i) = 9
- NEXT i
- FOR i as integer = 3 TO 4
-  llim(i) = 0
-  ulim(i) = 159
- NEXT i
- llim(5) = 0
- ulim(5) = 32767
- llim(6) = -max_tag()
- ulim(6) = max_tag()
-
- DIM context as integer = 0
- DIM index as integer = 0
- DIM tog as integer
-
- DIM state as MenuState
- init_menu_state state, menu()
- state.need_update = YES
-
- DIM state2 as MenuState
- init_menu_state state2, menu2()
-
- setkeys
- DO
-  setwait 55
-  setkeys
-  IF keyval(scF1) > 1 THEN show_help "maptile_setanimpattern"
-  SELECT CASE context
-   CASE 0 '---PICK A STATEMENT---
-    IF keyval(ccCancel) > 1 THEN EXIT DO
-    IF usemenu(state) THEN state.need_update = YES
-    IF enter_space_click(state) THEN
-     IF state.pt = 0 THEN
-      EXIT DO
-     ELSEIF state.pt = 10 THEN
-      'The final "repeat" can't be changed
-     ELSE
-      context = 1
-     END IF
-    END IF
-   CASE 1 '---EDIT THAT STATEMENT---
-    IF keyval(ccCancel) > 1 THEN
-     save_tile_anims tilesetnum, tastuf()
-     context = 0
-    END IF
-    usemenu state2
-    index = bound(state.pt - 1, 0, 8) + 20 * taset
-    IF state2.pt = 0 THEN  'Select op
-     IF intgrabber(tastuf(2 + index), 0, 6) THEN state.need_update = YES
-    END IF
-    IF state2.pt = 1 THEN  'Select param
-     IF tastuf(2 + index) = 6 THEN  'If tag do rest
-      IF tag_grabber(tastuf(11 + index), state2) THEN state.need_update = YES
-     ELSE
-      IF intgrabber(tastuf(11 + index), llim(tastuf(2 + index)), ulim(tastuf(2 + index))) THEN state.need_update = YES
-     END IF
-    END IF
-    IF enter_space_click(state2) THEN context = 0
-  END SELECT
-  IF state.need_update THEN
-   setanimpattern_refreshmenu state, menu(), menu2(), tastuf(), taset, llim(), ulim()
-   state.need_update = NO
-  END IF
-  '--Draw screen
-  clearpage dpage
-  state.active = (context = 0)
-  standardmenu menu(), state, , , dpage
-  IF state.pt > 0 THEN
-   state2.active = (context = 1)
-   standardmenu menu2(), state2, pMenuX, 105, dpage
-  END IF
-  SWAP vpage, dpage
-  setvispage vpage
-  dowait
- LOOP
- setanimpattern_forcebounds tastuf(), taset, llim(), ulim()
-END SUB
-
-SUB setanimpattern_refreshmenu(state as MenuState, menu() as string, menu2() as string, tastuf() as integer, byval taset as integer, llim() as integer, ulim() as integer)
- DIM animop(7) as string
+ DIM animop(taopLAST) as string
  animop(0) = "end of animation"
  animop(1) = "up"
  animop(2) = "down"
@@ -1094,84 +1011,264 @@ SUB setanimpattern_refreshmenu(state as MenuState, menu() as string, menu2() as 
  animop(4) = "left"
  animop(5) = "wait"
  animop(6) = "if tag do rest"
- animop(7) = "unknown command"
+ animop(7) = "reset"
+ animop(8) = "loop"
+ animop(9) = "shift tile"
 
- setanimpattern_forcebounds tastuf(), taset, llim(), ulim()
- FOR i as integer = 1 TO 9
-  menu(i) = "-"
+ DIM numargs(taopLAST) as integer
+ numargs(taopUp) = 1
+ numargs(taopDown) = 1
+ numargs(taopRight) = 1
+ numargs(taopLeft) = 1
+ numargs(taopWait) = 1
+ numargs(taopCheckTag) = 1
+ numargs(taopShiftTile) = 2
+
+ 'These are the parameter limits for each tile animation op
+ DIM llim(taopLAST) as integer
+ DIM ulim(taopLAST) as integer
+ FOR i as integer = taopUp TO taopDown
+  llim(i) = 0
+  ulim(i) = 9
  NEXT i
- menu(10) = ""
- DIM anim_a as integer
- DIM anim_b as integer
- DIM anim_i as integer
- FOR anim_i = 0 TO 8
-  anim_a = bound(tastuf((2 + anim_i) + 20 * taset), 0, 7)
-  anim_b = tastuf((11 + anim_i) + 20 * taset)
-  menu(anim_i + 1) = animop(anim_a)
-  IF anim_a = 0 THEN
-   state.last = 1 + anim_i
-   EXIT FOR
+ FOR i as integer = taopRight TO taopLeft
+  llim(i) = 0
+  ulim(i) = 159
+ NEXT i
+ llim(taopWait) = 0
+ ulim(taopWait) = 32767
+ llim(taopCheckTag) = -max_tag()
+ ulim(taopCheckTag) = max_tag()
+ llim(taopShiftTile) = -maxTileOffset
+ ulim(taopShiftTile) = maxTileOffset
+
+ DIM context as integer = 0  '0 = main menu, 1 = detail menu
+ DIM tog as integer
+ DIM curcmd as TileAnimCmd ptr = NULL
+
+ 'Main menu
+ DIM state as MenuState
+ state.autosize_ignore_lines = 4  'Leave room for the detail menu
+ init_menu_state state, menu()
+ state.need_update = YES
+
+ 'Detail menu
+ DIM state2 as MenuState
+ init_menu_state state2, menu2()
+ 'floatrect is the size of the floating detail menu not including the surrounding box or title
+ DIM floatrect as RectType
+
+ setkeys
+ DO
+  setwait 55
+  setkeys
+  IF keyval(scF1) > 1 THEN show_help "maptile_setanimpattern"
+
+  SELECT CASE context
+   CASE 0  '''''Main menu
+    IF usemenu(state) THEN state.need_update = YES
+    IF in_bound(state.pt, 0, maxTileAnimCmds) THEN
+     curcmd = @tanim(taset).cmd(state.pt)
+    ELSE
+     curcmd = NULL
+    END IF
+
+    IF keyval(ccCancel) > 1 THEN EXIT DO
+    IF enter_space_click(state) THEN
+     IF state.pt = -1 THEN  'Previous menu
+      EXIT DO
+     ELSE
+      IF curcmd ANDALSO numargs(curcmd->op) = 0 THEN
+       DIM newop as integer
+       newop = multichoice("Select action:", animop(), taopRight)
+       IF newop > -1 THEN
+        curcmd->op = newop
+        context = IIF(numargs(curcmd->op) = 0, 0, 1)
+        state.need_update = YES
+       END IF
+      ELSE
+       context = 1
+      END IF
+     END IF
+    END IF
+    'Shortcut keys: <,> to change op, left/right/intgrabber to change arg
+    IF curcmd THEN
+     WITH *curcmd
+      DIM int_op as integer = .op
+      IF keygrabber(int_op, 0, taopLAST, scLeftCaret, scRightCaret) THEN state.need_update = YES
+      .op = int_op
+      IF .op <= taopLAST THEN  'Not invalid
+       IF intgrabber(.arg, llim(.op), ulim(.op)) THEN state.need_update = YES
+      END IF
+     END WITH
+    END IF
+
+   CASE 1  '''''Detail menu
+    usemenu state2
+    'The final "loop" can't be changed
+    IF curcmd THEN
+     WITH *curcmd
+      IF state2.pt = 0 THEN  'Select op
+       IF enter_space_click(state2) THEN
+        DIM newop as integer
+        newop = multichoice("Select action:", animop(), taopRight)
+        IF newop > -1 THEN
+         .op = newop
+         context = IIF(numargs(curcmd->op) = 0, 0, 1)  'Don't need to stay in this submenu
+         state.need_update = YES
+        END IF
+       END IF
+       IF intgrabber(.op, 0, taopLAST) THEN state.need_update = YES
+      ELSEIF .op <= taopLAST THEN  'Not invalid
+       IF state2.pt = 1 THEN  'Select arg
+        IF .op = taopCheckTag THEN  'If tag do rest
+         IF tag_grabber(.arg, state2) THEN state.need_update = YES
+        ELSE
+         IF intgrabber(.arg, llim(.op), ulim(.op)) THEN state.need_update = YES
+        END IF
+       ELSEIF state2.pt = 2 THEN  'Select arg2
+        'TODO: assuming arg and arg2 have same limits
+        IF intgrabber(.arg2, llim(.op), ulim(.op)) THEN state.need_update = YES
+       END IF
+      END IF
+     END WITH
+    END IF
+    IF keyval(ccCancel) > 1 ORELSE enter_or_space() ORELSE _
+       menu_click_outside(floatrect) ORELSE menu_right_click_close(floatrect) THEN
+     save_tile_anims tilesetnum, tanim()
+     context = 0
+    END IF
+
+  END SELECT
+  IF state.need_update THEN
+   setanimpattern_refreshmenu state, state2, menu(), menu2(), tanim(), taset, animop(), numargs(), llim(), ulim()
+   state.need_update = NO
   END IF
-  IF anim_a > 0 AND anim_a < 6 THEN menu(anim_i + 1) &= " " & anim_b
-  IF anim_a = 6 THEN menu(anim_i + 1) &= " (" & load_tag_name(anim_b) & ")"
+  '--Draw screen
+  clearpage dpage
+  state.active = (context = 0)
+  standardmenu menu(), state, , , dpage
+  state2.active = (context = 1) ANDALSO curcmd  'Not final forced Loop
+  IF context = 0 THEN
+   IF curcmd ANDALSO curcmd->op = taopEnd THEN
+    edgeprint "Enter/</> to pick op", pInfoX, pInfoY, uilook(uiDisabledItem), dpage
+   ELSE
+    edgeprint "Enter: Edit, </>: change op, Left/Right: change value", pInfoX, pInfoY, uilook(uiDisabledItem), dpage
+   END IF
+  END IF
+
+  IF context = 1 THEN
+   'Draw the detail-edit menu immediately below the selected menu item in the main menu
+   floatrect = XYWH(pMenuX + 4, pMenuY + (state.pt - state.top + 1) * 9 + 13, 310, 10 * (1 + UBOUND(menu2)))
+   edgebox floatrect.x - 3, floatrect.y - 13, floatrect.w + 6, floatrect.h + 16, uilook(uiBackground), uilook(uiMenuItem), dpage
+   edgeprint "Edit command", floatrect.x + floatrect.w \ 2 + ancCenter, floatrect.y - 10, uilook(eduiHeading), dpage
+   standardmenu menu2(), state2, floatrect.x, floatrect.y, dpage
+  END IF
+  SWAP vpage, dpage
+  setvispage vpage
+  dowait
+ LOOP
+ setanimpattern_forcebounds tanim(), taset, numargs(), llim(), ulim()
+END SUB
+
+SUB setanimpattern_refreshmenu(state as MenuState, state2 as MenuState, menu() as string, menu2() as string, tanim() as TileAnimPattern, byval taset as integer, animop() as string, numargs() as integer, llim() as integer, ulim() as integer)
+
+ setanimpattern_forcebounds tanim(), taset, numargs(), llim(), ulim()
+
+ REDIM menu(-1 TO -1)
+ menu(-1) = "Previous Menu"
+ DIM anim_i as integer
+ FOR anim_i = 0 TO maxTileAnimCmds
+  WITH tanim(taset).cmd(anim_i)
+   DIM mitem as string = safe_caption(animop(), .op)
+   SELECT CASE .op
+     CASE taopCheckTag
+      mitem &= " (" & load_tag_name(.arg) & ")"
+     CASE IS <= taopLAST  'Not invalid
+      IF numargs(.op) >= 1 THEN mitem &= " " & .arg
+      IF numargs(.op) >= 2 THEN mitem &= ", " & .arg2
+   END SELECT
+   a_append menu(), mitem
+
+   IF .op = taopEnd ORELSE .op = taopLoop THEN EXIT FOR
+  END WITH
  NEXT anim_i
  'If the tile animation doesn't end with an "end of animation" op, then it
  'actually loops without resetting, meaning it can loop through the whole tileset!
  'This is used in some games such as Timpoline and Super Walrus Chef.
- IF anim_i > 8 THEN
-  menu(10) = "repeat"
-  state.last = 10
+ IF anim_i > maxTileAnimCmds THEN
+  a_append menu(), "loop  [pattern is full]"
  END IF
 
- IF state.pt = 10 THEN
-  '"repeat"
-  menu2(0) = "Action=repeat  [pattern is full]"
-  menu2(1) = "Value=N/A"
- ELSE
-  DIM op as integer
-  op = tastuf(2 + bound(state.pt - 1, 0, 8) + 20 * taset)
-  DIM param as integer
-  param = tastuf(11 + bound(state.pt - 1, 0, 8) + 20 * taset)
-  menu2(0) = "Action=" + animop(bound(op, 0, 7))
-  menu2(1) = "Value="
-  SELECT CASE op
-   CASE 1 TO 4
-    menu2(1) &= param & " Tiles"
-   CASE 5
-    menu2(1) &= param & " Ticks"
-   CASE 6
-    menu2(1) &= tag_condition_caption(param, , "Never")
-   CASE ELSE
-    menu2(1) &= "N/A"
-  END SELECT
+ REDIM menu2(0)
+
+ IF state.pt = maxTileAnimCmds + 1 THEN
+  'menu2(0) = "Action: loop"'  [pattern is full]"
+  'menu2(1) = "Value N/A"
+  REDIM menu2(1)
+  menu2(0) = "There is no room for more commands, so"
+  menu2(1) = "the pattern loops here at the end."
+ ELSEIF in_bound(state.pt, 0, maxTileAnimCmds) THEN
+  WITH tanim(taset).cmd(state.pt)
+   menu2(0) = "Action: " + safe_caption(animop(), .op)
+   IF .op <= taopLAST ANDALSO numargs(.op) > 0 THEN
+    REDIM PRESERVE menu2(1)
+    menu2(1) = "Amount: "
+    SELECT CASE .op
+     CASE taopUp, taopDown, taopLeft, taopRight
+      menu2(1) &= .arg & " tiles"
+     CASE taopWait
+      menu2(1) &= .arg & " ticks"
+     CASE taopCheckTag
+      menu2(1) &= tag_condition_caption(.arg, , "Never")
+     CASE taopShiftTile
+      REDIM PRESERVE menu2(2)
+      menu2(1) = "X offset: " & .arg & " pixels"
+      menu2(2) = "Y offset: " & .arg2 & " pixels"
+    END SELECT
+   END IF
+  END WITH
  END IF
+
+ state.last = UBOUND(menu)
+ correct_menu_state state
+ state2.last = UBOUND(menu2)
+ correct_menu_state state2
 END SUB
 
-SUB setanimpattern_forcebounds(tastuf() as integer, byval taset as integer, llim() as integer, ulim() as integer)
+SUB setanimpattern_forcebounds(tanim() as TileAnimPattern, byval taset as integer, numargs() as integer, llim() as integer, ulim() as integer)
  DIM tmp as integer
- FOR i as integer = 0 TO 8
-  tmp = i + 20 * taset
-  tastuf(2 + tmp) = bound(tastuf(2 + tmp), 0, 7)  '7 is "unknown command"
-  tastuf(11 + tmp) = bound(tastuf(11 + tmp), llim(tastuf(2 + tmp)), ulim(tastuf(2 + tmp)))
+ FOR i as integer = 0 TO UBOUND(tanim(taset).cmd)
+  WITH tanim(taset).cmd(i)
+   'Preserve unknown ops > taopLAST, but wipe invalid negative ones
+   IF .op < 0 THEN .op = 0
+   IF .op <= taopLAST ANDALSO numargs(.op) >= 1 THEN
+    .arg = bound(.arg, llim(.op), ulim(.op))
+   END IF
+  END WITH
  NEXT i
 END SUB
 
-SUB testanimpattern (tastuf() as integer, byref taset as integer)
+SUB testanimpattern (tanim() as TileAnimPattern, byref taset as integer)
  DIM sample as TileMap
- DIM tilesetview as TileMap
- DIM tanim_state(1) as TileAnimState
- DIM tileset as Frame ptr = NULL
  DIM tog as integer
- DIM csr as integer
+ DIM csr as integer  'Selected tile 0-47
  DIM x as integer
  DIM y as integer
 
- tileset = mxs_frame_to_tileset(vpages(3))
+ 'Copy tanim() into a temporary TileSetData which the drawmap API needs
+ DIM tileset as TilesetData
+ tileset.spr = mxs_frame_to_tileset(vpages(3))
+ FOR i as integer = 0 TO UBOUND(tanim)
+  tileset.tanim(i) = tanim(i)
+ NEXT
 
+ 'TileMap for showing the 48 tile range of the animation pattern
+ DIM tilesetview as TileMap
  cleantilemap tilesetview, 16, 3
- FOR y as integer = 0 TO 2
-  FOR x as integer = 0 TO 15
-   writeblock tilesetview, x, y, tastuf(20 * taset) + x + y * 16
+ FOR y = 0 TO 2
+  FOR x = 0 TO 15
+   writeblock tilesetview, x, y, tanim(taset).range_start + x + y * 16
   NEXT
  NEXT
 
@@ -1188,21 +1285,33 @@ SUB testanimpattern (tastuf() as integer, byref taset as integer)
   IF keyval(ccLeft) > 1 THEN loopvar csr, 0, 47, -1
   IF keyval(ccRight) > 1 THEN loopvar csr, 0, 47, 1
 
+  DIM animated_tile as integer = 160 + (taset * 48) + csr
+
+  setoutside -2  'Don't draw beyond tilemap edge
+
   clearpage dpage
   '--draw available animating tiles--
-  drawmap tilesetview, 0, 0, tileset, dpage, , , , 10, 60
+  drawmap tilesetview, 0, 0, @tileset, dpage, , , , 10, 60
 
   '--draw sample--
-  setanim tastuf(0) + tanim_state(0).cycle, tastuf(20) + tanim_state(1).cycle
-  cycletile tanim_state(), tastuf()
+  animatetileset tileset
 
   cleantilemap sample, 3, 3
   FOR x = 0 TO 2
    FOR y = 0 TO 2
-    writeblock sample, x, y, 160 + (taset * 48) + csr
+    writeblock sample, x, y, animated_tile
    NEXT
   NEXT
-  drawmap sample, -130, 0, tileset, dpage, , , , 100, 60
+  drawmap sample, -130, 0, @tileset, dpage, , , , 100, 60
+
+  '--Highlight current display tile for the sample--
+  DIM display_tile as integer = tile_anim_current_display_tile(animated_tile, @tileset) - tanim(taset).range_start
+  'This tile might not be on the previewed part of the tileset. Improve later.
+  IF in_bound(display_tile, 0, 47) THEN
+   y = display_tile \ 16
+   x = display_tile - y * 16
+   drawants vpages(dpage), 20 * x, 10 + 20 * y, 20, 20, findrgb(150,150,150)
+  END IF
 
   '--Draw cursor--
   y = csr \ 16
@@ -1213,7 +1322,7 @@ SUB testanimpattern (tastuf() as integer, byref taset as integer)
   setvispage vpage
   dowait
  LOOP
- frame_unload @tileset
+ frame_unload @tileset.spr
  unloadtilemap sample
  unloadtilemap tilesetview
 END SUB

@@ -154,19 +154,51 @@ DECLARE FUNCTION overlay_message_visible () as bool
 DECLARE SUB engine_settings_menu ()
 
 '==========================================================================================
-'                                        Maps
+'                                  Tilesets & Maps
+
+Enum TileAnimOperator
+ taopEnd = 0
+ taopUp = 1
+ taopDown = 2
+ taopRight = 3
+ taopLeft = 4
+ taopWait = 5
+ taopCheckTag = 6
+ taopReset = 7
+ taopLoop = 8
+ taopShiftTile = 9
+ taopLAST = 9
+End Enum
+
+Type TileAnimCmd
+  op as TileAnimOperator
+  arg as integer
+  arg2 as integer
+End Type
+
+Type TileAnimPattern
+  range_start as integer
+  disable_tag as integer
+  cmd(maxTileAnimCmds) as TileAnimCmd
+
+  'For future use; currently unused. See save_tile_anims
+  tileset_num as integer
+  range_length as integer = 48
+  range_stride as integer = 1
+End Type
 
 Type TileAnimState
   cycle as integer 'Current tile offset (tile to show)
   pt as integer    'Step number of the next step in the animation
   skip as integer  'Number of ticks left in current wait
+  drawoffset as XYPair 'Offset due to taopShiftTile
 End Type
 
 Type TilesetData
   num as integer
   spr as Frame ptr
-  anim(1) as TileAnimState
-  tastuf(40) as integer
+  tanim(1) as TileAnimPattern
+  tanim_state(1) as TileAnimState
 End Type
 
 '*** Requires construction + destruction ***
@@ -186,12 +218,11 @@ DECLARE FUNCTION readblock (map as TileMap, x as integer, y as integer, default 
 DECLARE SUB writeblock (map as TileMap, x as integer, y as integer, v as integer)
 
 DECLARE SUB drawmap OVERLOAD (tmap as TileMap, x as integer, y as integer, tileset as TilesetData ptr, p as integer, trans as bool = NO, overheadmode as integer = 0, pmapptr as TileMap ptr = NULL, ystart as integer = 0, yheight as integer = -1, pal as Palette16 ptr = NULL, opts as DrawOptions = def_drawoptions)
-DECLARE SUB drawmap OVERLOAD (tmap as TileMap, x as integer, y as integer, tilesetsprite as Frame ptr, p as integer, trans as bool = NO, overheadmode as integer = 0, pmapptr as TileMap ptr = NULL, ystart as integer = 0, yheight as integer = -1, largetileset as bool = NO, pal as Palette16 ptr = NULL, opts as DrawOptions = def_drawoptions)
-DECLARE SUB drawmap OVERLOAD (tmap as TileMap, x as integer, y as integer, tilesetsprite as Frame ptr, dest as Frame ptr, trans as bool = NO, overheadmode as integer = 0, pmapptr as TileMap ptr = NULL, largetileset as bool = NO, pal as Palette16 ptr = NULL, opts as DrawOptions = def_drawoptions)
+DECLARE SUB drawmap OVERLOAD (tmap as TileMap, x as integer, y as integer, tilesetsprite as Frame ptr, tilesetanims as TilesetData ptr = NULL, p as integer, trans as bool = NO, overheadmode as integer = 0, pmapptr as TileMap ptr = NULL, ystart as integer = 0, yheight as integer = -1, largetileset as bool = NO, pal as Palette16 ptr = NULL, opts as DrawOptions = def_drawoptions)
+DECLARE SUB drawmap OVERLOAD (tmap as TileMap, x as integer, y as integer, tilesetsprite as Frame ptr, tilesetanims as TilesetData ptr = NULL, dest as Frame ptr, trans as bool = NO, overheadmode as integer = 0, pmapptr as TileMap ptr = NULL, largetileset as bool = NO, pal as Palette16 ptr = NULL, opts as DrawOptions = def_drawoptions)
+
 DECLARE SUB draw_layers_at_tile(composed_tile as Frame ptr, tiles as TileMap ptr vector, tilesets as TilesetData ptr vector, tx as integer, ty as integer, pmapptr as TileMap ptr = NULL)
 
-DECLARE SUB setanim OVERLOAD (cycle1 as integer, cycle2 as integer)
-DECLARE sub setanim OVERLOAD (tileset as TilesetData ptr)
 DECLARE SUB setoutside (defaulttile as integer)
 
 
@@ -816,6 +847,7 @@ declare function read_environment_key(key as string) as string
 declare function running_on_console() as bool
 declare function running_on_mobile() as bool
 declare function running_on_ouya() as bool 'Only use this for things that strictly require OUYA, like the OUYA store
+declare function running_on_web() as bool
 
 declare sub ouya_purchase_request (dev_id as string, identifier as string, key_der as string)
 declare function ouya_purchase_is_ready () as bool

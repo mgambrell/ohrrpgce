@@ -1192,6 +1192,7 @@ FUNCTION defbinsize (byval id as integer) as integer
  IF id = binDT0        THEN RETURN 636 '.dt0
  IF id = binDT1        THEN RETURN 320 '.dt1
  IF id = binITM        THEN RETURN 200 '.itm
+ IF id = binTAP        THEN RETURN 40  '.tap
  RETURN 0
 END FUNCTION
 
@@ -1211,6 +1212,7 @@ FUNCTION curbinsize (byval id as integer) as integer
  IF id = binDT0        THEN RETURN 858 '.dt0
  IF id = binDT1        THEN RETURN 744 '.dt1
  IF id = binITM        THEN RETURN 480 '.itm
+ IF id = binTAP        THEN RETURN 314 '.tap
  RETURN 0
 END FUNCTION
 
@@ -3404,6 +3406,11 @@ END FUNCTION
 ' Would return NO to indicate failure (e.g. no web browser installed), but we might
 ' not detect failure on some platforms. Definitely no error for a bad URL.
 FUNCTION open_document (file_or_url as string) as bool
+ #IFDEF __FB_JS__
+ web_open_url file_or_url
+ RETURN YES 'Don't bother trying to check if it worked
+ #ELSE
+
  #IFDEF __FB_WIN32__
   ' safe_shell "START """ & file_or_url & """"
 
@@ -3425,12 +3432,16 @@ FUNCTION open_document (file_or_url as string) as bool
    'xdg-open is part of freedesktop.org so will be present on almost every Linux
    'distro with a WM, and Exists on at least some BSDs too.
    exitcode = safe_shell("xdg-open '" & file_or_url & "'")
+   
+  'End else Mac
   #ENDIF
 
   IF exitcode = 0 THEN RETURN YES
   visible_debug "Couldn't open " & file_or_url
   RETURN NO
-
+ 'End else Windows
+ #ENDIF
+ 'End else JS
  #ENDIF
 END FUNCTION
 
@@ -4582,54 +4593,54 @@ END IF
 IF gen(genVersion) = 1 THEN
  upgrade_message "June 18 1999 format (2)"
  gen(genVersion) = 2
+
  upgrade_message "Updating Door Format..."
  ' Read 20 records, 600 bytes each
  DIM doorbuf(20 * 600 \ 2) as integer
  IF isfile(game + ".dor") THEN xbload game + ".dor", doorbuf(), "No doors"
  storerecord doorbuf(), game + ".dox", 20 * 600 \ 2, 0
+
  upgrade_message "Enforcing default font"
  DIM fnt(1023) as integer
  getdefaultfont fnt()
  xbsave game + ".fnt", fnt(), 2048
+
  upgrade_message "rpgfix: Upgrading to customisable tile animations"
- ' The last two tiles in the tileset used to auto-toggle. Add a default
+ ' The last two tiles in the tileset used to auto-toggle (only tile 158, not 159). Add a default
  ' tile animation and replace those tiles with animated tiles.
- FOR i as integer = 0 TO 39
-  buffer(i) = 0
- NEXT i
- FOR i as integer = 0 TO 1
-  DIM o as integer = i * 20
-  buffer(0 + o) = 112
-  buffer(1 + o) = 0
+ DIM tanim(1) as TileAnimPattern
+ WITH tanim(0)
+  .range_start = 112
   '--wait 3--
-  buffer(2 + o + 0) = 5
-  buffer(11 + o + 0) = 3
+  .cmd(0).op = taopWait
+  .cmd(0).arg = 3
   '--right 1--
-  buffer(2 + o + 1) = 3
-  buffer(11 + o + 1) = 1
+  .cmd(1).op = taopRight
+  .cmd(1).arg = 1
   '--wait 3--
-  buffer(2 + o + 2) = 5
-  buffer(11 + o + 2) = 3
+  .cmd(2).op = taopWait
+  .cmd(2).arg = 3
   '--left 1--
-  buffer(2 + o + 3) = 4
-  buffer(11 + o + 3) = 1
- NEXT i
+  .cmd(3).op = taopLeft
+  .cmd(3).arg = 1
+  '--end--
+ END WITH
  FOR i as integer = 0 TO gen(genMaxTile)
-  save_tile_anims i, buffer()
+  save_tile_anims i, tanim()
  NEXT i
- DIM tx as integer, ty as integer
  DIM tmap as TileMap
  FOR i as integer = 0 TO gen(genMaxMap)
-  upgrade_message " map " & i
+  debuginfo "rpgfix:  map " & i
   loadtilemap tmap, maplumpname(i, "t")
-  FOR tx = 0 TO tmap.wide - 1
-   FOR ty = 0 TO tmap.high - 1
+  FOR tx as integer = 0 TO tmap.wide - 1
+   FOR ty as integer = 0 TO tmap.high - 1
     IF readblock(tmap, tx, ty) = 158 THEN writeblock tmap, tx, ty, 206
    NEXT ty
   NEXT tx
   savetilemap tmap, maplumpname(i, "t")
  NEXT i
  unloadtilemap tmap
+
 END IF
 '---VERSION 3---
 IF gen(genVersion) = 2 THEN
@@ -4887,6 +4898,7 @@ updaterecordlength workingdir + SLASH + "attack.bin", binATTACK
 updaterecordlength game + ".stf", binSTF
 updaterecordlength workingdir + SLASH + "songdata.bin", binSONGDATA
 updaterecordlength workingdir + SLASH + "sfxdata.bin", binSFXDATA
+updaterecordlength game + ".tap", binTAP
 updaterecordlength game + ".map", binMAP
 updaterecordlength workingdir + SLASH + "menus.bin", binMENUS
 updaterecordlength workingdir + SLASH + "menuitem.bin", binMENUITEM
@@ -4978,6 +4990,17 @@ IF full_upgrade THEN
  END IF
  safekill game + ".mxs"
  sprite_empty_cache
+END IF
+
+IF getfixbit(fixExtendedTileAnims) = 0 THEN
+ upgrade_message "Extend tile animations..."
+ 'load_tile_anims initializes the new data if the fixbit is off
+ REDIM tanim(1) as TileAnimPattern
+ FOR i as integer = 0 TO gen(genMaxTile)
+  load_tile_anims i, tanim()
+  save_tile_anims i, tanim()
+ NEXT i
+ setfixbit(fixExtendedTileAnims, 1)
 END IF
 
 'Workaround bug #2013: Backdrops were drawn immediately above (instead of) spritelayer until
@@ -6599,18 +6622,22 @@ FUNCTION menu_click (state as MenuState) as bool
  RETURN NO
 END FUNCTION
 
-FUNCTION menu_click_outside(m as MenuDef) as bool
+FUNCTION menu_click_outside(menurect as RectType, menu_age as integer = 30) as bool
  DIM use_mouse as bool = YES
 #IFDEF IS_GAME
  use_mouse = get_gen_bool("/mouse/mouse_menus") OR (force_use_mouse > 0)
 #ENDIF
  IF use_mouse THEN
   IF (readmouse.release AND mouseLeft) ANDALSO readmouse.drag_dist < 10 THEN
-   IF readmouse.left_click_age > m.age THEN RETURN NO
-   IF NOT rect_collide_point(m.rect, readmouse().pos) THEN RETURN YES
+   IF readmouse.left_click_age > menu_age THEN RETURN NO
+   IF NOT rect_collide_point(menurect, readmouse().pos) THEN RETURN YES
   END IF
  END IF
  RETURN NO
+END FUNCTION
+
+FUNCTION menu_click_outside(m as MenuDef) as bool
+ RETURN menu_click_outside(m.rect, m.age)
 END FUNCTION
 
 FUNCTION menu_click_outside_with_page(m as MenuDef, viewport_page as integer) as bool
@@ -6621,17 +6648,21 @@ FUNCTION menu_click_outside_with_page(m as MenuDef, viewport_page as integer) as
  RETURN result
 END FUNCTION
 
-FUNCTION menu_right_click_close(m as MenuDef) as bool
+FUNCTION menu_right_click_close(menurect as RectType) as bool
  DIM use_mouse as bool = YES
 #IFDEF IS_GAME
  use_mouse = get_gen_bool("/mouse/mouse_menus") OR (force_use_mouse > 0)
 #ENDIF
  IF use_mouse THEN
   IF (readmouse.release AND mouseRight) ANDALSO readmouse.drag_dist < 10 THEN
-   IF NOT rect_collide_point(m.rect, readmouse().pos) THEN RETURN YES
+   IF NOT rect_collide_point(menurect, readmouse().pos) THEN RETURN YES
   END IF
  END IF
  RETURN NO
+END FUNCTION
+
+FUNCTION menu_right_click_close(m as MenuDef) as bool
+ RETURN menu_right_click_close(m.rect)
 END FUNCTION
 
 'Whether a mouse click should dismiss a modal message box
@@ -6644,16 +6675,17 @@ FUNCTION click_dismiss () as bool
 END FUNCTION
 
 'Sometimes space should be used for text input
-FUNCTION enter_click (state as MenuState) as bool
+FUNCTION enter_click_but_not_space (state as MenuState) as bool
  IF menu_click(state) THEN RETURN YES
- RETURN keyval(ccUse) > 1 ORELSE keyval(scAnyEnter) > 1
+ RETURN keyval(scAnyEnter) > 1 ORELSE (keyval(ccUse) > 1 ANDALSO keyval(scSpace) = 0)
 END FUNCTION
 
 'You should call usemenu before calling this, to ensure state.pt is correct!
 'Note: This also includes Ctrl in Game! (And in future, any custom Use key mappings)
 '  To avoid that, call push_and_reset_gfxio_state
 FUNCTION enter_space_click (state as MenuState) as bool
- RETURN enter_click(state) ORELSE keyval(scSpace) > 1
+ IF menu_click(state) THEN RETURN YES
+ RETURN keyval(ccUse) > 1 ORELSE keyval(scAnyEnter) > 1 ORELSE keyval(scSpace) > 1
 END FUNCTION
 
 'NOTE: This also includes Ctrl in Game (see above)!
@@ -6749,63 +6781,81 @@ SUB animatetilesets (tilesets() as TilesetData ptr)
    '  because the same tileset can be used on more than one layer...
    IF tilesets(i) = tilesets(j) THEN CONTINUE FOR, FOR
   NEXT
-  cycletile tilesets(i)->anim(), tilesets(i)->tastuf()
+  animatetileset *tilesets(i)
  NEXT
 END SUB
 
-SUB cycletile (tanim_state() as TileAnimState, tastuf() as integer)
+SUB animatetileset (tileset as TilesetData)
+ STATIC seen_unknown as bool = NO
  DIM notstuck as integer
- FOR i as integer = 0 TO 1
+ FOR pattern as integer = 0 TO 1
 #IFDEF IS_GAME
-  IF istag(tastuf(1 + 20 * i), 0) THEN CONTINUE FOR
+  IF istag(tileset.tanim(pattern).disable_tag, 0) THEN CONTINUE FOR
 #ENDIF
-  WITH tanim_state(i)
+  WITH tileset.tanim_state(pattern)
    .skip = large(.skip - 1, 0)
    IF .skip = 0 THEN
+    CONST lastcmd = UBOUND(tileset.tanim(pattern).cmd)
     notstuck = 10
     DO
-     SELECT CASE tastuf(2 + 20 * i + .pt)
-      CASE 0  'End of animation
-       IF .pt <> 0 THEN .cycle = 0  'this is done for the tile animation plotscript commands
+     DIM byref cmd as TileAnimCmd = tileset.tanim(pattern).cmd(.pt)
+     SELECT CASE cmd.op
+      CASE taopEnd
+       'Don't reset if the pattern is empty (.pt = 0), so tile animation
+       'script commands can set .cycle
+       IF .pt <> 0 THEN .cycle = 0
        .pt = 0
-      CASE 1  'Left
-       .cycle = .cycle - tastuf(11 + 20 * i + .pt) * 16
-       loopvar .pt, 0, 8
-      CASE 2  'Right
-       .cycle = .cycle + tastuf(11 + 20 * i + .pt) * 16
-       loopvar .pt, 0, 8
-      CASE 3  'Down
-       .cycle = .cycle + tastuf(11 + 20 * i + .pt)
-       loopvar .pt, 0, 8
-      CASE 4  'Up
-       .cycle = .cycle - tastuf(11 + 20 * i + .pt)
-       loopvar .pt, 0, 8
-      CASE 5  'Wait
-       .skip = tastuf(11 + 20 * i + .pt)
-       loopvar .pt, 0, 8
+      CASE taopReset
+       .cycle = 0
+       loopvar .pt, 0, lastcmd
+      CASE taopLoop
+       .pt = 0
+      CASE taopUp
+       .cycle -= cmd.arg * 16
+       loopvar .pt, 0, lastcmd
+      CASE taopDown
+       .cycle += cmd.arg * 16
+       loopvar .pt, 0, lastcmd
+      CASE taopRight
+       .cycle += cmd.arg
+       loopvar .pt, 0, lastcmd
+      CASE taopLeft
+       .cycle -= cmd.arg
+       loopvar .pt, 0, lastcmd
+      CASE taopWait
+       .skip = cmd.arg
+       loopvar .pt, 0, lastcmd
 #IFDEF IS_GAME
-      CASE 6  'If tag then stop
-       IF istag(tastuf(11 + 20 * i + .pt), 0) THEN
-        loopvar .pt, 0, 8
+      CASE taopCheckTag  'Or else stop
+       IF istag(cmd.arg, 0) THEN
+        loopvar .pt, 0, lastcmd
        ELSE
         .pt = 0
         .cycle = 0
        END IF
 #ENDIF
-      CASE ELSE  'Invalid
-       loopvar .pt, 0, 8
+      CASE taopShiftTile
+       .drawoffset.x = cmd.arg
+       .drawoffset.y = cmd.arg2
+       loopvar .pt, 0, lastcmd
+      CASE ELSE  'Invalid/Unknown
+       IF seen_unknown = NO THEN
+        debug "Unknown tile animation op " & cmd.op & " in tileset " & tileset.num
+        seen_unknown = YES
+       END IF
+       loopvar .pt, 0, lastcmd
      END SELECT
-     notstuck = large(notstuck - 1, 0)
-    LOOP WHILE notstuck AND .skip = 0
+     notstuck -= 1
+    LOOP WHILE notstuck > 0 AND .skip = 0
    END IF
   END WITH
- NEXT i
+ NEXT pattern
 END SUB
 
 'Reset state of all animations to beginning
-SUB reset_tile_anims(tileset as TilesetData ptr)
- FOR j as integer = 0 TO 1
-  WITH tileset->anim(j)
+SUB reset_tile_anims(tileset as TilesetData)
+ FOR pattern as integer = 0 TO UBOUND(tileset.tanim_state)
+  WITH tileset.tanim_state(pattern)
    .cycle = 0
    .pt = 0
    .skip = 0
@@ -6817,8 +6867,8 @@ SUB lockstep_tile_animation (tilesets() as TilesetData ptr, byval layer as integ
  'Called after changing a layer's tileset to make sure its tile animation is in phase with other layers of the same tileset
  FOR i as integer = 0 TO UBOUND(tilesets)
   IF i <> layer ANDALSO tilesets(i) ANDALSO tilesets(i)->num = tilesets(layer)->num THEN
-   tilesets(layer)->anim(0) = tilesets(i)->anim(0)
-   tilesets(layer)->anim(1) = tilesets(i)->anim(1)
+   tilesets(layer)->tanim_state(0) = tilesets(i)->tanim_state(0)
+   tilesets(layer)->tanim_state(1) = tilesets(i)->tanim_state(1)
    EXIT SUB
   END IF
  NEXT
@@ -6858,10 +6908,10 @@ SUB loadtilesetdata (tilesets() as TilesetData ptr, byval layer as integer, byva
  WITH *tilesets(layer)
   .num = tilesetnum
   .spr = frame_load(sprTypeTilesetStrip, tilesetnum)
-  load_tile_anims tilesetnum, .tastuf()
+  load_tile_anims tilesetnum, .tanim()
  END WITH
 
- reset_tile_anims tilesets(layer)
+ reset_tile_anims *tilesets(layer)
  lockstep_tile_animation tilesets(), layer
 END SUB
 
@@ -6924,7 +6974,7 @@ SUB loadmaptilesets (tilesets() as TilesetData ptr, gmap() as integer, resetanim
  FOR i as integer = 0 TO UBOUND(tilesets)
   tileset = get_layer_tileset(i, gmap())
   loadtilesetdata tilesets(), i, tileset
-  IF resetanimations THEN reset_tile_anims tilesets(i)
+  IF resetanimations THEN reset_tile_anims *tilesets(i)
  NEXT
 END SUB
 
@@ -6933,8 +6983,8 @@ SUB reloadtileanimations (tilesets() as TilesetData ptr, gmap() as integer)
 
  FOR i as integer = 0 TO UBOUND(tilesets)
   tileset = get_layer_tileset(i, gmap())
-  load_tile_anims tileset, tilesets(i)->tastuf()
-  reset_tile_anims tilesets(i)
+  load_tile_anims tileset, tilesets(i)->tanim()
+  reset_tile_anims *tilesets(i)
  NEXT
 END SUB
 
@@ -8556,6 +8606,11 @@ SUB set_game_config_globals(sourcerpg as string)
  'Custom doesn't save anything in prefsdir, don't bother creating it
 #IFDEF IS_GAME
  IF NOT isdir(prefsdir) THEN makedir prefsdir
+
+#IFDEF __FB_JS__
+ web_mount_persistent_storage(prefsdir)
+#ENDIF
+
 #ENDIF
  IF LEN(app_resources_dir) ANDALSO trimfilename(sourcerpg) = app_resources_dir THEN
   'On Mac, if running a game bundled in the .app look next to the .app

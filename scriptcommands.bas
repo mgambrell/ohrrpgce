@@ -564,7 +564,7 @@ SUB process_wait_conditions()
      DIM sl as Slice ptr
      sl = get_handle_slice(.waitarg, serrWarn)
      IF sl THEN
-      IF sl->Velocity = 0 ANDALSO sl->TargTicks = 0 THEN
+      IF SliceIsMoving(sl) = NO THEN
        script_stop_waiting()
       END IF
      ELSE
@@ -636,7 +636,10 @@ SUB script_commands(byval cmdid as integer)
   IF valid_hero_party(retvals(0)) THEN
    i = retvals(0)
    IF valid_item(retvals(2)) THEN
-    doequip retvals(2), i, bound(retvals(1) - 1, 0, 4)
+    IF doequip(retvals(2), i, bound(retvals(1) - 1, 0, 4)) = NO THEN
+     'This could fail because there is no room in the inventory for whatever item
+     'is being unequipped
+    END IF
    END IF
   END IF
  CASE 32'--show backdrop
@@ -674,10 +677,14 @@ SUB script_commands(byval cmdid as integer)
     gam.hero(retvals(0)).def_wep = newdfw + 1
     IF cureqw <> olddfw THEN
      '--if previously using a weapon, re-equip old weapon
-     doequip cureqw, retvals(0), 0
+     IF doequip(cureqw, retvals(0), 0) = NO THEN
+      'I don't think this can actually fail because default weapon is a special case
+     END IF
     ELSE
-     '--otherwize equip new default weapon
-     doequip newdfw, retvals(0), 0
+     '--otherwise equip new default weapon
+     IF doequip(newdfw, retvals(0), 0) = NO THEN
+      'I don't think this can actually fail because default weapon is a special case
+     END IF
     END IF
    END IF
   END IF
@@ -876,17 +883,17 @@ SUB script_commands(byval cmdid as integer)
  CASE 253'--set tile animation offset
   retvals(2) = get_optional_arg(2, 0)
   IF (retvals(0) = 0 OR retvals(0) = 1) AND valid_map_layer(retvals(2), serrBound) THEN
-   tilesets(retvals(2))->anim(retvals(0)).cycle = retvals(1) MOD 160
+   tilesets(retvals(2))->tanim_state(retvals(0)).cycle = retvals(1) MOD 160
   END IF
  CASE 254'--get tile animation offset
   retvals(1) = get_optional_arg(1, 0)
   IF (retvals(0) = 0 OR retvals(0) = 1) AND valid_map_layer(retvals(1), serrBound) THEN
-   scriptret = tilesets(retvals(1))->anim(retvals(0)).cycle
+   scriptret = tilesets(retvals(1))->tanim_state(retvals(0)).cycle
   END IF
  CASE 255'--animation start tile
   retvals(1) = get_optional_arg(1, 0)
   IF (retvals(0) >= 0 AND retvals(0) < 256) AND valid_map_layer(retvals(1), serrBound) THEN
-   scriptret = tile_anim_deanimate_tile(retvals(0), tilesets(retvals(1))->tastuf())
+   scriptret = tile_anim_deanimate_tile(retvals(0), tilesets(retvals(1))->tanim())
   END IF
  CASE 258'--check hero wall
   IF valid_hero_caterpillar_rank(retvals(0)) THEN
@@ -1233,8 +1240,11 @@ SUB script_commands(byval cmdid as integer)
   npcref = getnpcref(retvals(0), 0)
   IF npcref >= 0 THEN
    cropposition retvals(1), retvals(2), 20
-   npc(npcref).x = retvals(1)
-   npc(npcref).y = retvals(2)
+   WITH npc(npcref)
+    .x = retvals(1)
+    .y = retvals(2)
+    update_walkabout_pos .sl, .x, .y, .z
+   END WITH
   END IF
  CASE 137'--put camera
   gen(genCameraMode) = stopcam
@@ -3312,11 +3322,7 @@ SUB script_commands(byval cmdid as integer)
  CASE 509'--slice is moving
   sl = get_arg_slice(0)
   IF sl THEN
-   WITH *sl
-    IF .Velocity.X <> 0 ORELSE .Velocity.Y <> 0 ORELSE .TargTicks > 0 THEN
-     scriptret = 1
-    END IF
-   END WITH
+   IF SliceIsMoving(sl) THEN scriptret = 1
   END IF
  CASE 510 '--create ellipse
   sl = NewSliceOfType(slEllipse, SliceTable.scriptsprite)
@@ -3700,8 +3706,11 @@ SUB script_commands(byval cmdid as integer)
   npcref = getnpcref(retvals(0), 0)
   IF npcref >= 0 THEN
    cropposition retvals(1), retvals(2), 1
-   npc(npcref).x = retvals(1) * 20
-   npc(npcref).y = retvals(2) * 20
+   WITH npc(npcref)
+    .x = retvals(1) * 20
+    .y = retvals(2) * 20
+    update_walkabout_pos .sl, .x, .y, .z
+   END WITH
   END IF
  CASE 101'--NPC direction
   npcref = getnpcref(retvals(0), 0)
@@ -3811,16 +3820,20 @@ SUB script_commands(byval cmdid as integer)
     END IF
     IF i > -1 THEN
      'This deletes the walkabout slice
-     CleanNPCInst npc(i)
+     DIM byref npci as NPCInst = npc(i)
+     CleanNPCInst npci
      DIM npc_id as integer = retvals(0)
-     npc(i).id = npc_id + 1
-     npc(i).pool = pool
+     npci.id = npc_id + 1
+     npci.pool = pool
      cropposition retvals(1), retvals(2), 1
-     npc(i).x = retvals(1) * 20
-     npc(i).y = retvals(2) * 20
-     npc(i).dir = ABS(retvals(3)) MOD 4
-     npc(i).sl = create_npc_slices(i)  'Calls set_walkabout_sprite
-     'debug "npc(" & i & ").sl=" & npc(i).sl & " [create npc(" & retvals(0) & ")]"
+     npci.x = retvals(1) * 20
+     npci.y = retvals(2) * 20
+     npci.dir = ABS(retvals(3)) MOD 4
+     npci.sl = create_npc_slices(i)  'Calls set_walkabout_sprite
+     'Although not guaranteed to be up to date before the screen is drawn (e.g. due to map wrapping),
+     'try to keep the slice position accurate
+     update_walkabout_pos npci.sl, npci.x, npci.y, npci.z
+     'debug "npc(" & i & ").sl=" & npci.sl & " [create npc(" & retvals(0) & ")]"
      update_npc_zones i
      scriptret = (i + 1) * -1
     END IF
@@ -5310,8 +5323,10 @@ SUB script_commands(byval cmdid as integer)
   IF extravec_ptr THEN
    scriptret = find_extra(*extravec_ptr, retvals(1), retvals(2))
   END IF
+ CASE 770 '--running on web
+  scriptret = IIF(running_on_web(), 1, 0)
 
- 'CASE 770-772 unused
+ 'CASE 771-772 unused
  CASE 773 '--playstation controller
   'TODO
   DIM sys as string = read_environment_key("sys")

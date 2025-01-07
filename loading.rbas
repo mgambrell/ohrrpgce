@@ -3295,7 +3295,7 @@ SUB convertattackdata(buf() as integer, byref atkdat as AttackData)
   .ignore_extra_hits              = xreadbit(buf(), 49, 20)
   .erase_rewards                  = xreadbit(buf(), 50, 20)
   .show_damage_without_inflicting = xreadbit(buf(), 51, 20)
-  .store_targ                     = xreadbit(buf(), 52, 20)
+  .add_store_targ                 = xreadbit(buf(), 52, 20)
   .delete_stored_targs            = xreadbit(buf(), 53, 20)
   .automatic_targ                 = xreadbit(buf(), 54, 20)
   .show_name                      = xreadbit(buf(), 55, 20)
@@ -3342,6 +3342,8 @@ SUB convertattackdata(buf() as integer, byref atkdat as AttackData)
   .fill_target_ready_meter        = xreadbit(buf(), 32, 65)
   .exclude_from_hero_auto_battle  = xreadbit(buf(), 33, 65)
   .ignore_damage_cap              = xreadbit(buf(), 34, 65)
+  .replace_store_targ             = xreadbit(buf(), 35, 65)
+
 
   ' If didn't do a full upgrade, then these aren't initialised
   IF getfixbit(fixAttackMultipliers) = 0 THEN
@@ -3371,17 +3373,79 @@ END SUB
 '==========================================================================================
 ' Other functions for working with tile animations are in common.rbas
 
-SUB load_tile_anims (byval tileset_num as integer, tastuf() as integer)
+SUB load_tile_anims (byval tileset_num as integer, tanim() as TileAnimPattern)
  IF tileset_num < 0 THEN
   onetime_debug errShowError, "Corrupt map data: invalid tileset " & tileset_num & " loading animations"
   EXIT SUB
  END IF
- 'It's normal for not all tilesets to have .tap records (short lump) if they weren't edited
- loadrecord tastuf(), game & ".tap", 80 \ 2, tileset_num, NO
+ 'binTAP is the size of a single animation pattern, not of both patterns for a tileset
+ DIM tapbuf(dimbinsize(binTAP)) as integer
+ FOR pattern as integer = 0 TO 1
+  'It's normal for not all tilesets to have .tap records (short lump) if they weren't edited
+  loadrecord tapbuf(), game & ".tap", getbinsize(binTAP) \ 2, 2 * tileset_num + pattern, NO
+  WITH tanim(pattern)
+   .range_start = tapbuf(0)
+   .disable_tag = tapbuf(1)
+   FOR idx as integer = 0 TO 8
+    .cmd(idx).op = tapbuf(2 + idx)
+    .cmd(idx).arg = tapbuf(11 + idx)
+    .cmd(idx).arg2 = tapbuf(20 + idx)
+   NEXT
+   .tileset_num = tapbuf(29)
+   .range_length = tapbuf(30)
+   .range_stride = tapbuf(31)
+   'offsets 32-33 reserved
+   FOR idx as integer = 9 TO maxTileAnimCmds
+    DIM offset as integer = 34 + 3 * (idx - 9)
+    .cmd(idx).op = tapbuf(offset)
+    .cmd(idx).arg = tapbuf(offset + 1)
+    .cmd(idx).arg2 = tapbuf(offset + 2)
+   NEXT
+
+   IF getfixbit(fixExtendedTileAnims) = 0 THEN
+    'tapbuf(20) and up are uninitialised
+    .tileset_num = tileset_num
+    .range_length = 48
+    .range_stride = 1
+    'Previously-full patterns looped without resetting
+    .cmd(9).op = taopLoop
+   END IF
+  END WITH
+ NEXT
 END SUB
 
-SUB save_tile_anims (byval tileset_num as integer, tastuf() as integer)
- storerecord tastuf(), game & ".tap", 80 \ 2, tileset_num
+SUB save_tile_anims (byval tileset_num as integer, tanim() as TileAnimPattern)
+ DIM tapbuf(dimbinsize(binTAP)) as integer
+ FOR pattern as integer = 0 TO 1
+  WITH tanim(pattern)
+   'In future these are intended for supporting a variable number of animation
+   'patterns per tileset, in the same way as menu item records, and maybe shared
+   'patterns between tilesets, without having to replace .TAP.
+   'For now it's saved but ignored.
+   .tileset_num = tileset_num
+   .range_length = 48
+   .range_stride = 1
+
+   tapbuf(0) = .range_start
+   tapbuf(1) = .disable_tag
+   FOR idx as integer = 0 TO 8
+    tapbuf(2 + idx) = .cmd(idx).op
+    tapbuf(11 + idx) = .cmd(idx).arg
+    tapbuf(20 + idx) = .cmd(idx).arg2
+   NEXT
+   tapbuf(29) = .tileset_num
+   tapbuf(30) = .range_length
+   tapbuf(31) = .range_stride
+   'offsets 32-33 reserved
+   FOR idx as integer = 9 TO maxTileAnimCmds
+    DIM offset as integer = 34 + 3 * (idx - 9)
+    tapbuf(offset) = .cmd(idx).op
+    tapbuf(offset + 1) = .cmd(idx).arg
+    tapbuf(offset + 2) = .cmd(idx).arg2
+   NEXT
+  END WITH
+  storerecord tapbuf(), game & ".tap", getbinsize(binTAP) \ 2, 2 * tileset_num + pattern
+ NEXT
 END SUB
 
 'Returns -1 if not animated, or the pattern number (0 or 1)
@@ -3392,34 +3456,41 @@ END FUNCTION
 
 'Given a tile ID which may or may not be animated, return the tile number for the
 'non-animated version of the tile (which is the initial tile in the animation)
-FUNCTION tile_anim_deanimate_tile (tileid as integer, tastuf() as integer) as integer
- IF tileid >= 208 THEN tileid = (tileid - 208) + tastuf(20)
- IF tileid >= 160 THEN tileid = (tileid - 160) + tastuf(0)
+FUNCTION tile_anim_deanimate_tile (tileid as integer, tanim() as TileAnimPattern) as integer
+ IF tileid >= 208 THEN tileid = (tileid - 208) + tanim(1).range_start
+ IF tileid >= 160 THEN tileid = (tileid - 160) + tanim(0).range_start
  RETURN tileid
 END FUNCTION
 
 'Given a tile ID which may or may not be animated, return the tile number for the
 'animated version in one of the animation patterns 0 or 1, or -1 for no animation.
 'Returns -1 if the tile can't be animated.
-FUNCTION tile_anim_animate_tile (tileid as integer, pattern_num as integer, tastuf() as integer) as integer
+FUNCTION tile_anim_animate_tile (tileid as integer, pattern_num as integer, tanim() as TileAnimPattern) as integer
  IF tileid >= 160 THEN
-  tileid = tile_anim_deanimate_tile(tileid, tastuf())
+  tileid = tile_anim_deanimate_tile(tileid, tanim())
  END IF
  IF pattern_num = -1 THEN
   RETURN tileid
  END IF
  DIM idoffset as integer
- idoffset = tileid - tastuf(pattern_num * 20)  'subtract start of range
+ idoffset = tileid - tanim(pattern_num).range_start
  IF idoffset < 0 OR idoffset >= 48 THEN
   RETURN -1
  END IF
  RETURN 160 + 48 * pattern_num + idoffset
 END FUNCTION
 
+'Which tile a tileid (animated or not) is currently displayed as
+FUNCTION tile_anim_current_display_tile(tileid as integer, tileset as TilesetData ptr) as integer
+ IF tileid < 160 THEN RETURN tileid
+ RETURN POSMOD(tile_anim_deanimate_tile(tileid, tileset->tanim()) _
+               + tileset->tanim_state(tile_anim_pattern_number(tileid)).cycle, 160)
+END FUNCTION
+
 'Returns whether one of the tile animation patterns is unused (0 length)
-FUNCTION tile_anim_is_empty(pattern_num as integer, tastuf() as integer) as bool
+FUNCTION tile_anim_is_empty(pattern_num as integer, tanim() as TileAnimPattern) as bool
  'IF first command is 'End of animation'
- RETURN tastuf(20 * pattern_num + 2) = 0
+ RETURN tanim(pattern_num).cmd(0).op = 0
 END FUNCTION
 
 '==========================================================================================
@@ -5066,6 +5137,7 @@ SUB load_distrib_state(byref distinfo as DistribState, byval node as Reload.Node
   distinfo.copyright_year   = node."copyright_year".string
   distinfo.itch_user        = node."itch_user".string
   distinfo.itch_gamename    = node."itch_gamename".string
+  distinfo.itch_upload_web  = node."itch_upload_web".bool
   distinfo.steam_appid      = node."steam_appid".integer
   distinfo.omit_readme      = node."omit_readme".exists
   distinfo.omit_license     = node."omit_license".exists
@@ -5122,6 +5194,7 @@ SUB save_distrib_state(byref distinfo as DistribState, byval node as Reload.Node
  SetChildNode node, "copyright_year", distinfo.copyright_year
  SetChildNode node, "itch_user",   distinfo.itch_user
  SetChildNode node, "itch_gamename", distinfo.itch_gamename
+ SetChildNode node, "itch_upload_web", IIF(distinfo.itch_upload_web, 1, 0)
  SetChildNode node, "steam_appid", distinfo.steam_appid
  IF distinfo.omit_readme THEN SetChildNode node, "omit_readme", 1
  IF distinfo.omit_license THEN SetChildNode node, "omit_license", 1
