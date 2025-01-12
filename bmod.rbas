@@ -1735,7 +1735,7 @@ SUB update_battle_ui_slices(bat as BattleState, bslot() as BattleSprite)
   mdsl->st = 0
   IF bat.vic.state = vicNONE THEN 'only display battle menu till you win
    '--Draw menus for a hero that is currently taking a turn
-   IF bat.player_turn >= 0 THEN
+   IF bat.player_turn >= 0 ANDALSO (prefbit(60) = NO ORELSE bat.targ.mode = targNONE) THEN
     WITH bslot(bat.player_turn)
      'If we actually want to draw this menu, mark it active...
      .menust.active = (bat.menu_mode = batMENUHERO)

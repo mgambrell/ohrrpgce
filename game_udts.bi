@@ -361,6 +361,7 @@ TYPE OrderTeamState
   info as string
   swapme as integer
   charsize as XYPair 'not in pixels
+  tallness as integer 'height of the tallest hero sprite in the active party in pixels
   swindex(40) as integer
   swname(40) as string
   show_reserve as bool
