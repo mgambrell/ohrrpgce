@@ -4,6 +4,8 @@ February 1 2025 [Jocoserious]
 
   *** New Features
     * Shift Tile tileset animation command. Non-animated uses likely! [Ralph]
+    * Add a bitset to hide the battle menu while you are targeting an
+      attack [James]
 
    * Battle Features
     * Attacks can set a tag if their targetting fails [James]

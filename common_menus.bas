@@ -334,6 +334,7 @@ SUB edit_battle_bitsets()
  IF gen(genResolutionX) > 320 ORELSE gen(genResolutionY) > 200 THEN
   a_append bits(), 56, "!Battles display at 320x200"
  END IF
+ a_append bits(), 60, "Hide battle menu while targeting attacks"
 
  a_append bits(), -1, ""
  a_append bits(), -1, " General Options"
