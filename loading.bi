@@ -146,8 +146,8 @@ DECLARE FUNCTION tile_anim_is_empty(pattern_num as integer, tanim() as TileAnimP
 
 DECLARE SUB palette16_save (pal as Palette16 ptr, pal_num as integer)
 
-DECLARE SUB save_animations_node(sprset_node as Node ptr, sprset as SpriteSet ptr)
-DECLARE SUB load_animations_node(sprset_node as Node ptr, sprset as SpriteSet ptr)
+DECLARE SUB save_animations_node(sprset_node as Node ptr, sprset as AnimationSet ptr)
+DECLARE SUB load_animations_node(sprset_node as Node ptr, sprset as AnimationSet ptr)
 
 DECLARE SUB convert_mxs_to_rgfx(infile as string, outfile as string, sprtype as SpriteType)
 DECLARE SUB convert_pt_to_rgfx(dest_type as SpriteType)
@@ -157,15 +157,15 @@ DECLARE FUNCTION rgfx_open OVERLOAD (filename as string, expect_exists as bool =
 DECLARE FUNCTION rgfx_open OVERLOAD (sprtype as SpriteType, expect_exists as bool = NO, options as Reload.LoadOptions = optNone) as DocPtr
 DECLARE FUNCTION rgfx_find_spriteset (rgfxdoc as DocPtr, sprtype as SpriteType, setnum as integer) as Node ptr
 DECLARE FUNCTION rgfx_num_spritesets (rgfxdoc as DocPtr, sprtype as SpriteType) as integer
-DECLARE FUNCTION rgfx_load_spriteset OVERLOAD (rgfxdoc as Reload.DocPtr, sprtype as SpriteType, setnum as integer, cache_def_anims as bool = NO) as Frame ptr
+DECLARE FUNCTION rgfx_load_spriteset OVERLOAD (rgfxdoc as Reload.DocPtr, sprtype as SpriteType, setnum as integer, cache_def_anims as bool = YES) as Frame ptr
 DECLARE FUNCTION rgfx_load_spriteset OVERLOAD (sprtype as SpriteType, setnum as integer, expect_exists as bool = YES) as Frame ptr
 DECLARE SUB rgfx_save_spriteset OVERLOAD (rgfxdoc as DocPtr, fr as Frame ptr, sprtype as SpriteType, setnum as integer, defpal as integer = -1)
 DECLARE SUB rgfx_save_spriteset OVERLOAD (fr as Frame ptr, sprtype as SpriteType, setnum as integer, defpal as integer = -1)
-DECLARE SUB rgfx_save_global_animations (rgfxdoc as DocPtr, def_anim as SpriteSet ptr)
+DECLARE SUB rgfx_save_global_animations OVERLOAD (sprtype as SpriteType)
+DECLARE SUB rgfx_save_global_animations OVERLOAD (rgfxdoc as DocPtr, def_anim as AnimationSet ptr)
 DECLARE FUNCTION read_sprite_idx_backcompat_translation (rgfxdoc as DocPtr, sprtype as SpriteType, oldidx as integer) as integer
 DECLARE SUB add_sprite_idx_backcompat_translation (rgfxdoc as DocPtr, sprtype as SpriteType, oldidx as integer, newidx as integer)
-DECLARE FUNCTION rgfx_load_global_animations (rgfxdoc as Doc ptr) as SpriteSet ptr
-DECLARE FUNCTION default_global_animations (sprtype as SpriteType) as SpriteSet ptr
+DECLARE FUNCTION rgfx_load_global_animations(rgfxdoc as Doc ptr, loadinto as AnimationSet ptr = NULL) as AnimationSet ptr
 DECLARE SUB default_frame_group_info(sprtype as SpriteType, info() as FrameGroupInfo)
 
 DECLARE FUNCTION split_spritesheet(sheet as Frame ptr, framesize as XYPair, numframes as integer) as Frame ptr

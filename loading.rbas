@@ -32,54 +32,6 @@ REDIM lookup1_bin_cache(-1 TO -1) as TriggerData
 REDIM script_names() as IntStrPair
 
 
-' Built-in variants have names starting with :, which are not allowed for user names
-DIM SHARED builtin_variants_table(4) as IntStrPair
-'  => { _
-'   (varUp,       "up"), _
-'   (varRight,    "right"), _
-'   (varDown,     "down"), _
-'   (varLeft,     "left"), _
-'   (varHurt,     "hurt") _
-' }
-'   '(varSelected, "selected"), _
-'   '(varHover,    "hover"), _
-'   '(varDisabled, "disabled"), _
-
-DIM builtin_animations(...) as AnimVariantInfo => { _
-  (@"idle",        acAny,        @"Default when no other animation running, e.g. standing still"), _
-  (@"walk",        acActor,      @"Normal/default movement"), _
-  (@"retreat",     acBattler,    @"Walking back to start after attacking"), _
-  (@"flee",        acBattler,    @"Fleeing from battle"), _
-  (@"victory",     acBatHero,    @"Victory dance after a battle"), _
-  (@"walkinplace", acWalkabout,  @"NPCs with Walk-in-Place movetype"), _
-  (@"talk",        acWalkabout,  @"For heroes and NPCs, when an NPC shows a textbox"), _
-  (@"attack",      acBattler,    @"Default attack animation"), _
-  (@"cast",        acBattler,    @"`Cast' attack animation"), _
-  (@"useitem",     acBatHero,    @"Doing an attack linked to an item"), _
-/'  (@"jump",        acBattler,   @"`Jump' attack animation"), '/ _
-/'  (@"land",        acBattler,   @"`Land' attack animation"), '/ _
-  (@"hurt",        acBattler,    @"When hit by an attack"), _
-/'  (@"healed",      acBattler,   @"When healed in a battle"), '/ _
-  /' die disabled; need to figure out how to handle or supersede enemy dissolve '/ _
-/'  (@"die",         acBattler,    @"Used instead of `hurt' when dying"), (happens before enemy dissolve) '/ _
-  (@"dead",        acBatHero,    @"Heroes with 0 HP"), _
-/'  (@"revive",      acBatHero,   @"When HP increases above 0") '/ _
-  (NULL, 0, NULL) _
-}
-
-DIM builtin_anim_variants(...) as AnimVariantInfo => { _
-  (@"(none)",      acAny,        @"Used if there's no more specific animation"), _
-  (@"up",          acActor,      @"Facing direction"), _
-  (@"right",       acActor,      @"Facing direction"), _
-  (@"down",        acActor,      @"Facing direction"), _
-  (@"left",        acActor,      @"Facing direction"), _
-  (@"weak",        acBattler,    @"HP less than the Weak threshold (see Battle System Options)"), _
-/'  (@"missed",      acBattler,   @"Performing or hit by an attack that missed"), '/ _
-/'  (@"resisted",    acBattler,   @"Performing or hit by an attack that failed"), '/ _
-  (NULL, 0, NULL) _
-}
-
-
 '==========================================================================================
 '                                      Local Functions
 '==========================================================================================
@@ -94,6 +46,7 @@ declare sub InternalDefaultUIColors (masterpal() as RGBcolor, colarray() as inte
 declare sub SaveUIColorsNode (byval node as NodePtr, colarray() as integer, boxarray() as BoxStyle)
 declare sub LoadUIColorsNode (byval node as NodePtr, colarray() as integer, boxarray() as BoxStyle, masterpal() as RGBcolor)
 declare function FillMissingUIColor(byval index as integer, colarray() as integer, masterpal() as RGBcolor) as integer
+
 
 '==========================================================================================
 '                                      Helper Functions
@@ -3706,34 +3659,9 @@ SUB default_frame_group_info(sprtype as SpriteType, info() as FrameGroupInfo)
   END SELECT
 END SUB
 
+
 '==================================== Animations ==========================================
 
-
-' Creates the default global animations for an old 4-bit .PT# file.
-' TODO: very unfinished. These could be defined in a RELOAD data file instead of by code.
-FUNCTION default_global_animations(sprtype as SpriteType) as SpriteSet ptr
-  DIM ss as SpriteSet ptr = empty_spriteset()
-  IF sprtype = sprTypeHero THEN
-    WITH *ss->new_animation("idle")
-      .append(animOpFrame, frameSTAND)    '0
-    END WITH
-    WITH *ss->new_animation("walk", "left")
-      .append(animOpFrame, frameSTAND)    '0
-      .append(animOpWait, 2*55)
-      .append(animOpFrame, frameSTEP)     '1
-      .append(animOpWait, 2*55)
-      .append(animOpRepeat)
-    END WITH
-    WITH *ss->new_animation("attack", "left")
-      .append(animOpFrame, frameATTACKA)  '2
-      .append(animOpWait, 2*55)
-      .append(animOpFrame, frameATTACKB)  '3
-      .append(animOpWait, 2*55)
-      .append(animOpFrame, frameSTAND)  '0
-    END WITH
-  END IF
-  RETURN ss
-END FUNCTION
 
 ' Appends an "anim" node to parent
 SUB save_animation_node(parent as Node ptr, anim as Animation)
@@ -3742,51 +3670,29 @@ SUB save_animation_node(parent as Node ptr, anim as Animation)
   AppendChildNode(anode, "name", anim.name)
   IF LEN(anim.variant) THEN AppendChildNode(anode, "variant", anim.variant)
 
-  DIM ops as Node ptr = AppendChildNode(anode, "ops")
-  FOR idx as integer = 0 TO UBOUND(anim.ops)
-    WITH anim.ops(idx)
-      DIM op as Node ptr = AppendChildNode(ops, anim_op_node_names(.type))
-      IF .arg1 THEN AppendChildNode(op, "arg1", .arg1)
-      IF .arg2 THEN AppendChildNode(op, "arg2", .arg2)
-    END WITH
-  NEXT idx
-
-  /' WIP new RELOAD-based in-memory storage scheme!
-  DIM ops as Node ptr = CloneNodeTree(anim.opsnode)
+  ' Add copy of ops
+  BUG_IF(NodeName(anim.opsnode) <> "ops", "bad opsnode")
+  DIM ops as Node ptr = CloneNodeTree(anim.opsnode, GetDocument(anode))
   AddChild(anode, ops)
-  'Delete the integer value of each operator node, which was cached there in load_animation_node.
+
+  ' Delete the integer value of each operator node, which was cached there in load_animation_node.
   DIM op as Node ptr = FirstChild(ops)
   WHILE op
     SetContent(op)
     op = NextSibling(op)
   WEND
-  '/
 END SUB
 
 ' Append a new animation, from a "anim" node
-SUB load_animation_node(animnode as Node ptr, sprset as SpriteSet ptr)
+SUB load_animation_node(animnode as Node ptr, animset as AnimationSet ptr)
   IF animnode."name".exists = NO THEN reporterr "Bad animation data: name missing", serrError : EXIT SUB
   IF animnode."ops".exists = NO THEN reporterr "Unsupported animation data: 'ops' missing", serrError : EXIT SUB
 
   DIM anim as Animation ptr
-  anim = sprset->new_animation(animnode."name".string, animnode."variant".string.default(""))
+  anim = animset->new_animation(animnode."name".string, animnode."variant".string.default(""))
+  anim->replace_ops(animnode."ops".ptr)
 
-  DIM op as Node ptr = FirstChild(animnode."ops".ptr)
-  WHILE op
-    DIM optype as AnimOpType = a_find(anim_op_node_names(), NodeName(op))
-    IF optype = -1 THEN
-      reporterr "Unsupport animation data: unknown anim op " & NodeName(op), serrError
-      EXIT SUB
-    END IF
-
-    anim->append(optype, op."arg1", op."arg2")
-    op = NextSibling(op)
-  WEND
-
-  /' WIP new RELOAD-based in-memory storage scheme!
-  anim->opsnode = animnode."ops".ptr
-
-  'Lookup each op name, cache it as the integer value of the node
+  ' Lookup each op name, cache it as the integer value of the node
   DIM op as Node ptr = FirstChild(anim->opsnode)
   WHILE op
     DIM optype as AnimOpType = a_find(anim_op_node_names(), NodeName(op))
@@ -3796,27 +3702,25 @@ SUB load_animation_node(animnode as Node ptr, sprset as SpriteSet ptr)
     SetContent(op, optype)
     op = NextSibling(op)
   WEND
-  '/
 END SUB
 
-' Add an "animations" child to sprset_node
-SUB save_animations_node(sprset_node as Node ptr, sprset as SpriteSet ptr)
+' Add an "animations" child to parent
+SUB save_animations_node(parent as Node ptr, animset as AnimationSet ptr)
   DIM anims as Node ptr
-  anims = AppendChildNode(sprset_node, "_animations")  'FIXME: temporary location
-
-  FOR idx as integer = 0 TO v_len(sprset->animations) - 1
-    save_animation_node anims, *sprset->animations[idx]
+  anims = AppendChildNode(parent, "_animations")  'FIXME: temporary location
+  FOR idx as integer = 0 TO v_len(animset->animations) - 1
+    save_animation_node anims, *animset->animations[idx]
   NEXT idx
 END SUB
 
 ' Load from the "animations" node
-SUB load_animations_node(sprset_node as Node ptr, sprset as SpriteSet ptr)
-  DIM anims as Node ptr = sprset_node."_animations".ptr  'FIXME: temporary location
-  ' May be missing, eg for box borders
+SUB load_animations_node(parent as Node ptr, animset as AnimationSet ptr)
+  DIM anims as Node ptr = parent."_animations".ptr  'FIXME: temporary location
+  animset->delete_all_animations()   'In case called from sprite cache to reload inplace
+  ' May be missing, eg for box borders, older files, (or just no animations?)
   IF anims = NULL THEN EXIT SUB
-  sprset->delete_all_animations()   'In case called from sprite cache to reload inplace
   READNODE anims
-    load_animation_node anims."anim".ptr, sprset
+    load_animation_node anims."anim".ptr, animset
   END READNODE
 END SUB
 
@@ -3983,13 +3887,19 @@ SUB add_sprite_idx_backcompat_translation(rgfxdoc as DocPtr, sprtype as SpriteTy
   SetKeyValueNode(ids, "key", TRANSLATION_KEY(sprtype, oldidx), newidx, "idx")
 END SUB
 
-FUNCTION rgfx_load_global_animations(rgfxdoc as Doc ptr) as SpriteSet ptr
+'Returns NULL if animations missing.
+'Otherwise, returns loadinto with the animations replaced, or if loadinto=NULL, a new AnimationSet with .refcount=1
+FUNCTION rgfx_load_global_animations(rgfxdoc as Doc ptr, loadinto as AnimationSet ptr = NULL) as AnimationSet ptr
   DIM root as Node ptr = DocumentRoot(rgfxdoc)
   'Global animations may be missing because this sprite type doesn't have animations
-  IF GetChildByName(root, "animations") = NULL THEN RETURN NULL
-  DIM ret as SpriteSet ptr = empty_spriteset()
-  load_animations_node(root, ret)
-  RETURN ret
+  IF GetChildByName(root, "_animations") = NULL THEN RETURN NULL 'FIXME: temporary location
+  IF loadinto = NULL THEN
+    loadinto = NEW AnimationSet()
+    DEBUG_ANIM_CACHE(loadinto->debugname = "rgfxglobalanims")
+    loadinto->reference()
+  END IF
+  load_animations_node(root, loadinto)
+  RETURN loadinto
 END FUNCTION
 
 'Number of spriteset nodes (or relevant spriteset nodes, in case of enemy backcompat)
@@ -4043,7 +3953,7 @@ END FUNCTION
 'Default palette is not loaded yet.
 'cache_def_anims should be NO when loading from an .rgfx file outside of the
 'current .rpg and YES otherwise
-FUNCTION rgfx_load_spriteset(rgfxdoc as DocPtr, sprtype as SpriteType, setnum as integer, cache_def_anims as bool = NO) as Frame ptr
+FUNCTION rgfx_load_spriteset(rgfxdoc as DocPtr, sprtype as SpriteType, setnum as integer, cache_def_anims as bool = YES) as Frame ptr
   DIM as Node ptr ss_node, frameset_node
   ss_node = rgfx_find_spriteset(rgfxdoc, sprtype, setnum)
   IF ss_node = NULL THEN
@@ -4074,7 +3984,8 @@ FUNCTION rgfx_load_spriteset(rgfxdoc as DocPtr, sprtype as SpriteType, setnum as
 
   'Global animations
   IF cache_def_anims THEN
-    sprset->global_animations = load_global_animations(sprtype, rgfxdoc)
+    'Get from/add to cache
+    sprset->global_animations = spriteset_load_global_animations(sprtype, rgfxdoc)
   ELSE
     sprset->global_animations = rgfx_load_global_animations(rgfxdoc)
   END IF
@@ -4134,6 +4045,9 @@ SUB rgfx_save_spriteset(rgfxdoc as DocPtr, fr as Frame ptr, sprtype as SpriteTyp
   IF sprtype >= sprTypeSmallEnemy AND sprtype <= sprTypeLargeEnemy THEN
     AppendChildNode(ss_node, "info", sprite_sizes(sprtype).name & " " & setnum)
   END IF
+
+  'fr is likely in the sprite cache, and may have been modified. Now's a good time to mark it modified.
+  fr->generation += 1
 END SUB
 
 SUB rgfx_save_spriteset(fr as Frame ptr, sprtype as SpriteType, setnum as integer, defpal as integer = -1)
@@ -4144,9 +4058,19 @@ SUB rgfx_save_spriteset(fr as Frame ptr, sprtype as SpriteType, setnum as intege
   FreeDocument rgfxdoc
 END SUB
 
-SUB rgfx_save_global_animations(rgfxdoc as DocPtr, def_anim as SpriteSet ptr)
+SUB rgfx_save_global_animations(sprtype as SpriteType)
+  DIM rgfxdoc as Doc ptr = rgfx_open(sprtype, YES, optNoDelay)
+  IF rgfxdoc = NULL THEN EXIT SUB
+  DIM animset as AnimationSet ptr = spriteset_load_global_animations(sprtype, rgfxdoc)
+  rgfx_save_global_animations(rgfxdoc, animset)
+  animset_unload @animset
+  SerializeBin graphics_file(rgfx_lumpnames(sprtype)), rgfxdoc
+  FreeDocument rgfxdoc
+END SUB
+
+SUB rgfx_save_global_animations(rgfxdoc as DocPtr, def_anim as AnimationSet ptr)
   DIM root_node as Node ptr = DocumentRoot(rgfxdoc)
-  FreeChildNode root_node, "animations"  'If it exists
+  FreeChildNode root_node, "_animations"  'If it exists  FIXME: temporary location
   save_animations_node root_node, def_anim
 END SUB
 

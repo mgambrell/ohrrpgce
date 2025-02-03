@@ -26,9 +26,10 @@ def openwrapper(filename, mode, encoding='utf-8'):
 ############################### RB PEG grammar #################################
 
 
-type_attributes = 'ptr', 'integer', 'string', 'float', 'double', 'zstring', 'zstringsize', 'bool', 'exists'
+type_attributes = 'ptr', 'integer', 'string', 'float', 'double', 'zstring', 'zstringsize', 'bool', 'exists', 'name'
+type_aliases = {'int': 'integer', 'str': 'string'}
 boolean_attributes = 'required', 'warn', 'ignore', 'oob_error'
-attributes = type_attributes + boolean_attributes + ('default',)
+attributes = type_attributes + tuple(type_aliases.keys()) + boolean_attributes + ('default',)
 
 # Unlike in normal grammar or regex notation, these *precede* the element they act on
 CHECKPNT = -3  # no backtracking allowed once this point is reached
@@ -48,7 +49,8 @@ def string():               return re.compile(r'"(""|[^"\n])*"|!"(""|\\.|[^"\n])
 
 def identifier():           return re.compile(r'[_a-zA-Z]\w*')
 
-def dottedIdentifier():     return re.compile(r'[_.a-zA-Z][_.0-9a-zA-Z]*')
+# Not ending in a dot nor containing a double dot. Matches x  .x  x.y
+def dottedIdentifier():     return re.compile(r'(\.?[_a-zA-Z][_0-9a-zA-Z]*)+')
 
 def namespace():            return PLUS, (identifier, ".")
 
@@ -61,9 +63,15 @@ def nodeIndex():            return "[", CHECKPNT, "$", identifier, "]"
 
 # Optimisation: check for occurrence of ." before attempting to match
 def nodeSpec():             return (AND(re.compile('.*\.\s*"')),
-                                    identifier, PLUS, (".", string, QUES, nodeIndex), 
+                                    dottedIdentifier, PLUS, (".", string, QUES, nodeIndex),
 #                                    STAR, (".", CHECKPNT, re.compile('|'.join(attributes)),
                                     STAR, (".", CHECKPNT, re.compile('\w+'),
+                                           QUES, ("(", CHECKPNT, expression, ")")))
+
+# Does not support nodeIndex, otherwise similar to nodeSpec. Parse ..attr as . followed by .attr
+def nodeZeroSpec():         return (AND(re.compile('.*\.\.')),
+                                    dottedIdentifier, AND(".."), ".",
+                                    PLUS, (".", CHECKPNT, re.compile('\w+'),
                                            QUES, ("(", CHECKPNT, expression, ")")))
 
 #def simpleNodeSpec():      return [nodeSpec, identifier]
@@ -71,15 +79,15 @@ def nodeSpec():             return (AND(re.compile('.*\.\s*"')),
 # tokenLists are represent an arbitrary line of code, and are used where we don't
 # really want to parse the input, only find nodeSpecs and (Exit|Continue) ReadNode
 # Strings are still parsed, to make sure they don't confuse the parser.
-# Optimisation: check for occurrence of ." before doing (very!) expensive splitting into tokens,
+# Optimisation: check for occurrence of ." or .. or READNODE before doing (very!) expensive splitting into tokens,
 # otherwise gulp the whole line.
-def tokenList():            return [(AND(re.compile('.*(\.\s*"|readnode)', re.I)),
+def tokenList():            return [(AND(re.compile('.*(\.\.|\.\s*"|readnode)', re.I)),
                                        [nodeSpecAssignment,
-                                        (STAR, [nodeSpec, string, readNodeExit, readNodeContinue,
+                                        (STAR, [string, nodeSpec, nodeZeroSpec, readNodeExit, readNodeContinue,
                                                 IGNORE('identifier', r'[a-zA-Z0-9._]+|[^\s"]')])]),
                                     re.compile(".*")],
 # Unoptimised version
-#def tokenList():            return STAR, [nodeSpec, string, readNodeExit, readNodeContinue,
+#def tokenList():            return STAR, [nodeSpec, nodeZeroSpec, string, readNodeExit, readNodeContinue,
 #                                          IGNORE('identifier', r'[a-zA-Z0-9._]+|[^\s"]')]
 
 def expressionList():       return QUES, (expression, STAR, (PLUS, ",", CHECKPNT, expression))
@@ -87,7 +95,7 @@ def expressionList():       return QUES, (expression, STAR, (PLUS, ",", CHECKPNT
 # expressions are more carefully parsed, in order to match parentheses and find commas
 def expression():           return PLUS, [("(", CHECKPNT, expressionList, ")"),
                                           ("{", CHECKPNT, expressionList, "}"),
-                                          nodeSpec, string, genericToken]
+                                          nodeSpec, nodeZeroSpec, string, genericToken]
 
 def typename():             return QUES, "const", STAR, namespace, identifier, STAR, re.compile('ptr|vector', re.I)
 #def typename():             return dottedIdentifier, STAR, re.compile('ptr|vector', re.I)
@@ -122,7 +130,7 @@ def functionEnd():          return [("end", ["function", "property", "operator"]
 def subStart():             return QUES, ["private", "local", "static"], ["sub", "constructor", "destructor"], CHECKPNT, dottedIdentifier, functionDecorators, QUES, argList
 def subEnd():               return "end", ["sub", "constructor", "destructor"]
 
-def readNode():             return "readnode", CHECKPNT, [(nodeSpec, "as", identifier), identifier], STAR, (",", re.compile("default|ignoreall"))
+def readNode():             return "readnode", CHECKPNT, [(nodeSpec, "as", identifier), dottedIdentifier], STAR, (",", re.compile("default|ignoreall"))
 def readNodeEnd():          return "end", "readnode"
 # Writing e.g. "EXIT READNODE, FOR" or "CONTINUE READNODE, FOR" will work because
 # anything after READNODE is preserved
@@ -135,16 +143,18 @@ def withNodeEnd():          return "end", "withnode"
 def loadArray():            return "loadarray", CHECKPNT, dottedIdentifier, "(", "$", identifier, ")", "=", expression
 
 # Not implemented
-def nodeSpecAssignment():   return nodeSpec, "=", CHECKPNT, expression
+def nodeSpecAssignment():   return [nodeSpec, nodeZeroSpec], "=", CHECKPNT, expression
 
 def directive():            return "#", re.compile("warn_func|error_func"), CHECKPNT, "=", identifier
+
+def declareNodeptr():       return "declare", "as", CHECKPNT, ["nodeptr", ("node", "ptr")], dottedIdentifier, STAR, (",", CHECKPNT, dottedIdentifier)
 
 # Grammar for any line of RB source. Matches empty lines too (including those with comments)
 # The AND element requires the regex to match before most patterns are checked.
 # Ignore DIM lines which definitely don't declare Node ptrs
-def lineGrammar():          return [(AND(re.compile('(end\s+)?(dim.*node|readnode|withnode|loadarray|private|local|static|sub|function|constructor|destructor|property|operator|starttest|endtest|#)', re.I)),
+def lineGrammar():          return [(AND(re.compile('(end\s+)?(dim.*node|declare +as|readnode|withnode|loadarray|private|local|static|sub|function|constructor|destructor|property|operator|starttest|endtest|#)', re.I)),
                                      [dimStatement, readNode, readNodeEnd, withNode, withNodeEnd,
-                                      functionStart, functionEnd, subStart, subEnd, loadArray, directive]),
+                                      functionStart, functionEnd, subStart, subEnd, loadArray, directive, declareNodeptr]),
                                     tokenList]
 
 
@@ -376,14 +386,17 @@ def one_of(collection):
     return "one of " + ", ".join(str(item) for item in collection)
 
 class NodeSpec(object):
-    def __init__(self, node, cur_line, force_type = None, index_vars = ()):
+    def __init__(self, node, cur_line, force_type = None, index_vars = (), zero = False):
         """
         node should be a nodeSpec ASTNode.
         force_type forces the value type to something; it can't be overridden.
         index_vars is a list of variable names which may be used for array indexing,
         by default indices are not allowed.
         """
-        assert node.name == "nodeSpec"
+        if zero:
+            assert node.name == "nodeZeroSpec"
+        else:
+            assert node.name == "nodeSpec"
 
         self.node = node
         self.root_var = get_ident(node[0])
@@ -396,6 +409,7 @@ class NodeSpec(object):
         self.warn = False
         self.ignore = False
         self.oob_error = False
+        self.zero = zero
 
         last_attribute = None
         for element in node[1:]:
@@ -423,6 +437,7 @@ class NodeSpec(object):
                 element = element.lower()
                 if element not in attributes:
                     raise LanguageError("Invalid nodespec attribute '" + element + "'", node) 
+                element = type_aliases.get(element, element)
                 last_attribute = element
                 self.attributes.append(element)
                 if element in type_attributes:
@@ -500,15 +515,16 @@ class NodeSpec(object):
         if self.default != None:
             raise LanguageError("Don't give a default value for a " + name + " nodespec", self.node)
 
-    # For ptr, integer, string, float, double, zstring, zstringsize, bool, exists
+    # For ptr, integer, string, float, double, zstring, zstringsize, bool, exists, name
     # GetInteger actually returns longint, which FB doesn't like inside an IIF
     # These return NULL, 0, "", NULL, 0.0, 0.0, NULL, 0, NO, NO if {ptr} is NULL
     getters = (
         "{ptr}", "CINT(GetInteger({ptr}))", "GetString({ptr})", "GetFloat({ptr})", "GetFloat({ptr})",
-        "GetZString({ptr})", "GetZStringSize({ptr})", "(GetInteger({ptr}) <> 0)", "({ptr} <> NULL)"
+        "GetZString({ptr})", "GetZStringSize({ptr})", "(GetInteger({ptr}) <> 0)", "({ptr} <> NULL)",
+        "NodeName({ptr})"
         )
 
-    defaults = ("NULL", "0", '""', "0.0", "0.0", "NULL", "0", "NO", "NO")
+    defaults = ("NULL", "0", '""', "0.0", "0.0", "NULL", "0", "NO", "NO", '""')
 
     def get_default(self):
         """
@@ -643,6 +659,9 @@ FOR {tmpi} as integer = LBOUND({array}) TO UBOUND({array})
   {array}({tmpi}) = {value}
 NEXT
 """
+
+is_not_recognised_as_Nodeptr = ' is not recognised as a Node ptr. Use "declare as NodePtr <id>" to circumvent this check.'
+
 
 class ReloadBasicFunction(object):
     """
@@ -804,8 +823,8 @@ class ReloadBasicFunction(object):
                 nodeptr = 'GetChildByName(%s, "%s")' % (nodeptr, get_string(namenode))
         else:
             note = []
-            
-            _, prologue = self.ensure_nameindex_table(nodespec.root_var, False)
+            if len(nodespec.indices):  # not self.zero
+                _, prologue = self.ensure_nameindex_table(nodespec.root_var, False)
             for namenode in nodespec.indices:
                 nodeptr = 'GetChildByNameIndex(%s, %s)' % (nodeptr, self.intern_nodename(get_string(namenode)))
                 note.append(get_string(namenode))
@@ -818,7 +837,7 @@ class ReloadBasicFunction(object):
         Like nodespec_translation without .warn/.required checking.
         """
         if nodespec.root_var.lower() not in self.nodeptrs:
-            raise LanguageError("Nodespec lead variable is not recognised as a Node ptr", nodespec.node[0])
+            raise LanguageError("Nodespec lead variable" + is_not_recognised_as_Nodeptr, nodespec.node[0])
 
         nodeptr, prologue = self.get_descendant(nodespec)
 
@@ -840,7 +859,7 @@ class ReloadBasicFunction(object):
         For WithNode and ReadNode header nodespecs.
         """
         if nodespec.root_var.lower() not in self.nodeptrs:
-            raise LanguageError("Nodespec lead variable is not recognised as a Node ptr", nodespec.node[0])
+            raise LanguageError("Nodespec lead variable" + is_not_recognised_as_Nodeptr, nodespec.node[0])
 
         # resultptr is a temp variable possible used in multiple blocks, but this should be safe
         self.set_derived_from(resultptr, nodespec.root_var)
@@ -910,6 +929,12 @@ class ReloadBasicFunction(object):
                 if node.name == "nodeSpec":
                     if handle_nodespecs:
                         nodespec = NodeSpec(node, self.cur_line)
+                        nodespec.check_expression_usage()
+                        repl, prol = self.nodespec_translation(nodespec)
+                        replacements.append((node, repl))
+                        prologue += prol
+                elif node.name == "nodeZeroSpec":
+                        nodespec = NodeSpec(node, self.cur_line, zero = True)
                         nodespec.check_expression_usage()
                         repl, prol = self.nodespec_translation(nodespec)
                         replacements.append((node, repl))
@@ -992,6 +1017,16 @@ class ReloadBasicFunction(object):
             prologue = indent(prologue, indentwith) + "#line %d\n" % (self.cur_lineno - 1)
 
         return prologue + self.cur_line_with_replacements(replacements)
+
+    def process_declare_nodeptr(self, node):
+        """
+        Process a declareNodeptr
+        """
+        #print("DECLARE", self.cur_filepos, [identnode.what for identnode in node.what])
+        for identnode in node.what:
+            assert identnode.name == "dottedIdentifier"
+            assert isinstance(identnode.what[0], str)
+            self.nodeptrs.append(identnode.what[0])
 
     def process_readnode_loadarray(self, node, nodespec, readnode, node_path):
         """
@@ -1193,7 +1228,7 @@ class ReloadBasicFunction(object):
             # READNODE identifier [, ignoreall] [, default]
             parent_nodeptr = get_ident(header[0])
             if parent_nodeptr.lower() not in self.nodeptrs:
-                raise LanguageError("ReadNode block parent node not recognised as a NodePtr variable", header[0])
+                raise LanguageError("ReadNode block parent node" + is_not_recognised_as_Nodeptr, header[0])
             node_path = parent_nodeptr + ":"
 
         readnode = ReloadBasicFunction.ReadNode(header, parent_nodeptr, self)
@@ -1302,15 +1337,17 @@ class ReloadBasicFunction(object):
                 continue
 
             nodetype = node.name
-            #print nodetype
-            if nodetype == "dimStatement":
-                lines.append(self.process_dim(node, ""))
-            elif nodetype == "tokenList":   # A normal line of code
+            #print(lineno, line, node, nodetype)
+            if nodetype == "tokenList":   # A normal line of code
                 replacements, prologue = self.freeform_translations(node, outer_readnode)
                 #print "tokens", replacements, repr(prologue)
                 if prologue:
                     prologue += "#line %d\n" % (self.cur_lineno - 1)
                 lines.append(prologue + self.cur_line_with_replacements(replacements))
+            elif nodetype == "dimStatement":
+                lines.append(self.process_dim(node, ""))
+            elif nodetype == "declareNodeptr":
+                self.process_declare_nodeptr(node)
             elif nodetype == "directive":
                 # warn_func or error_func
                 setattr(self, node[0].lower(), get_ident(node[1]))
@@ -1360,13 +1397,15 @@ class ReloadBasicFunction(object):
             #self.used_temp_vars = 0
 
             nodetype = node.name
-            #print nodetype
-            if nodetype == "dimStatement":
-                self.output(self.process_dim(node))
-            elif nodetype == "tokenList":
+            #print(lineno, nodetype, node)
+            if nodetype == "tokenList":
                 replacements, prologue = self.freeform_translations(node)
                 #print "tokens", replacements, repr(prologue)
                 self.output(self.cur_line_with_replacements(replacements), prologue)
+            elif nodetype == "dimStatement":
+                self.output(self.process_dim(node))
+            elif nodetype == "declareNodeptr":
+                self.process_declare_nodeptr(node)
             elif nodetype == "directive":
                 # warn_func or error_func
                 setattr(self, node[0].lower(), get_ident(node[1]))

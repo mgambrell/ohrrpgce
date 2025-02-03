@@ -1,24 +1,32 @@
 This is the documentation for the RELOADbasiC extension of FreeBASIC.
 
 = Nodespecs =
-A nodespec is an expression for a typed value a child/descendent Node of a "root" NodePtr variable.
+A nodespec is an expression for a typed value of a "root" NodePtr variable or a child/descendent Node.
 
-Syntax:
+Descendant syntax:
   nodevar."childname"[."deeper descendants" ...][.attribute]...
 
-nodevar must be a Node ptr variable. Zero length nodespecs aren't implemented yet, so you can only
-refer to descendants (you need to call GetInteger, etc. manually to get a node's value directly).
-nodevar has to be either a local variable or function argument. (This strict requirement should
-probably be removed.)
+Zero spec syntax:
+  nodevar..attribute[.attribute]...
+
+nodevar must be a Node ptr expression: either a local variable declared with DIM or as a function
+argument, or an expression, possibly containing dots, like cont.root or .root declared with "declare
+as nodeptr" (see below).  (This requirement should probably be loosened further.)
+
+Zero spec nodespecs are just an alternative to calling GetInteger, etc.  They can't be used where a
+nodespec is required by WITHNODE, READNODE or LOADARRAY.  They must have an attribute.
 
 Nodespecs on a 'LoadArray' line can also contain an index, see the LoadArray section.
 
 
 == Nodespec type attributes ==
-.ptr		    : NodePtr: A pointer to the node itself, not its value.
+.ptr            : NodePtr: A pointer to the node itself, not its value.
+.name           : The NodeName
 .integer        : (Default)
+.int            : Alias
 .double
 .string
+.str            : Alias
 .zstring
 .zstringsize    : Length of the zstring/binary blob
 .bool           : Equal to GetInteger(node) <> 0, like GetChildNodeBool. Always either YES or NO.
@@ -43,6 +51,17 @@ Nodespecs on a 'LoadArray' line can also contain an index, see the LoadArray sec
 .oob_error      : For LoadArray only. Print errors instead of warning messages and exit the sub
 				  or function on out-of-bounds errors.
 
+
+= Declare as NodePtr =
+
+If you want a nodespec starting with an expression which isn't a simple variable because it contains
+dots, such as cont.root."foo" or .root."foo", or otherwise isn't recognised e.g. a reference to
+a UDT member inside a method, place a declaration in the same function:
+  DECLARE AS NODEPTR expression [, expression]...
+
+You can use "node ptr" instead of "nodeptr".
+E.g.
+  declare as Node ptr this.root, parent
 
 = WithNode =
 Syntax:
@@ -114,7 +133,7 @@ Syntax:
  (inside a READNODE block)
  LOADARRAY array_name($varname) = <expression containing nodespec indexed by varname>
 
-Syntax for indexed nodespec:
+Syntax for indexed nodespec (can't be zero spec):
 where nodespec[$varname].continued_nodespec
   nodevar."childname" `[$'  varname `]' [."descendants" ...] [.attribute ...]
   eg.
@@ -169,7 +188,6 @@ effect for the rest of the function. Can't be placed inside ReadNode, WithNode.
 * Finish writing this file
 * Clean up the source: handling of output and indent is horrible. Also variable naming confusion between strings, ASTNodes, others (NodeSpecs)
 * Assigning to nodespecs, other writing features
-* Zero length nodespecs
 * .once
 * .longint
 * nodespecs rooted by Doc ptrs

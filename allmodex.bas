@@ -1,5 +1,5 @@
 'OHRRPGCE - the graphics, audio and user input library!
-'(C) Copyright 1997-2017 James Paige, Ralph Versteegen, and the OHRRPGCE Developers
+'(C) Copyright 1997-2025 James Paige, Ralph Versteegen, and the OHRRPGCE Developers
 'Dual licensed under the GNU GPL v2+ and MIT Licenses. Read LICENSE.txt for terms and disclaimer of liability.
 '
 'This module is completely bool-clean (bool always used when appropriate)
@@ -50,7 +50,7 @@ end extern
 
 'Note: While non-refcounted frames work (at last check), it's not used anywhere, and you most probably do not need it
 'NOREFC is also used to indicate uncached Palette16's. Note Palette16's are NOT refcounted in the way as frames
-const NOREFC = -1234
+'const NOREFC = -1234
 const FREEDREFC = -4321
 
 type XYPair_node 	'only used for floodfill
@@ -64,7 +64,8 @@ end type
 
 declare sub _frame_copyctor cdecl(dest as Frame ptr ptr, src as Frame ptr ptr)
 declare sub init_frame_with_surface(ret as Frame ptr, surf as Surface ptr)
-declare sub reload_global_animations(def_anim as SpriteSet ptr, sprtype as SpriteType)
+declare sub update_spriteset_global_animations_cache(sprtype as SpriteType)
+declare sub empty_spriteset_global_animations_cache()
 
 declare sub frame_draw_internal(src as Frame ptr, masterpal() as RGBcolor, pal as Palette16 ptr = NULL, x as integer, y as integer, trans as bool = YES, dest as Frame ptr, opts as DrawOptions = def_drawoptions)
 declare sub draw_clipped(src as Frame ptr, pal as Palette16 ptr = NULL, x as integer, y as integer, trans as bool = YES, dest as Frame ptr, opts as DrawOptions)
@@ -250,7 +251,6 @@ dim shared flagtime as double = 0.0
 dim shared setwait_called as bool
 dim shared tickcount as integer = 0
 dim use_speed_control as bool = YES
-dim shared ms_per_frame as integer = 55     'This is only used by the animation system, not the framerate control
 dim requested_framerate as double           'Set by last setwait, takes into account the fps_multiplier
 dim shared base_fps_multiplier as double = 1.0 'Doesn't include effect of shift+tab
 dim shared fps_multiplier as double = 1.0   'Effective speed multiplier, affects all setwait/dowaits
@@ -454,7 +454,7 @@ dim shared textbg as integer
 'displaypal is used for display (including screenshots and gifs), while curmasterpal is for drawing.
 'curmasterpal is used for colors drawn to a 32-bit vpage, and for nearcolor lookups when drawing
 'to a 8-bit vpage (e.g. drawing with blending), and for exporting.
-'In 32-bit mode, displaypal is mever used; in 8-bit mode, displaypal gets faded in and out.
+'In 32-bit mode, displaypal is never used; in 8-bit mode, displaypal gets faded in and out.
 dim shared displaypal(0 to 256) as RGBcolor   'Current display palette; in 8-bit mode includes screen fades
 extern "C"
 dim shared curmasterpal(0 to 256) as RGBcolor 'Palette at last setpal/fadein, excludes any screen fades
@@ -488,13 +488,12 @@ end type
 
 CONST SPRITE_CACHE_MULT = 1000000
 #define SPRITE_CACHE_KEY(sprtype, record) (sprtype * SPRITE_CACHE_MULT + record)
-' Record number used for the dummy SpriteSet holding global animations
-const SPRITE_CACHE_GLOBAL_ANIMS = 999999
 
 dim shared sprcache as HashTable
 dim shared sprcacheB as DoubleList(SpriteCacheEntry)
 dim shared sprcacheB_used as integer    'number of slots full
 'dim shared as integer cachehit, cachemiss
+dim shared spriteset_global_animations_cache(sprTypeFirst to sprTypeLast) as AnimationSet ptr
 
 dim shared mouse_grab_requested as bool = NO
 dim shared mouse_grab_nested_pauses as integer = 0
@@ -9572,7 +9571,7 @@ local function sprite_cacheB_shrink(amount as integer) as bool
 	wend
 end function
 
-sub sprite_empty_cache_range(minkey as integer, maxkey as integer, leakmsg as string)
+local sub sprite_empty_cache_range(minkey as integer, maxkey as integer)
 	dim iterstate as uinteger = 0
 	dim as SpriteCacheEntry ptr pt, nextpt
 
@@ -9608,51 +9607,47 @@ local sub sprite_update_cache_range(minkey as integer, maxkey as integer)
 			dim sprtype as integer = pt->hash \ SPRITE_CACHE_MULT
 			dim record as integer = pt->hash mod SPRITE_CACHE_MULT
 
-			if record = SPRITE_CACHE_GLOBAL_ANIMS then
-				'Unlike normal SpriteSets, the one holding the default animations must
-				'be updated inplace because others point to it.
-				reload_global_animations(pt->p->sprset, sprtype)
-			else
+			dim newframe as Frame ptr
+			newframe = frame_load_uncached(sprtype, record)
 
-				dim newframe as Frame ptr
-				newframe = frame_load_uncached(sprtype, record)
-
-				if newframe <> NULL then
-					dim numframes as integer = newframe->arraylen
-					if newframe->arraylen <> pt->p->arraylen then
-						'Unfortunately, this error will occur if you change the number
-						'of frames in the spriteset editor. Only thing we can do about it is
-						'try to unload all affected Frames before updating the cache.
-						showbug "sprite_update_cache: number of frames changed for sprite " & pt->hash
-						numframes = small(numframes, pt->p->arraylen)
-					end if
-
-					'Transplant the data from the new Frame into the old Frame, so that no
-					'pointers need to be updated. pt (the SpriteCacheEntry) doesn't need to
-					'to be modified at all
-
-					dim refcount as integer = pt->p->refcount
-					dim wantmask as bool = (pt->p->mask <> NULL)
-					'Remove the host's previous organs (deletes SpriteSet)
-					frame_delete_members pt->p
-					'Insert the new organs
-					memcpy(pt->p, newframe, sizeof(Frame) * numframes)
-					'Having removed everything from the donor, dispose of it
-					Deallocate(newframe)
-					'Fix the bits we just clobbered
-					pt->p->cached = 1
-					pt->p->refcount = refcount
-					pt->p->cacheentry = pt
-					if pt->p->sprset then
-						'We DON'T do the same trick with SpriteSets.
-						'You mustn't hold onto SpriteSet ptrs when gfx are reloaded, they will become invalid!
-						'Update cross-link
-						pt->p->sprset->frames = pt->p
-					end if
-					'Make sure we don't crash if we were using a mask (might be the wrong mask though)
-					if wantmask then frame_add_mask pt->p
-
+			if newframe <> NULL then
+				dim numframes as integer = newframe->arraylen
+				if newframe->arraylen <> pt->p->arraylen then
+					'Unfortunately, this error will occur if you change the number
+					'of frames in the spriteset editor. Only thing we can do about it is
+					'try to unload all affected Frames before updating the cache.
+					showbug "sprite_update_cache: number of frames changed for sprite " & pt->hash
+					numframes = small(numframes, pt->p->arraylen)
 				end if
+
+				'Transplant the data from the new Frame into the old Frame, so that no
+				'pointers need to be updated. pt (the SpriteCacheEntry) doesn't need to
+				'to be modified at all
+
+				dim refcount as integer = pt->p->refcount
+				dim wantmask as bool = (pt->p->mask <> NULL)
+				'Remove the host's previous organs (deletes SpriteSet)
+				frame_delete_members pt->p
+				'Insert the new organs
+				memcpy(pt->p, newframe, sizeof(Frame) * numframes)
+				'Having removed everything from the donor, dispose of it
+				Deallocate(newframe)
+				'Fix the bits we just clobbered
+				pt->p->cached = 1
+				pt->p->refcount = refcount
+				pt->p->cacheentry = pt
+				if pt->p->sprset then
+					'We DON'T do the same trick with SpriteSets.
+					'You mustn't hold onto SpriteSet ptrs when gfx are reloaded, they will become invalid!
+					'However, it's OK to keep an Animation ptr which has been ->referenced()
+
+					'Update cross-link
+					pt->p->sprset->frames = pt->p
+				end if
+				'Make sure we don't crash if we were using a mask (might be the wrong mask though)
+				if wantmask then frame_add_mask pt->p
+				'Increment version number
+				pt->p->generation += 1
 			end if
 		else
 			'Don't bother if not in use
@@ -9668,6 +9663,7 @@ sub sprite_update_cache(sprtype as SpriteType)
 	if sprtype = sprTypeTileset then
 		sprite_update_cache sprTypeTilesetStrip
 	end if
+	update_spriteset_global_animations_cache sprtype
 end sub
 
 'Attempt to completely empty the sprite cache, detecting memory leaks
@@ -9675,15 +9671,17 @@ end sub
 'or with two: remove a specific spriteset
 sub sprite_empty_cache(sprtype as SpriteType = sprTypeInvalid, setnum as integer = -1)
 	if sprtype = sprTypeInvalid then
-		sprite_empty_cache_range(INT_MIN, INT_MAX, "leaked sprite ")
+		sprite_empty_cache_range(INT_MIN, INT_MAX)
 		if sprcacheB_used <> 0 or sprcache.numitems <> 0 then
 			debug "sprite_empty_cache: corruption: sprcacheB_used=" & sprcacheB_used & " items=" & sprcache.numitems
 		end if
+		empty_spriteset_global_animations_cache
 	elseif setnum < 0 then
-		sprite_empty_cache_range(SPRITE_CACHE_MULT * sprtype, SPRITE_CACHE_MULT * (sprtype + 1) - 1, "leaked sprite ")
+		sprite_empty_cache_range(SPRITE_CACHE_MULT * sprtype, SPRITE_CACHE_MULT * (sprtype + 1) - 1)
+		animset_unload @spriteset_global_animations_cache(sprtype)
 	else
 		dim which as integer = SPRITE_CACHE_MULT * sprtype + setnum
-		sprite_empty_cache_range(which, which, "leaked sprite ")
+		sprite_empty_cache_range(which, which)
 	end if
 end sub
 
@@ -9794,9 +9792,6 @@ local sub _cache_sprtype(byref doc as DocPtr, sprtype as SpriteType)
 		end if
 		frame_unload @fr
 	next
-	if doc then
-		load_global_animations sprtype, doc  'Doesn't have to be freed.
-	end if
 end sub
 
 'Equivalent to loading and freeing all graphics of one type, but vastly faster.
@@ -10065,7 +10060,8 @@ function frame_array_to_vector(frames as Frame ptr) as Frame ptr vector
 	dim ret as Frame ptr vector
 	v_new ret
 	for idx as integer = 0 TO frames->arraylen - 1
-		v_append ret, frame_duplicate(@frames[idx])
+		'Don't use v_append, to avoid _frame_copyctor
+		v_expand(ret)[0] = frame_duplicate(@frames[idx])
 	next
 	return ret
 end function
@@ -10156,10 +10152,10 @@ function frame_load_uncached(sprtype as SpriteType, record as integer) as Frame 
 			ret = mxs
 		end if
 	else
-		ret = rgfx_load_spriteset(sprtype, record, NO)
+		ret = rgfx_load_spriteset(sprtype, record, NO)  'expect_exists=NO
 
 		if ret then
-			'OK
+			'OK. ret already has a sprset.
 		elseif sprtype = sprTypeBackdrop then
 			'Returns a blank Frame on error
 			ret = frame_load_mxs(graphics_file("mxs"), record)
@@ -10167,6 +10163,7 @@ function frame_load_uncached(sprtype as SpriteType, record as integer) as Frame 
 				sprset = new SpriteSet(ret)  'Attaches to ret
 			end if
 		else
+			'Not in the .rgfx file, try .pt#, or create a blank spriteset
 			with sprite_sizes(sprtype)
 				'debug "loading " & sprtype & "  " & record
 				'cachemiss += 1
@@ -10178,7 +10175,8 @@ function frame_load_uncached(sprtype as SpriteType, record as integer) as Frame 
 			if ret then
 				initialise_backcompat_pt_frameids ret, sprtype
 				sprset = new SpriteSet(ret)  'Attaches to ret
-				sprset->global_animations = load_global_animations(sprtype)
+				DEBUG_ANIM_CACHE(sprset->debugname = "SS" & sprtype & "_" & record)
+				sprset->global_animations = spriteset_load_global_animations(sprtype)
 			end if
 		end if
 	end if
@@ -10399,10 +10397,6 @@ sub frame_unload cdecl(ppfr as Frame ptr ptr)
 			debug frame_describe(fr) & " already freed!"
 			exit sub
 		end if
-		'Theoretically possible to have an un-refcounted Frame/SpriteSet which uses refcounted default animations
-		if .sprset andalso .sprset->global_animations then
-			spriteset_unload @.sprset->global_animations
-		end if
 		if .refcount = NOREFC then
 			exit sub
 		end if
@@ -10435,7 +10429,7 @@ sub frame_unload cdecl(ppfr as Frame ptr ptr)
 				if .cached then
 					sprite_to_B_cache(fr->cacheentry)
 				else
-					'Frees .surf
+					'Frees .surf and .sprset
 					frame_freemem(fr)
 				end if
 			end if
@@ -11783,6 +11777,13 @@ sub Palette16_unload(palptr as Palette16 ptr ptr)
 	*palptr = 0
 end sub
 
+function Palette16_reference(pal as Palette16 ptr) as Palette16 ptr
+	if pal = NULL then return NULL
+	BUG_IF(pal->refcount <= 0, "Bad refc " & pal->refcount, NULL)
+	pal->refcount += 1
+	return pal
+end function
+
 function Palette16_duplicate(pal as Palette16 ptr) as Palette16 ptr
 	dim ret as Palette16 ptr = palette16_new(pal->numcolors)
 	for i as integer = 0 to ubound(pal->col)
@@ -11892,66 +11893,24 @@ function masterpal_to_gfxpal(pal() as RGBcolor) as RGBPalette ptr
 	return ret
 end function
 
+
 '==========================================================================================
-'                            SpriteSet/Animation/SpriteState
+'                                        SpriteSet
 '==========================================================================================
 
-' Number of loops/non-forwards branches that can occur in an animation without a
-' wait before it's considered to be stuck in an infinite loop.
-CONST ANIMATION_LOOPLIMIT = 10
-
-' Short names used for listing an animation
-redim anim_op_names(animOpLAST) as string
-anim_op_names(animOpWait) =      "wait"
-anim_op_names(animOpWaitMS) =    "wait"
-anim_op_names(animOpFrame) =     "frame"
-anim_op_names(animOpRepeat) =    "repeat"
-anim_op_names(animOpSetOffset) = "set offset"
-anim_op_names(animOpRelOffset) = "add offset"
-
- ' Short names used for RELOAD serialisation
-redim anim_op_node_names(animOpLAST) as string
-anim_op_node_names(animOpWait) =      "wait"
-anim_op_node_names(animOpWaitMS) =    "waitms"
-anim_op_node_names(animOpFrame) =     "frame"
-anim_op_node_names(animOpRepeat) =    "repeat"
-anim_op_node_names(animOpSetOffset) = "setoffset"
-anim_op_node_names(animOpRelOffset) = "addoffset"
-
-' Descriptive captions
-redim anim_op_fullnames(animOpLAST) as string
-anim_op_fullnames(animOpWait) =      "Wait (num frames)"
-anim_op_fullnames(animOpWaitMS) =    "Wait (seconds)"
-anim_op_fullnames(animOpFrame) =     "Set frame"
-anim_op_fullnames(animOpRepeat) =    "Repeat animation"
-anim_op_fullnames(animOpSetOffset) = "Move to offset (unimp)"
-anim_op_fullnames(animOpRelOffset) = "Add to offset (unimp)"
-
-sub set_animation_framerate(ms as integer)
-	' We bound to 5-200 because set_speedcontrol does the same thing
-	ms_per_frame = bound(ms, 5, 200)
-end sub
-
-function ms_to_frames(ms as integer) as integer
-	return large(1, INT(ms / ms_per_frame))
-end function
-
-function frames_to_ms(frames as integer) as integer
-	return frames * ms_per_frame
-end function
 
 'Find a frame in a frameset, returning frame index.
-'If fail = NO, then return the nearest match if the frame doesn't exist. Otherwise return -1.
+'If exact = NO, then return the nearest match if the frame doesn't exist. Otherwise return -1.
 'The nearest match is the previous frameid that exists
 'frameset must be the first Frame in the frameset
-function frameid_to_frame(frameset as Frame ptr, frameid as integer, fail as bool = NO) as integer
+function frameid_to_frame(frameset as Frame ptr, frameid as integer, exact as bool = NO) as integer
 	dim nearest as integer = 0
 	for idx as integer = 0 to frameset->arraylen - 1
 		dim thisid as integer = frameset[idx].frameid
 		if thisid = frameid then return idx
 		if thisid < frameid then nearest = idx
 	next
-	if fail then return -1
+	if exact then return -1
 	return nearest
 end function
 
@@ -11964,85 +11923,98 @@ end sub
 ' This should only be called from within allmodex
 constructor SpriteSet(frameset as Frame ptr)
 	BUG_IF(frameset = NULL orelse frameset->arrayelem, "need first Frame in array")
+	BUG_IF(frameset->sprset, "Overwriting Frame->sprset ptr")
 	frames = frameset
 	frameset->sprset = @this
+	refcount = NOREFC
 	'No need to init the animations vector until one is created
 end constructor
-
-destructor SpriteSet()
-	'If a SpriteSet is being deleted, noone should still be playing its animations!
-	'(The Animations can remain referenced, but the Frames might be gone)
-	delete_all_animations(YES)
-end destructor
-
-sub SpriteSet.delete_all_animations(check_no_references as bool = NO)
-	for idx as integer = 0 to v_len(animations) - 1
-		if check_no_references then
-			BUG_IF(animations[idx]->refcount <> 1, "Leaked reference to animation")
-		end if
-		animations[idx]->dereference()
-		animations[idx] = 0
-	next
-	v_free animations
-end sub
 
 function SpriteSet.num_frames() as integer
 	return frames->arraylen
 end function
 
+function SpriteSet.num_frame_groups() as integer
+	return 1 + frames[frames->arraylen - 1].frameid \ 100
+end function
+
+function SpriteSet.frame_starts_group(frameidx as integer) as bool
+	BUG_IF(frameidx >= frames->arraylen, "bad frameidx", NO)
+	return (frames[frameidx].frameid MOD 100) = 0
+end function
+
 'Create a SpriteSet for a Frame if it doesn't have one
 function spriteset_for_frame(fr as Frame ptr) as SpriteSet ptr
 	if fr->sprset then return fr->sprset
-	return new SpriteSet(fr)
-end function
-
-'A dummy SpriteSet
-function empty_spriteset() as SpriteSet ptr
-	dim fr as Frame ptr = frame_new(1, 1, 1)
-	return new SpriteSet(fr)
-end function
-
-local function load_global_animations_uncached(sprtype as SpriteType) as SpriteSet ptr
-	dim rgfxdoc as Doc ptr
-	rgfxdoc = rgfx_open(sprtype, NO)
-	if rgfxdoc = NULL then
-		return default_global_animations(sprtype)
-	end if
-	dim ret as SpriteSet ptr
-	ret = rgfx_load_global_animations(rgfxdoc)
-	FreeDocument rgfxdoc
+	var ret = new SpriteSet(fr)
+	DEBUG_ANIM_CACHE(ret->debugname = "ssForFrame")
 	return ret
 end function
 
-'Returns a dummy SpriteSet which contains the global (default) animations for a sprtype,
-'loaded from the cache, or from rgfx or the defaults if missing.
-'Use spriteset_unload to free the result.
-'If rgfxdoc is already open you can optionally pass it to avoid reloading.
-function load_global_animations(sprtype as SpriteType, rgfxdoc as Doc ptr = NULL) as SpriteSet ptr
-	dim cached as Frame ptr
-	cached = sprite_fetch_from_cache(sprtype, SPRITE_CACHE_GLOBAL_ANIMS)
-	if cached then return cached->sprset
-
-	dim ret as SpriteSet ptr
+' Load the global animations for a sprtype from rgfx, or defaults if they don't exist.
+' If loadinto=NULL, creates a new AnimationSet with .refcount=1, otherwise returns loadinto with its animations replaced.
+local function spriteset_load_global_animations_uncached(sprtype as SpriteType, rgfxdoc as Doc ptr = NULL, loadinto as AnimationSet ptr = NULL) as AnimationSet ptr
+	dim ret as AnimationSet ptr
 	if rgfxdoc then
-		ret = rgfx_load_global_animations(rgfxdoc)
+		' Will create new if loadinto=NULL, unless animations missing
+		ret = rgfx_load_global_animations(rgfxdoc, loadinto)
 	else
-		ret = load_global_animations_uncached(sprtype)
+		rgfxdoc = rgfx_open(sprtype, NO)
+		if rgfxdoc then
+			ret = rgfx_load_global_animations(rgfxdoc, loadinto)
+			FreeDocument rgfxdoc
+		end if
 	end if
-	if ret then
-		sprite_add_cache(sprtype, SPRITE_CACHE_GLOBAL_ANIMS, ret->frames)
+	if ret = NULL then
+		if loadinto then
+			ret = loadinto
+		else
+			ret = new AnimationSet
+			DEBUG_ANIM_CACHE(ret->debugname = "defglobalanims" & sprtype)
+			' Result goes in the cache
+			ret->reference()
+		end if
+		spriteset_default_global_animations(*ret, sprtype)
 	end if
 	return ret
 end function
 
-'Called when updating the sprite cache. Updates a SpriteSet in-place.
-'Variant on rgfx_load_global_animations.
-local sub reload_global_animations(def_anim as SpriteSet ptr, sprtype as SpriteType)
-	dim rgfxdoc as Doc ptr = rgfx_open(sprtype, YES)
-	FAIL_IF(rgfxdoc = NULL, "failed")
-	'This overwrites the existing animations
-	load_animations_node(DocumentRoot(rgfxdoc), def_anim)
-	FreeDocument rgfxdoc
+' Load (with caching) the global animations (or defaults if they don't exist) for a sprtype.
+' Increments the refcount. Use animset_unload to deref/free the result.
+' If rgfxdoc is already open you can optionally pass it to avoid reloading.
+function spriteset_load_global_animations(sprtype as SpriteType, rgfxdoc as Doc ptr = NULL) as AnimationSet ptr
+	dim ret as AnimationSet ptr
+	ret = spriteset_global_animations_cache(sprtype)
+	if ret then return ret->reference()
+
+	ret = spriteset_load_global_animations_uncached(sprtype, rgfxdoc)
+	' ret has .refcount = 1
+	spriteset_global_animations_cache(sprtype) = ret
+	return ret->reference()
+end function
+
+' Called when updating the sprite cache. Updates the AnimationSet of global animations in-place
+' (unlike normal SpriteSets, which don't need to be modified inplace).
+local sub update_spriteset_global_animations_cache(sprtype as SpriteType)
+	dim byref cached as AnimationSet ptr = spriteset_global_animations_cache(sprtype)
+
+	' If cached=NULL, creates a new AnimationSet with refc=1, otherwise returns cached with its animations replaced.
+	' If the animations don't exist, loads the defaults.
+	cached = spriteset_load_global_animations_uncached(sprtype, NULL, cached)
+
+	DEBUG_ANIM_CACHE(if cached then ? strprintf("update global_animations_cache(%d) refc=%d", sprtype, cached->refcount))
+end sub
+
+sub empty_spriteset_global_animations_cache()
+	for sprtype as SpriteType = lbound(spriteset_global_animations_cache) to ubound(spriteset_global_animations_cache)
+		var byref cached = spriteset_global_animations_cache(sprtype)
+		if cached andalso cached->refcount > 1 then
+			'TODO: switch to debugc errBug
+			showbug strprintf("global_animations_cache(%d) leak with refc=%d", sprtype, cached->refcount)
+		end if
+		DEBUG_ANIM_CACHE(if cached then ? strprintf("empty_global_animations_cache(%d)", sprtype))
+		animset_unload @cached
+	next
 end sub
 
 ' Load a spriteset from file, or return a reference if already cached.
@@ -12068,296 +12040,31 @@ sub spriteset_unload(ss as SpriteSet ptr ptr)
 end sub
 
 ' Increment refcount.
-sub SpriteSet.reference()
-	if frames then frame_reference frames
-end sub
+function AnimationSet.reference() as AnimationSet ptr
+	'The SpriteSet.reference override should be called when refcount = NOREFC
+	BUG_IF(refcount = NOREFC, "Bad AnimationSet.refcount", @this)
+	refcount += 1
+	DEBUG_ANIM_CACHE(? "AnimationSet.reference(" & debugname & "): refc=" & refcount)
+	return @this
+end function
+
+' Increment refcount.
+function SpriteSet.reference() as SpriteSet ptr
+	BUG_IF(refcount <> NOREFC, "Bad SpriteSet.refcount", @this)
+	if frames then
+		frame_reference frames
+	else
+		showbug "SpriteSet.reference(): no frames!"
+	end if
+	DEBUG_ANIM_CACHE(? "SpriteSet.reference(" & debugname & "): frames.refc=" & frames->refcount)
+	return @this
+end function
 
 function SpriteSet.describe() as string
 	return "spriteset:<" & num_frames & " frames: 0x" & hexptr(frames) _
 	       & ", " & v_len(animations) & " animations>"
 end function
 
-'variantname can contain a trailing space
-sub split_variantname(variantname as string, byref animname as string, byref variant as string)
-	dim spacepos as integer = instr(variantname, " ")
-	if spacepos then
-		animname = left(variantname, spacepos - 1)
-		variant = mid(variantname, spacepos + 1)
-	else
-		animname = variantname
-		variant = ""
-	end if
-end sub
-
-' Searches for an animation with a certain name, or NULL if there's no match.
-' If exact=YES, the variant must match exactly, otherwise looks for best match.
-' variantname is either just the name of the animation, or the
-' name plus an optional variant separated by a space, e.g. "walk upleft", "walk ", "walk".
-' The nearest match is picked amongst animations which match the name:
-'  - prefer variant as specified
-'  - then prefer an animation with blank variant
-'  - then prefer the first animation (with that name)
-function SpriteSet.find_animation(variantname as string, exact as bool = NO) as Animation ptr
-	dim idx as integer = find_animation_idx(variantname, exact)
-	if idx < 0 then
-		return NULL
-	else
-		return animations[idx]
-	end if
-end function
-
-function SpriteSet.find_animation_idx(variantname as string, exact as bool = NO) as integer
-	dim as string name, variant
-	split_variantname variantname, name, variant
-
-	dim best_match as integer = -1
-	for idx as integer = 0 to v_len(animations) - 1
-		if animations[idx]->name = name then
-			' Right name, check how good the match is
-			if animations[idx]->variant = variant then
-				return idx        'Exact match
-			elseif len(animations[idx]->variant) = 0 then
-				best_match = idx  'Prefer nonvariant animations
-			elseif best_match = NULL then
-				best_match = idx  'Otherwise, default to the first variant
-			end if
-		end if
-	next
-	if exact then
-		'Didn't find exact match
-		return -1
-	else
-		return best_match
-	end if
-end function
-
-' Append a new blank animation and return pointer
-function SpriteSet.new_animation(name as string = "", variant as string = "") as Animation ptr
-	dim ret as Animation ptr = new Animation()
-	ret->name = name
-	ret->variant = variant
-	if animations = NULL then
-		v_new animations
-	end if
-	v_append animations, ret
-	return ret
-end function
-
-sub SpriteSet.delete_animation(variantname as string)
-	dim idx as integer = find_animation_idx(variantname, YES)  'exact=YES
-	if idx >= 0 then
-		animations[idx]->dereference()
-		v_delete_slice animations, idx, idx + 1
-	end if
-end sub
-
-constructor Animation()
-	reference()
-end constructor
-
-constructor Animation(name as string, variant as string = "")
-	this.name = name
-	this.variant = variant
-	reference()
-end constructor
-
-function Animation.reference() as Animation ptr
-	refcount += 1
-	return @this
-end function
-
-sub Animation.dereference()
-	refcount -= 1
-	BUG_IF(refcount < 0, "Too many Animation.dereference()")
-	if refcount = 0 then
-		delete @this
-	end if
-end sub
-
-sub Animation.append(optype as AnimOpType, arg1 as integer = 0, arg2 as integer = 0)
-	redim preserve ops(ubound(ops) + 1)
-	with ops(ubound(ops))
-		.type = optype
-		.arg1 = arg1
-		.arg2 = arg2
-	end with
-end sub
-
-
-constructor SpriteState(sprset as SpriteSet ptr)
-	ss = sprset
-	ss->reference()  'Inc refcount, because dec it in destructor
-	frame_num = 0
-end constructor
-
-constructor SpriteState(ptno as SpriteType, record as integer)
-	ss = spriteset_load(ptno, record)
-	frame_num = 0
-end constructor
-
-destructor SpriteState()
-	set_anim(NULL)  'Dec refcount
-	spriteset_unload @ss
-end destructor
-
-' Lookup an animation and start it. See SpriteSet.find_animation() for documentation
-' of variantname (animation name plus optional variant).
-' Normally an animation specifies how many times it loops (unimplemented), or ends in Repeat
-' to loop forever. loopcount <> 0 overrides this, giving a fixed number of
-' times to play, or < 0 to repeat forever
-sub SpriteState.start_animation(variantname as string, loopcount as integer = 0)
-	anim_wait = 0
-	anim_step = 0
-	anim_loop = loopcount
-	anim_looplimit = ANIMATION_LOOPLIMIT
-
-	set_anim(ss->find_animation(variantname))
-end sub
-
-' Doesn't reset the sprite.
-sub SpriteState.stop_animation()
-	set_anim(NULL)
-	anim_wait = 0
-	anim_step = 0
-end sub
-
-sub SpriteState.set_anim(newanim as Animation ptr)
-	if anim then
-		anim->dereference()
-	end if
-	if newanim then
-		newanim->reference()
-	end if
-	anim = newanim
-end sub
-
-' Resets everything that an animation might change, but doesn't stop it
-sub SpriteState.reset()
-	frame_num = 0
-	offset.x = 0
-	offset.y = 0
-end sub
-
-function SpriteState.cur_frame() as Frame ptr
-	if ss = NULL then return NULL
-	if frame_num < 0 or frame_num >= ss->num_frames then return NULL
-	return @ss->frames[frame_num]
-end function
-
-' Advance time until the next wait, skipping the current one, and returns number of ms that the wait was for.
-' Returns -1 and does nothing if not waiting, -2 on error.
-' The return value ought to be independent of ms_per_frame
-' Note: any time already spent on the current wait is ignored.
-function SpriteState.skip_wait() as integer
-	if anim = NULL then return -2
-	' Look at the current op instead of anim_wait, because it might be a wait
-	' which we haven't looked at yet.
-	with anim->ops(anim_step)
-		if .type <> animOpWait and .type <> animOpWaitMS then
-			return -1
-		end if
-		dim ret as integer = .arg1
-		anim_wait = ms_to_frames(ret)
-		if animate() = NO then ret = -2  ' Until next wait
-		return ret
-	end with
-end function
-
-' Advance the animation by one op.
-' Returns true on success or finished animation, false on error.
-' Sets anim = NULL on error or finished animation.
-' Does not check for infinite loops; caller must do that.
-function SpriteState.animate_step() as bool
-	if anim = NULL then return NO
-
-	' This condition only If the animation doesn't end up looping, re
-	if anim_step > ubound(anim->ops) then
-		debuginfo "anim done"
-		anim_looplimit -= 1
-		' anim_loop = 0 means default number of loops
-		' Also refuse to loop if empty.
-		if anim_loop = 0 or anim_loop = 1 orelse ubound(anim->ops) = -1 then
-			stop_animation()
-			return YES
-		end if
-		if anim_loop > 0 then anim_loop -= 1
-		anim_step = 0
-	end if
-
-	with anim->ops(anim_step)
-		select case .type
-			case animOpWait, animOpWaitMS
-				' These two opcodes are identical, differing only in how
-				' they are treated by the editor
-				anim_wait += 1
-				if anim_wait > ms_to_frames(.arg1) then
-					anim_wait = 0
-				else
-					anim_looplimit = ANIMATION_LOOPLIMIT  'Reset
-					return YES
-				end if
-			case animOpFrame
-				/'
-				if .arg1 >= ss->num_frames then
-					debug "Animation '" & anim->name & "': illegal frame number " & .arg1
-					stop_animation()
-					return NO
-				end if
-				'/
-				frame_num = frameid_to_frame(ss->frames, .arg1)
-			case animOpRepeat
-				' If a loop count was specified when playing the animation,
-				' then only loop that many times, otherwise repeat forever
-				if anim_loop > 0 then
-					anim_loop -= 1
-					if anim_loop = 0 then
-						stop_animation()
-						return YES
-					end if
-				end if
-				anim_step = 0
-				anim_looplimit -= 1
-				return YES
-			case animOpSetOffset
-				offset.x = .arg1
-				offset.y = .arg2
-			case animOpRelOffset
-				offset.x += .arg1
-				offset.y += .arg2
-			case else
-				debug "bad animation opcode " & .type & " in '" & anim->name & "'"
-				stop_animation()
-				return NO
-		end select
-	end with
-	anim_step += 1
-	return YES
-end function
-
-' Advance time by one tick. True on success or finished (anim is now NULL!), false on an error/infinite loop
-function SpriteState.animate() as bool
-	if anim = NULL then return NO
-
-	while anim_looplimit > 0
-		if animate_step() = NO then return NO  'stop on error
-		if anim_wait > 0 then return YES  'stop if waiting
-		if anim = NULL then return YES  'stop if finished animating
-	wend
-
-	' Exceeded the loop limit
-	debug "animation '" & anim->name & "' got stuck in an infinite loop"
-	stop_animation()
-	return NO
-end function
-
-/'
-sub SpriteState.draw(x as integer, y as integer, trans as bool = YES, page as integer)
-	dim as integer realx, realy
-	realx = x + offset.x
-	realy = y + offset.y
-	frame_draw(cur_frame(), pal, realx, realy, trans, page)
-end sub
-'/
 
 '==========================================================================================
 '                           Platform specific wrapper functions

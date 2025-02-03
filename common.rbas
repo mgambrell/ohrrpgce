@@ -507,6 +507,11 @@ SUB debug (msg as const zstring ptr)
  debuginfo "! " & *msg
 END SUB
 
+LOCAL FUNCTION get_timestamp() as string
+ IF program_start_timer <> 0.0 THEN RETURN strprintf("%4.1f  ", TIMER - program_start_timer)
+ RETURN ""
+END FUNCTION
+
 EXTERN "C"
 
 'A debug message which is only logged/printed once. Use if would otherwise be to spammy.
@@ -567,15 +572,11 @@ END SUB
 SUB early_debuginfo (msg as const zstring ptr)
  external_log msg
  IF debug_to_console THEN PRINT *msg
- log_buffer &= *msg & LINE_END
+ DIM tagged_msg as string = get_timestamp() & *msg
+ log_buffer &= tagged_msg & LINE_END
 END SUB
 
 END EXTERN
-
-LOCAL FUNCTION get_timestamp() as string
- IF program_start_timer <> 0.0 THEN RETURN strprintf("%4.1f  ", TIMER - program_start_timer)
- RETURN ""
-END FUNCTION
 
 SUB debuginfo (msg as const zstring ptr)
  'Use for throwaway messages like upgrading
@@ -2147,15 +2148,18 @@ END FUNCTION
 'Modify an integer according to key input (less and more are scancodes for decrementing and incrementing)
 'If returninput is true, returns whether the user tried to modify the int,
 'otherwise returns true only if the int actually changed.
-'If autoclamp is false, n is clamped within allowable range only if a key is pressed
-FUNCTION intgrabber (byref n as integer, min as integer, max as integer, less as KBScancode=ccLeft, more as KBScancode=ccRight, returninput as bool=NO, use_clipboard as bool=YES, autoclamp as bool=YES, scrollwheel as WheelHandlingEnum=wheelRightButton) as bool
+'autoclamp: If is false, n is clamped within allowable range only if a key is pressed
+'moreless_step:
+'           The (minimum without acceleration) amount that the more/less keys step by.
+'wrap:      Whether less/more keys wrap around
+FUNCTION intgrabber (byref n as integer, min as integer, max as integer, less as KBScancode=ccLeft, more as KBScancode=ccRight, returninput as bool=NO, use_clipboard as bool=YES, autoclamp as bool=YES, scrollwheel as WheelHandlingEnum=wheelRightButton, moreless_step as integer=1, wrap as bool=YES) as bool
  DIM as longint temp = n
- intgrabber = intgrabber(temp, cast(longint, min), cast(longint, max), less, more, returninput, use_clipboard, autoclamp, scrollwheel)
+ intgrabber = intgrabber(temp, cast(longint, min), cast(longint, max), less, more, returninput, use_clipboard, autoclamp, scrollwheel, moreless_step, wrap)
  n = temp
 END FUNCTION
 
 'See above for documentation
-FUNCTION intgrabber (byref n as longint, min as longint, max as longint, less as KBScancode=ccLeft, more as KBScancode=ccRight, returninput as bool=NO, use_clipboard as bool=YES, autoclamp as bool=YES, scrollwheel as WheelHandlingEnum=wheelRightButton) as bool
+FUNCTION intgrabber (byref n as longint, min as longint, max as longint, less as KBScancode=ccLeft, more as KBScancode=ccRight, returninput as bool=NO, use_clipboard as bool=YES, autoclamp as bool=YES, scrollwheel as WheelHandlingEnum=wheelRightButton, moreless_step as integer=1, wrap as bool=YES) as bool
  STATIC clip as longint
  DIM old as longint = n
  DIM typed as bool = NO
@@ -2169,16 +2173,16 @@ FUNCTION intgrabber (byref n as longint, min as longint, max as longint, less as
  ELSEIF scrollwheel = wheelAlways THEN
   updown = readmouse().wheel_clicks
  END IF
- DIM maxspeed as integer = small(1000, (max - min) \ 10)
+ DIM maxspeed as integer = small(1000, (max - min) \ 10 \ moreless_step)
  IF more <> scNone THEN updown += accelerating_keydown(more, maxspeed)
  IF less <> scNone THEN updown -= accelerating_keydown(less, maxspeed)
 
  IF updown THEN
   'Don't wrap while acceleration is active, it's confusing
-  IF ABS(updown) = 1 THEN
-   loopvar n, min, max, updown
+  IF wrap ANDALSO ABS(updown) = 1 THEN
+   loopvar n, min, max, moreless_step * updown
   ELSE
-   n = bound(n + updown, min, max)
+   n = bound(n + moreless_step * updown, min, max)
   END IF
   typed = YES
  ELSEIF keyval(scDelete) > 1 THEN
@@ -6374,8 +6378,10 @@ END FUNCTION
 'sigfigs: the max number of digits for fractional values, not enforced for whole
 '    values (e.g. if sigfigs=2, this acts like intgrabber for values >= 100).
 '    No more than 7.
+'cyclic: wrap from from max straight to min, without. Mainly for angles.
+'    (Even when false, still wraps on a new keypress)
 'Note: min and max are not in percent: max=1 is 100%
-FUNCTION percent_grabber(byref float as double, byref repr as string = "", min as double, max as double, sigfigs as integer = 4, ret_if_repr_changed as bool = YES, is_percent as bool = YES) as bool
+FUNCTION percent_grabber(byref float as double, byref repr as string = "", min as double, max as double, sigfigs as integer = 4, ret_if_repr_changed as bool = YES, is_percent as bool = YES, cyclic as bool = NO) as bool
  STATIC clip as double
  DIM oldfloat as double = float
  DIM mult as double = IIF(is_percent, 100.0, 1.0)
@@ -6449,39 +6455,56 @@ FUNCTION percent_grabber(byref float as double, byref repr as string = "", min a
  float += updown * increment
  IF updown THEN changed = YES
 
- IF (keyval(scMinus) > 1 OR keyval(scNumpadMinus) > 1) AND min < 0.0 THEN
-  float = -float
+ IF (keyval(scMinus) > 1 OR keyval(scNumpadMinus) > 1) THEN
+  IF float = 0.0 THEN
+   negative_zero = YES
+  ELSE
+   float = -float
+  END IF
   changed = YES
  END IF
- IF (keyval(scPlus) > 1 OR keyval(scNumpadPlus) > 1) AND max > 0.0 THEN
+ IF (keyval(scPlus) > 1 OR keyval(scNumpadPlus) > 1) THEN
   float = ABS(float)
   changed = YES
  END IF
 
- 'Cleanup
- DIM temp as double = float
- float = bound(float, min, max)
- IF changed OR float <> temp THEN
+ DIM unclamped as double = float
+ IF ABS(updown) > 1 ANDALSO cyclic = NO THEN
+  float = bound(float, min, max)
+ ELSEIF ABS(float - max) < 1e-7 THEN
+  'Don't allow reaching max, instead it wraps around
+  IF cyclic THEN float = min
+ ELSE
+  'Bound to min/max, with wrapping
+  DIM remain as double = fmod(float - min, max - min)
+  IF remain < 0 THEN remain += max - min
+  float = min + remain
+ END IF
+
+ 'Update repr
+ IF changed OR float <> unclamped THEN
   IF is_percent THEN
    repr = _format_float_decimals(float * 100, edit_decimals)
   ELSE
    repr = _format_float_decimals(float, edit_decimals)
   END IF
+  IF negative_zero THEN repr = "-" & repr
  END IF
  IF is_percent THEN repr += "%"
  editing_float_ptr = @float
  editing_float_repr = repr
 
  DIM ret as bool = ABS(oldfloat - float) * mult > epsilon
+ IF ret THEN negative_zero = NO
  IF ret_if_repr_changed THEN ret OR= (oldrepr <> repr)
  RETURN ret
 END FUNCTION
 
-FUNCTION percent_grabber(byref float as single, byref repr as string = "", min as double, max as double, sigfigs as integer = 4, ret_if_repr_changed as bool = YES, is_percent as bool = YES) as bool
+FUNCTION percent_grabber(byref float as single, byref repr as string = "", min as double, max as double, sigfigs as integer = 4, ret_if_repr_changed as bool = YES, is_percent as bool = YES, cyclic as bool = NO) as bool
  DIM temp as double = float
  'percent_grabber needs to know whether it's called with the same float as previously
  IF @float = editing_float_ptr THEN editing_float_ptr = @temp
- DIM ret as bool = percent_grabber(temp, repr, min, max, sigfigs, ret_if_repr_changed, is_percent)
+ DIM ret as bool = percent_grabber(temp, repr, min, max, sigfigs, ret_if_repr_changed, is_percent, cyclic)
  float = temp
  editing_float_ptr = @float
  RETURN ret

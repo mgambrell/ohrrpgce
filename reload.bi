@@ -143,6 +143,7 @@ Declare Function LoadNode overload(byval ret as nodeptr, byval recursive as bool
 
 Declare sub SerializeXML overload (byval doc as DocPtr, byval fh as integer, byval debugging as bool = NO, byval shortform as bool = NO)
 Declare sub SerializeXML (byval nod as NodePtr, byval fh as integer, byval debugging as bool, byval shortform as bool, byval ind as integer = 0)
+Declare sub DumpNodeTree(byval nod as NodePtr)
 
 Declare sub SerializeBin overload (file as string, byval doc as DocPtr)
 
@@ -160,14 +161,15 @@ Declare Function GetChildByContent(byval nod as NodePtr, content as longint, nam
 
 Declare Function DocumentRoot(byval doc as DocPtr) as NodePtr
 Declare Function GetDocument(byval nod as NodePtr) as DocPtr
-Declare Function NumChildren(byval nod as NodePtr) as Integer
+Declare Function NumChildren(byval nod as NodePtr) as integer
 Declare Function CountChildren(byval nod as NodePtr, byval withname as zstring ptr) as integer
+Declare Function NodeIndex(byval nod as NodePtr) as integer
 Declare Function NodeParent(byval nod as NodePtr) as NodePtr
 Declare Function FirstChild(byval nod as NodePtr, byval name as zstring ptr = null) as NodePtr
 Declare Function NextSibling(byval nod as NodePtr, byval name as zstring ptr = null) as NodePtr
 Declare Function PrevSibling(byval nod as NodePtr, byval name as zstring ptr = null) as NodePtr
 Declare Function NodeType(byval nod as NodePtr) as NodeTypes
-Declare Function NodeName(byval nod as NodePtr) as String
+Declare Function NodeName(byval nod as NodePtr) as string
 Declare Sub SwapSiblingNodes(byval nod1 as NodePtr, byval nod2 as NodePtr)
 Declare Sub SwapNodePrev(byval node as Nodeptr)
 Declare Sub SwapNodeNext(byval node as Nodeptr)
