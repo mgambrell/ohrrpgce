@@ -1,6 +1,6 @@
 WHAT IS NEW?
 
-February 14 2025 [Jocoserious]
+February 17 2025 [Jocoserious]
 
   *** New Features
     * Shift Tile tileset animation command. Non-animated uses likely! [Ralph]
@@ -20,6 +20,11 @@ February 14 2025 [Jocoserious]
 
    * Plotscripting Features
     * "running on web" command
+    * "get item" now returns true on success and false if there was not
+      enough room in the inventory
+    * "force equip" now returns true on success and false if there was
+      not enough room in the inventory to hold whatever item needed to be
+      removed from the slot to make room for the new item.
 
   *** Bugfixes
     * It is now possible to re-enable any tag disabled battle menu item,

@@ -729,6 +729,8 @@ Sub DeleteSlice(byval s as Slice ptr ptr, byval debugme as integer=0)
 
  delete sl->Context
  v_free sl->ExtraVec
+ delete sl->AnimState
+ animset_unload @sl->Animations
  delete sl
  *s = 0
 End Sub
@@ -2068,7 +2070,7 @@ Sub LoadSpriteSliceImage(byval sl as Slice ptr, warn_if_missing as bool = NO)
   frame_assign @.original_img, frame_reference(.img.sprite)
   .img_gen = .original_img->generation
 
-  .frame = small(.frame, .img.sprite->arraylen - 1)
+  .frame = bound(.frame, 0, .img.sprite->arraylen - 1)
 
   'Update slice size and possibly scale the sprite
   if .scaled then
@@ -2116,6 +2118,7 @@ Sub DrawSpriteSlice(byval sl as Slice ptr, byval page as integer)
   end if
 
   if .frame >= spr->arraylen or .frame < 0 then
+   'Shouldn't happen, as LoadSpriteSliceImage clamps to spr->arraylen
    showbug "out of range frame " & .frame & " for slice " & SlicePath(sl)
    .frame = 0
   end if
@@ -2484,7 +2487,8 @@ Sub ChangeSpriteSlice(byval sl as Slice ptr,_
  end with
 end sub
 
-'Called after .spritetype, .record, .palette or .assetfile is changed.
+'Called after .spritetype, .record, .palette or .assetfile, or .frame when .scaled=YES, is changed...
+'however for .palette or .assetfile I think you can call LoadSpriteSliceImage directly instead?
 'Internal use only - normally you should call ChangeSpriteSlice instead
 Sub SpriteSliceUpdate(sl as Slice ptr)
  BUG_IF(sl = 0 orelse sl->SliceType <> slSprite, "invalid ptr")
@@ -2518,6 +2522,47 @@ Sub SpriteSliceUpdate(sl as Slice ptr)
   end if
  end with
 end sub
+
+Function SpriteSliceData.get_numframes(sl as Slice ptr) as integer
+ if this.loaded = NO then LoadSpriteSliceImage sl
+ 'Use original_img because it has the full set of frames, if scaled=YES then .img.sprite is just one frame
+ return this.original_img->arraylen
+end function
+
+'Public. Far more efficient than ChangeSpriteSlice
+Sub SpriteSliceData.set_frame(sl as Slice ptr, frameidx as integer)
+ if frameidx < 0 then exit sub
+ if this.loaded = NO orelse this.scaled then
+  this.frame = frameidx
+  'Clamps this.frame
+  SpriteSliceUpdate sl
+ else
+  if frameidx < this.img.sprite->arraylen then this.frame = frameidx
+ end if
+end sub
+
+Function SpriteSliceData.get_frameid(sl as Slice ptr) as integer
+ if this.loaded = NO then LoadSpriteSliceImage sl
+ 'Use original_img in case scaled=YES, as above
+ return this.original_img[this.frame].frameid
+end function
+
+'Returns new frame index, or -1 on failure.
+'If exact=NO, switch to the last frame in the frame group if frameid is out of range.
+Function SpriteSliceData.set_frameid(sl as Slice ptr, frameid as integer, exact as bool = NO) as integer
+ if this.loaded = NO then LoadSpriteSliceImage sl
+ dim frameidx as integer
+ 'Use original_img in case scaled=YES, as above
+ frameidx = frameid_to_frame(this.original_img, frameid, exact)
+ if frameidx > -1 then set_frame sl, frameidx
+ return frameidx
+end function
+
+Function SpriteSliceData.find_frameid(sl as Slice ptr, frameid as integer, exact as bool = NO) as integer
+ if this.loaded = NO then LoadSpriteSliceImage sl
+ 'Use original_img in case scaled=YES, as above
+ return frameid_to_frame(this.original_img, frameid, exact)
+end function
 
 'Cause the sprite to be scaled/stretched to a certain size.
 'TODO: once scaled sprites are available in games, uncomment the relevant code in valid_resizeable_slice.
@@ -2569,19 +2614,6 @@ Function SpriteSliceIsDissolving(byval sl as Slice ptr, byval only_auto as bool=
  end with
 end function
 
-Function SpriteSliceNumFrames(sl as Slice ptr) as integer
- if sl = 0 orelse sl->SliceData = 0 then
-  debug "SpriteSliceNumFrames: invalid ptr"
-  return 0
- end if
- ASSERT_SLTYPE(sl, slSprite, 0)
-
- with *sl->SpriteData
-  if .loaded = NO then LoadSpriteSliceImage sl
-  if .img.sprite = 0 then return 0
-  return .img.sprite->arraylen
- end with
-end function
 
 '--Map-----------------------------------------------------------------
 
@@ -3992,12 +4024,15 @@ Sub SetSliceTarg(byval s as Slice ptr, byval x as integer, byval y as integer, b
 end sub
 
 ' Apply slice movement to this slice and descendants
-' TODO: dissolves should also be applied here (but not to hidden slices)
+' TODO: dissolves should also be applied here (but for backcompat, not to hidden slices)
 Sub AdvanceSlice(byval s as Slice ptr)
  if s = 0 then debug "AdvanceSlice null ptr": exit sub
  if s->Paused = NO andalso ShouldSkipSlice(s) = NO then
   SeekSliceTarg s
   ApplySliceVelocity s
+  if s->AnimState then
+   s->AnimState->animate
+  end if
   'advance the slice's children
   dim ch as Slice ptr = s->FirstChild
   do while ch <> 0
@@ -4006,6 +4041,41 @@ Sub AdvanceSlice(byval s as Slice ptr)
   Loop
  end if
 end sub
+
+'Initialise as needed and return Animations
+Function Slice.GetAnimations() as AnimationSet ptr
+ if this.Animations = NULL then
+  if this.SliceType = slSprite then
+   'Animations are loaded from rgfx into a SpriteSet object, but the pointer isn't
+   'copied to this.Animations until requested.
+   '(In future, animations can also be saved to .slice files)
+   if this.SpriteData->loaded = NO then LoadSpriteSliceImage @this
+   'Use original_img since if scaled=YES, animations won't be copied to img.sprite
+   this.Animations = spriteset_for_frame(this.SpriteData->original_img)->reference()
+  end if
+ end if
+
+ if this.Animations = NULL then
+  this.Animations = new AnimationSet
+  this.Animations->reference()
+ end if
+ return this.Animations
+end function
+
+'Initialise as needed and return AnimState
+Function Slice.GetAnimState() as AnimationState ptr
+ if this.AnimState = NULL then
+  this.GetAnimations()
+  this.AnimState = new AnimationState(@this)
+ end if
+ return this.AnimState
+end function
+
+/'
+Sub StartSliceAnimation(byval sl as Slice ptr, name as string, loopcount as integer = 0)
+ sl->GetAnimState()->start_animation name, loopcount
+end sub
+'/
 
 ' Apply slice .Targ movement
 Local Sub SeekSliceTarg(byval s as Slice ptr)
@@ -4584,6 +4654,13 @@ Function CloneSliceTree(byval sl as Slice ptr, recurse as bool = YES, copy_speci
   if sl->ExtraVec then
    v_copy .ExtraVec, sl->ExtraVec
   end if
+  if sl->Animations then
+   .Animations = sl->Animations->reference()
+  end if
+  if sl->AnimState then
+   .AnimState = new AnimationState(*sl->AnimState)
+   .AnimState->sl = clone
+  end if
  end with
  '--clone special properties for this slice type
  sl->Clone(sl, clone)
@@ -4718,6 +4795,9 @@ Sub SliceSaveToNode(byval sl as Slice Ptr, node as Reload.Nodeptr, save_handles 
  sl->Save(sl, node)
  '--Contexts may or may not be savable
  if sl->Context then sl->Context->save(node)
+ 'FIXME: save AnimState
+ if sl->AnimState then
+ end if
  '--Now save all the children
  if sl->NumChildren > 0 then
   '--make a container node for all the child nodes

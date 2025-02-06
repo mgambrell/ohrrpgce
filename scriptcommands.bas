@@ -639,6 +639,9 @@ SUB script_commands(byval cmdid as integer)
     IF doequip(retvals(2), i, bound(retvals(1) - 1, 0, 4)) = NO THEN
      'This could fail because there is no room in the inventory for whatever item
      'is being unequipped
+     scriptret = 0
+    ELSE
+     scriptret = 1
     END IF
    END IF
   END IF
@@ -1413,7 +1416,7 @@ SUB script_commands(byval cmdid as integer)
  CASE 17'--get item
   IF valid_item(retvals(0)) THEN
    IF retvals(1) >= 1 THEN
-    getitem retvals(0), retvals(1)
+    IF getitem(retvals(0), retvals(1)) = YES THEN scriptret = 1
     evalitemtags
     tag_updates
    END IF
@@ -2425,7 +2428,7 @@ SUB script_commands(byval cmdid as integer)
  CASE 347 '--sprite frame count
   sl = get_arg_spritesl(0)
   IF sl THEN
-   scriptret = SpriteSliceNumFrames(sl)
+   scriptret = sl->SpriteData->get_numframes(sl)
   END IF
  CASE 348 '--slice x
   sl = get_arg_slice(0)

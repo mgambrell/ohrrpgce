@@ -213,7 +213,7 @@ function toggleContent(target) {
 <h1>
 		Dictionary of Plotscripting Commands
 	</h1>
-<h2>For the next WIP OHRRPGCE version (nightly build 2025-02-02)</h2>
+<h2>For the next WIP OHRRPGCE version (nightly build 2025-02-05)</h2>
 		This is the documentation for all <a href="https://rpg.hamsterrepublic.com/ohrrpgce/Plotscripting">plotscripting</a> commands.
 		In addition to reading this document, we also recommend you check out the
 		<a href="https://rpg.hamsterrepublic.com/ohrrpgce/Plotscripting_Tutorial">Plotscripting Tutorial</a>
@@ -6809,7 +6809,7 @@ end</pre>
 			<a name="about-getitem"></a>
 				<h4>get item (item, number)</h4>
 <p>
-			Adds the specified number of the specified item to your inventory. If you do not specify a number, only one will be added. You can refer to the item by number, or you can use the constants defined in your HSI file, which are in the form of item:name
+			Adds the specified number of the specified item to your inventory. If you do not specify a number, only one will be added. You can refer to the item by number, or you can use the constants defined in your HSI file, which are in the form of item:name. This command normally returns true, but it will return false if there was not room in the inventory to hold at least one of the items you werte trying to add.
 			
 			
 			
@@ -7015,6 +7015,9 @@ gain hero stat(who, stat:mp, 0)</pre>
 				You can use the item's ID number or the <span class="code">item:name</span> constants from your .hsi file.
 				The item equipped will be deducted from your inventory,
 				but if you <span class="param">force equip</span> an item that you do not already have then a free copy of it will be created.
+				Returns true for success, or false for failure.
+				Can fail if there is no room in the inventory to put the item that has to
+				be unequipped to make room for the one you are force equipping.
 				<div class="notice note">
 <img src="Plotnote.png" alt="[Notice]" class="icon">
 					When a hero's equipment changes, their current HP and MP stats aren't updated.

@@ -11899,19 +11899,29 @@ end function
 '==========================================================================================
 
 
-'Find a frame in a frameset, returning frame index.
-'If exact = NO, then return the nearest match if the frame doesn't exist. Otherwise return -1.
-'The nearest match is the previous frameid that exists
+'Find a frame in a frameset, returning frame index or -1.
+'If exact = NO, then return the nearest match (the last frame in the same frame group)
+'if the frame doesn't exist. Otherwise return -1.
 'frameset must be the first Frame in the frameset
 function frameid_to_frame(frameset as Frame ptr, frameid as integer, exact as bool = NO) as integer
-	dim nearest as integer = 0
+	dim as integer lastid = -1, lastidx = -1
+	' Can assume arraylen > 0
 	for idx as integer = 0 to frameset->arraylen - 1
 		dim thisid as integer = frameset[idx].frameid
-		if thisid = frameid then return idx
-		if thisid < frameid then nearest = idx
+		if thisid = frameid then
+			return idx
+		end if
+		' Frames are always in increasing order of ID
+		if thisid > frameid then exit for
+		lastid = thisid
+		lastidx = idx
 	next
-	if exact then return -1
-	return nearest
+	if exact = NO then
+		if lastid mod 100 = frameid mod 100 then
+			return lastidx
+		end if
+	end if
+	return -1
 end function
 
 sub FrameGroupInfo.set(frameid as integer, name as string, default_num as integer)
@@ -12028,26 +12038,6 @@ function spriteset_load(ptno as SpriteType, record as integer) as SpriteSet ptr
 	return frameset->sprset
 end function
 
-' Used to decrement refcount if was loaded with spriteset_load
-' (no need to call this when using frame_load and accessing Frame.sprset).
-sub spriteset_unload(ss as SpriteSet ptr ptr)
-	'a SpriteSet and its Frame array are never unloaded separately;
-	'frame_unload is responsible for all refcounting and unloading
-	if ss = NULL ORELSE *ss = NULL then exit sub
-	dim temp as Frame ptr = (*ss)->frames
-	frame_unload @temp
-	*ss = NULL
-end sub
-
-' Increment refcount.
-function AnimationSet.reference() as AnimationSet ptr
-	'The SpriteSet.reference override should be called when refcount = NOREFC
-	BUG_IF(refcount = NOREFC, "Bad AnimationSet.refcount", @this)
-	refcount += 1
-	DEBUG_ANIM_CACHE(? "AnimationSet.reference(" & debugname & "): refc=" & refcount)
-	return @this
-end function
-
 ' Increment refcount.
 function SpriteSet.reference() as SpriteSet ptr
 	BUG_IF(refcount <> NOREFC, "Bad SpriteSet.refcount", @this)
@@ -12059,6 +12049,17 @@ function SpriteSet.reference() as SpriteSet ptr
 	DEBUG_ANIM_CACHE(? "SpriteSet.reference(" & debugname & "): frames.refc=" & frames->refcount)
 	return @this
 end function
+
+' Recommended to call the spriteset_unload() wrapper instead.
+' Exactly one of spriteset_unload/dereference or frame_unload should be called,
+' since the two share the same refcount and lifetime.
+sub SpriteSet.dereference()
+	BUG_IF(refcount <> NOREFC, "Bad SpriteSet.refcount")
+	' A SpriteSet and its Frame array are never unloaded separately;
+	' frame_unload is responsible for all refcounting and unloading
+	dim temp as Frame ptr = frames
+	frame_unload @temp
+end sub
 
 function SpriteSet.describe() as string
 	return "spriteset:<" & num_frames & " frames: 0x" & hexptr(frames) _
