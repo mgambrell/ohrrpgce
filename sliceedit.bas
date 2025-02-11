@@ -116,6 +116,7 @@ TYPE SliceEditState
  expand_special as bool
  expand_padding as bool
  expand_movement as bool
+ expand_animation as bool
  expand_extra as bool
  expand_sort as bool
  expand_meta as bool
@@ -137,6 +138,7 @@ TYPE SliceEditState
  show_positions as bool    'Display screen positions in the slice list?
  show_typenames as bool    'Display type names always
  privileged as bool        'Whether can edit properties that are normally off-limits. Non-user collections only.
+ update_if_cursor_moved as bool  'Detail menu: moving the cursor exits some temp editing state
 
  ' Internal state of lookup_code_grabber
  editing_lookup_name as bool
@@ -206,6 +208,7 @@ TYPE VariantType
  as_any as byte
 END TYPE
 
+'They say the purpose of this is lost on the criss-crossed paths of (git) history
 DIM SHARED dummyvar as VariantType
 
 '==============================================================================
@@ -250,6 +253,10 @@ CONST slgrEXTRA = 32768
 CONST slgrVELOCITY = 1 shl 16
 CONST slgrTARGET = 1 shl 17
 '--This system won't be able to expand forever ... :(
+CONST slgrPREVIEWANIMATIONS = 1 shl 28
+CONST slgrEDITANIMATIONS = 1 shl 29
+CONST slgrPICKANIMATION = 1 shl 30
+CONST slgrFRAMEID = 1 shl 31
 
 '==============================================================================
 
@@ -283,7 +290,6 @@ DECLARE SUB slice_editor_refresh_recurse (ses as SliceEditState, byref indent as
 DECLARE SUB slice_editor_invalidate_ptrs (byref ses as SliceEditState)
 DECLARE SUB slice_edit_updates (sl as Slice ptr, dataptr as any ptr)
 DECLARE SUB slice_edit_detail (byref ses as SliceEditState, edslice as Slice ptr, sl as Slice Ptr)
-DECLARE SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuState, menu() as string, menuopts as MenuOptions, sl as Slice Ptr, rules() as EditRule)
 DECLARE SUB slice_edit_detail_keys (byref ses as SliceEditState, edslice as Slice ptr, byref state as MenuState, sl as Slice Ptr, rules() as EditRule, usemenu_flag as bool)
 DECLARE SUB slice_editor_xy (xy1 as XYPair ptr, xy2 as XYPair ptr = NULL, focussl as Slice ptr, rootsl as Slice ptr, byref show_ants as bool, ctrl_msg as string = "", helpkey as string = "sliceedit_xy")
 DECLARE FUNCTION slice_editor_filename(byref ses as SliceEditState) as string
@@ -310,6 +316,9 @@ DECLARE SUB slice_editor_settings_menu(byref ses as SliceEditState, byref edslic
 DECLARE SUB slice_editor_save_settings(byref ses as SliceEditState)
 DECLARE SUB slice_editor_load_settings(byref ses as SliceEditState)
 DECLARE FUNCTION collection_context(edslice as Slice ptr) as SliceCollectionContext ptr
+DECLARE SUB slice_editor_preview_animations(byref ses as SliceEditState, slice_to_animate as Slice ptr = NULL)
+
+DECLARE SUB edkit_slice_detail_menu (sl as Slice ptr, ses_draw_root as Slice ptr)
 
 'Slice EditRule convenience functions
 DECLARE SUB sliceed_rule (rules() as EditRule, helpkey as zstring ptr, mode as EditRuleMode, dataptr as integer ptr, lower as integer=0, upper as integer=0, group as integer = 0)
@@ -713,6 +722,7 @@ SUB slice_editor_main (byref ses as SliceEditState, byref edslice as Slice ptr, 
   .highlight_selection = YES
   .no_scrollbar = YES  'We draw it ourselves, on the left
  END WITH
+ ses.picker.state.active = NO
 
  DIM cursor_seek as Slice Ptr = initial_slice
 
@@ -726,6 +736,7 @@ SUB slice_editor_main (byref ses as SliceEditState, byref edslice as Slice ptr, 
  DIM vpages_were_32bit as bool = vpages_are_32bit()
  push_and_reset_gfxio_state
  IF gen(gen32bitMode) THEN switch_to_32bit_vpages ELSE switch_to_8bit_vpages
+ set_animation_framerate 55
 
  DO
   setwait 55
@@ -1311,8 +1322,8 @@ FUNCTION slicemenu_hit_tester(state as MenuState, index as integer, pos as XYPai
 END FUNCTION
 
 FUNCTION slice_detail_menu_hit_tester(state as MenuState, index as integer, pos as XYPair) as bool
- DIM menu as string ptr = state.hit_test_data
- RETURN menutext_hit_tester(menu[index], state, index, pos)
+ DIM menuitems as BasicMenuItem vector = state.hit_test_data
+ RETURN menutext_hit_tester(menuitems[index].text, state, index, pos)
 END FUNCTION
 
 'Get the SliceCollectionContext in which shared data for this slice collection is stored
@@ -1838,6 +1849,20 @@ SUB slice_editor_paste(byref ses as SliceEditState, byval putbefore as Slice Ptr
  END IF
 END SUB
 
+'===============================================================================
+
+TYPE SliceDetailMenu
+ menuitems as BasicMenuItem vector
+
+ DECLARE CONSTRUCTOR()
+ DECLARE DESTRUCTOR()
+
+ DECLARE SUB convert_to_basicmenuitems(menu() as string)
+ DECLARE SUB sliceed_header(menu() as string, rules() as EditRule, text as string, dataptr as bool ptr = NULL, helpkey as zstring ptr = @"")
+ DECLARE SUB refresh (byref ses as SliceEditState, byref state as MenuState, menuopts as MenuOptions, sl as Slice Ptr, rules() as EditRule)
+ DECLARE SUB add_blend_edit_rules(byref ses as SliceEditState, menu() as string, rules() as EditRule, drawopts as DrawOptions ptr)
+END TYPE
+
 'Editor for an individual slice
 SUB slice_edit_detail (byref ses as SliceEditState, edslice as Slice ptr, sl as Slice Ptr)
 
@@ -1848,7 +1873,7 @@ SUB slice_edit_detail (byref ses as SliceEditState, edslice as Slice ptr, sl as 
 
  benchmarking_slice = sl
 
- REDIM menu(0) as string
+ DIM menuobj as SliceDetailMenu
  REDIM rules(0) as EditRule
 
  DIM state as MenuState
@@ -1858,7 +1883,7 @@ SUB slice_edit_detail (byref ses as SliceEditState, edslice as Slice ptr, sl as 
   .autosize = YES
   'Right-dragging the collection around (and other mouse editing in future) shouldn't select menu items
   .hit_test = @slice_detail_menu_hit_tester
-  .hit_test_data = @menu(0)  'Updated when menu() refreshed
+  .hit_test_data = menuobj.menuitems  'Updated when menu refreshed
  END WITH
  DIM menuopts as MenuOptions
  WITH menuopts
@@ -1881,7 +1906,7 @@ SUB slice_edit_detail (byref ses as SliceEditState, edslice as Slice ptr, sl as 
     DIM expand as bool
     expand = .expand_dimensions OR .expand_visible OR .expand_alignment OR _
              .expand_special OR .expand_padding OR .expand_movement OR .expand_sort OR _
-             .expand_meta OR .expand_extra
+             .expand_animation OR .expand_meta OR .expand_extra
     expand XOR= YES
     .expand_dimensions = expand
     .expand_visible = expand
@@ -1890,22 +1915,36 @@ SUB slice_edit_detail (byref ses as SliceEditState, edslice as Slice ptr, sl as 
     .expand_padding = expand
     .expand_sort = expand
     .expand_movement = expand
+    .expand_animation = expand
     .expand_meta = expand
     .expand_extra = expand
    END WITH
    state.need_update = YES
   END IF
 
+  'Testing
+  #IFDEF IS_CUSTOM
+   IF keyval(scCtrl) ANDALSO keyval(scShift) ANDALSO keyval(scE) > 1 THEN
+    edkit_slice_detail_menu sl, ses.draw_root
+    state.need_update = YES
+   END IF
+  #ENDIF
+
   IF UpdateScreenSlice() THEN state.need_update = YES
 
   IF ses.expand_meta AND benchmarking_draw_timer.smooth_updated THEN state.need_update = YES
 
+  usemenu_flag = usemenu(state)
+  IF ses.update_if_cursor_moved THEN
+   state.need_update = YES
+   ses.update_if_cursor_moved = NO
+  END IF
+
   IF state.need_update THEN
-   slice_edit_detail_refresh ses, state, menu(), menuopts, sl, rules()
+   menuobj.refresh ses, state, menuopts, sl, rules()
    state.need_update = NO
   END IF
 
-  usemenu_flag = usemenu(state)
   IF state.pt = 0 AND enter_space_click(state) THEN EXIT DO
   slice_edit_detail_keys ses, edslice, state, sl, rules(), usemenu_flag
 
@@ -1932,7 +1971,7 @@ SUB slice_edit_detail (byref ses as SliceEditState, edslice as Slice ptr, sl as 
 
   IF ses.hide_mode <> hideMenu THEN
    menuopts.drawbg = (ses.hide_mode <> hideMenuBG)
-   standardmenu menu(), state, , , dpage, menuopts
+   standardmenu menuobj.menuitems, state, , , dpage, menuopts
   END IF
 
   SWAP vpage, dpage
@@ -2285,6 +2324,40 @@ SUB slice_edit_detail_keys (byref ses as SliceEditState, edslice as Slice ptr, b
    SetSliceTarg sl, sl->Targ.X, sl->Targ.Y, sl->TargTicks
   END IF
  END IF
+ IF rule.group AND slgrPICKANIMATION THEN
+  IF keyval(scBackspace) > 1 ORELSE keyval(scDelete) > 1 THEN
+   IF sl->AnimState THEN
+    sl->AnimState->start_animation("")
+    state.need_update = YES
+   END IF
+  ELSEIF enter_space_click(state) THEN
+   DIM anim as string = prompt_animation_name("Animation to play?", acHeroSprite, YES)
+   IF LEN(anim) THEN
+    'anim may be "(none)" which is not a valid name, and stops any current animation
+    sl->GetAnimState->start_animation(anim)
+    state.need_update = YES
+   END IF
+  END IF
+ END IF
+#IFDEF IS_CUSTOM
+ IF rule.group AND slgrEDITANIMATIONS THEN
+  IF enter_space_click(state) THEN
+   ' Initialise a slice-specific AnimationSet. It won't actually be saved if empty.
+   animations_editor sl, sl->GetAnimations(YES), acHeroSprite/'FIXME'/
+   state.need_update = YES
+  END IF
+ END IF
+#ENDIF
+ IF rule.group AND slgrPREVIEWANIMATIONS THEN
+  IF enter_space_click(state) THEN
+   ' If Shift is held, animate the whole slice collection, otherwise just that slice
+   slice_editor_preview_animations ses, IIF(keyval(scShift) > 0, NULL, sl)
+  END IF
+ END IF
+ IF rule.group AND slgrFRAMEID THEN
+  'dataptr is only a temp var
+  sl->SpriteData->set_frameid(sl, *CAST(integer ptr, rule.dataptr))
+ END IF
 
  ' Special actions to take after some piece of data has been edited
  IF state.need_update THEN
@@ -2314,6 +2387,29 @@ FUNCTION slice_editor_filename(byref ses as SliceEditState) as string
   'Editing an existing or a "<blank>" slice tree. Return ""
  END IF
 END FUNCTION
+
+SUB slice_editor_preview_animations(byref ses as SliceEditState, slice_to_animate as Slice ptr = NULL)
+ set_animation_framerate gen(genMillisecPerFrame)
+ DIM paused as bool
+
+ DIM newroot as Slice ptr = CloneSliceTree(ses.draw_root, , , slice_to_animate)
+ IF slice_to_animate = NULL THEN slice_to_animate = newroot
+ DO
+  setwait gen(genMillisecPerFrame)
+  setkeys
+  IF keyval(scP) > 1 THEN paused XOR= YES
+  IF keyval(ccCancel) > 1 ORELSE readmouse.release ORELSE enter_or_space() THEN EXIT DO
+  IF NOT paused THEN AdvanceSlice slice_to_animate
+  draw_background vpages(vpage), bgChequer
+  DrawSlice newroot, vpage
+  edgeprint "Enter/Esc/Click exit, P pause", pInfoX, pInfoY, uilook(uiMenuItem), vpage
+  setvispage vpage
+  dowait
+ LOOP
+ DeleteSlice @newroot
+
+ set_animation_framerate 55
+END SUB
 
 'Editor to visually edit an x/y position or width/height of some property of focussl
 '(not necessarily .Pos or .Size), or both at once.
@@ -2430,8 +2526,28 @@ SUB sliceed_rule_tog(rules() as EditRule, helpkey as zstring ptr, dataptr as boo
  sliceed_rule rules(), helpkey, erToggleBoolean, cast(integer ptr, dataptr), -1, 0, group
 END SUB
 
-SUB sliceed_header(menu() as string, rules() as EditRule, text as string, dataptr as bool ptr = NULL, helpkey as zstring ptr = @"")
- a_append menu(), fgtag(uilook(eduiHeading), text)
+CONSTRUCTOR SliceDetailMenu()
+ v_new menuitems
+END CONSTRUCTOR
+
+DESTRUCTOR SliceDetailMenu()
+ v_free menuitems
+END DESTRUCTOR
+
+'This is called to incrementally convert more items from menu() to menuitems
+'(Similar to standard_to_basic_menu)
+SUB SliceDetailMenu.convert_to_basicmenuitems(menu() as string)
+ DIM start as integer = v_len(menuitems)
+ v_resize menuitems, UBOUND(menu) + 1
+ FOR i as integer = start TO v_len(menuitems) - 1
+  menuitems[i].text = menu(i)
+ NEXT
+END SUB
+
+SUB SliceDetailMenu.sliceed_header(menu() as string, rules() as EditRule, text as string, dataptr as bool ptr = NULL, helpkey as zstring ptr = @"")
+ a_append menu(), text
+ convert_to_basicmenuitems menu()
+ menuitems[UBOUND(menu)].col = findrgb(232,232,232)  'slightly darker than default uilook(eduiHeading)
  IF dataptr THEN
   sliceed_rule_tog rules(), helpkey, dataptr
  ELSE
@@ -2439,7 +2555,7 @@ SUB sliceed_header(menu() as string, rules() as EditRule, text as string, datapt
  END IF
 END SUB
 
-SUB sliceed_add_blend_edit_rules(byref ses as SliceEditState, menu() as string, rules() as EditRule, drawopts as DrawOptions ptr)
+SUB SliceDetailMenu.add_blend_edit_rules(byref ses as SliceEditState, menu() as string, rules() as EditRule, drawopts as DrawOptions ptr)
  WITH *drawopts
   a_append menu(), " Blending: " & iif(.with_blending, "Enabled", "Disabled")
   sliceed_rule_tog rules(), "blending", @(.with_blending)
@@ -2466,14 +2582,16 @@ SUB sliceed_add_blend_edit_rules(byref ses as SliceEditState, menu() as string, 
  END WITH
 END SUB
 
-SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuState, menu() as string, menuopts as MenuOptions, sl as Slice Ptr, rules() as EditRule)
+SUB SliceDetailMenu.refresh(byref ses as SliceEditState, byref state as MenuState, menuopts as MenuOptions, sl as Slice Ptr, rules() as EditRule)
  DIM prev_item as string
- IF state.pt <= UBOUND(menu) THEN prev_item = menu(state.pt)
+ IF state.pt < v_len(menuitems) THEN prev_item = menuitems[state.pt].text
 
+ v_resize menuitems, 0
  REDIM menu(0) as string
  REDIM rules(0) as EditRule
  rules(0).helpkey = @"detail"
  menu(0) = "Previous Menu"
+
  WITH *sl
 
  a_append menu(), "Slice type: " & SliceTypeName(sl)
@@ -2531,13 +2649,13 @@ SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuS
   a_append menu(), " Height: " & .Height
   sliceed_rule rules(), "size", erIntgrabber, @.Height, minsize, 9999, slgrPICKWH
   IF ses.privileged THEN
-   a_append menu(), " Cover Children: " & CoverModeCaptions(.CoverChildren)
+   a_append menu(), " Cover children: " & CoverModeCaptions(.CoverChildren)
    sliceed_rule_ubyte rules(), "cover", @.CoverChildren, 0, 3
   END IF
-  a_append menu(), " Fill Parent: " & yesorno(.Fill)
+  a_append menu(), " Fill parent: " & yesorno(.Fill)
   sliceed_rule_tog rules(), "fill", @.Fill
   IF .Fill THEN
-   a_append menu(), "  Fill Type: " & FillModeCaptions(.FillMode)
+   a_append menu(), "  Fill type: " & FillModeCaptions(.FillMode)
    sliceed_rule_ubyte rules(), "fill", @.FillMode, 0, 2
   END IF
  END IF
@@ -2564,10 +2682,10 @@ SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuS
     a_append menu(), "  Border type: " & IIF(dat->use_raw_box_border, "Spriteset", "Box Style/Line/None")
     sliceed_rule_tog rules(), "rect_use_raw_box_border", @(dat->use_raw_box_border), slgrUPDATERECTCUSTOMSTYLE
     IF dat->use_raw_box_border THEN
-     a_append menu(), "   Raw Spriteset: " & dat->raw_box_border
+     a_append menu(), "   Raw spriteset: " & dat->raw_box_border
      sliceed_rule rules(), "rect_raw_box_border", erIntgrabber, @(dat->raw_box_border), 0, gen(genMaxBoxBorder), slgrBROWSEBOXBORDER
     ELSE
-     a_append menu(), "   Border Style: " & caption_or_int(BorderCaptions(), dat->border)
+     a_append menu(), "   Border style: " & caption_or_int(BorderCaptions(), dat->border)
      sliceed_rule_enum rules(), "rect_border", @(dat->border), -2, 14, slgrUPDATERECTCUSTOMSTYLE
      sliceed_rule_set_default rules(), borderLine
     END IF
@@ -2587,7 +2705,7 @@ SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuS
 
    CASE slMap
     DIM dat as MapSliceData ptr = .SliceData
-    sliceed_add_blend_edit_rules ses, menu(), rules(), @dat->drawopts
+    add_blend_edit_rules ses, menu(), rules(), @dat->drawopts
 
    CASE slLine
     DIM dat as LineSliceData ptr = .SliceData
@@ -2603,7 +2721,7 @@ SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuS
     a_append menu(), " Color: " & slice_color_caption(dat->col, "Default")
     sliceed_rule rules(), "text_color", erIntgrabber, @(dat->col), LowColorCode(), 255, slgrPICKCOL
     IF dat->outline = NO THEN
-     a_append menu(), " Background Color: " & slice_color_caption(dat->bgcol, "Transparent")
+     a_append menu(), " Background color: " & slice_color_caption(dat->bgcol, "Transparent")
      sliceed_rule rules(), "text_bg", erIntgrabber, @(dat->bgcol), LowColorCode(), 255, slgrPICKCOL
     END IF
     a_append menu(), " Outline: " & yesorno(dat->outline)
@@ -2640,12 +2758,28 @@ SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuS
      IF nframes > 1 THEN
       a_append menu(), " Frame: " & dat->frame
       sliceed_rule rules(), "sprite_frame", erIntgrabber, @(dat->frame), 0, nframes - 1
+
+      'Edit the frameid temp var so you can select an invalid frameid. slgrFRAMEID sets the actual frameid
+      'if valid.
+      STATIC frameid as integer
+      DIM coltag as string
+      IF state.pt = UBOUND(rules) + 1 THEN
+       'Currently editing frameid as cursor points at the rules() index we're about to add
+       IF dat->find_frameid(sl, frameid, YES) = -1 THEN coltag = fgtag(uilook(uiSelectedDisabled))
+       ses.update_if_cursor_moved = YES
+      ELSE
+       'Reset to actual frameid
+       frameid = dat->get_frameid(sl)
+      END IF
+      a_append menu(), " Frame ID: " & coltag & frameid
+      sliceed_rule rules(), "sprite_frameid", erIntgrabber, @frameid, 0, 9999, slgrFRAMEID
+
      END IF
     END IF
     a_append menu(), " Transparent: " & yesorno(dat->trans)
     sliceed_rule_tog rules(), "sprite_trans", @(dat->trans), slgrUPDATESPRITE
 
-    sliceed_add_blend_edit_rules ses, menu(), rules(), @dat->drawopts
+    add_blend_edit_rules ses, menu(), rules(), @dat->drawopts
 
     IF ses.privileged THEN
      'None of these actually need slgrUPDATESPRITE, but it's the right thing to do.
@@ -2672,7 +2806,7 @@ SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuS
     IF dat->dissolving THEN
      a_append menu(), "  Type: " & dissolve_type_caption(dat->d_type)
      sliceed_rule rules(), "sprite_d_type", erIntGrabber, @(dat->d_type), 0, dissolveTypeMax
-     a_append menu(), "  Over Num. ticks: " & defaultint(dat->d_time, "Default (W+H)/10=" & (.Width + .Height) / 10)
+     a_append menu(), "  Over num. ticks: " & defaultint(dat->d_time, "Default (W+H)/10=" & (.Width + .Height) / 10)
      sliceed_rule rules(), "sprite_d_time", erIntGrabber, @(dat->d_time), -1, 999999
      a_append menu(), "  Current tick: " & dat->d_tick
      sliceed_rule rules(), "sprite_d_tick", erIntGrabber, @(dat->d_tick), 0, 999999
@@ -2696,15 +2830,15 @@ SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuS
     sliceed_rule rules(), "grid_rows", erIntgrabber, @(dat->rows), 0, 99 'FIXME: upper limit of 99 is totally arbitrary
     a_append menu(), " Columns: " & dat->cols
     sliceed_rule rules(), "grid_cols", erIntgrabber, @(dat->cols), 0, 99 'FIXME: upper limit of 99 is totally arbitrary
-    a_append menu(), " Show Grid: " & yesorno(dat->show)
+    a_append menu(), " Show grid: " & yesorno(dat->show)
     sliceed_rule_tog rules(), "grid_show", @(dat->show)
 
    CASE slEllipse
     DIM dat as EllipseSliceData Ptr
     dat = .SliceData
-    a_append menu(), " Border Color: " & slice_color_caption(dat->bordercol, "Transparent")
+    a_append menu(), " Border color: " & slice_color_caption(dat->bordercol, "Transparent")
     sliceed_rule rules(), "bordercol", erIntgrabber, @(dat->bordercol), LowColorCode(), 255, slgrPICKCOL
-    a_append menu(), " Fill Color: " & slice_color_caption(dat->fillcol, "Transparent")
+    a_append menu(), " Fill color: " & slice_color_caption(dat->fillcol, "Transparent")
     sliceed_rule rules(), "fillcol", erIntgrabber, @(dat->fillcol), LowColorCode(), 255, slgrPICKCOL
 
    CASE slScroll
@@ -2712,13 +2846,13 @@ SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuS
     dat = .SliceData
     a_append menu(), " Style: " & dat->style
     sliceed_rule rules(), "scroll_style", erIntgrabber, @(dat->style), 0, 14
-    a_append menu(), " Check Depth: " & zero_default(dat->check_depth, "No limit")
+    a_append menu(), " Check depth: " & zero_default(dat->check_depth, "No limit")
     sliceed_rule rules(), "scroll_check_depth", erIntgrabber, @(dat->check_depth), 0, 99 'FIXME: upper limit of 99 is totally arbitrary
 
    CASE slSelect
     DIM dat as SelectSliceData Ptr
     dat = .SliceData
-    a_append menu(), " Selected Child: " & dat->index
+    a_append menu(), " Selected child: " & dat->index
     sliceed_rule rules(), "select_index", erIntgrabber, @(dat->index), 0, 9999999, slgrEDITSWITCHINDEX 'FIXME: this is an arbitrary upper limit
 
    CASE slPanel
@@ -2726,13 +2860,13 @@ SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuS
     dat = .SliceData
     a_append menu(), " Orientation: " & IIF(dat->vertical, "Vertical", "Horizontal")
     sliceed_rule_tog rules(), "panel_vertical", @(dat->vertical)
-    a_append menu(), " Primary Child Is: " & dat->primary
+    a_append menu(), " Primary child is: " & dat->primary
     sliceed_rule rules(), "panel_primary", erIntgrabber, @(dat->primary), 0, 1
     a_append menu(), "  " & IIF(dat->vertical, "Height", "Width") & ": " & format_percent(dat->percent) & " of panel"
     sliceed_rule_double rules(), "panel_percent", erPercentgrabber, @(dat->percent)
     a_append menu(), "  ...plus: " & dat->pixels & " pixels"
     sliceed_rule rules(), "panel_pixels", erIntgrabber, @(dat->pixels), 0, 9999 'FIXME: upper limit of 9999 is totally arbitrary
-    a_append menu(), " Padding Between Children: " & dat->padding
+    a_append menu(), " Padding between children: " & dat->padding
     sliceed_rule rules(), "panel_padding", erIntgrabber, @(dat->padding), 0, 9999 'FIXME: upper limit of 9999 is totally arbitrary
 
    CASE slLayout
@@ -2772,7 +2906,7 @@ SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuS
  IF ses.expand_visible THEN
   a_append menu(), " Visible: " & yesorno(.Visible)
   sliceed_rule_tog rules(), "vis", @.Visible
-  a_append menu(), " Clip Children: " & yesorno(.Clip)
+  a_append menu(), " Clip children: " & yesorno(.Clip)
   sliceed_rule_tog rules(), "clip", @.Clip
   a_append menu(), " Template: " & yesorno(.Template)
   sliceed_rule_tog rules(), "template", @.Template
@@ -2832,12 +2966,12 @@ SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuS
 
  sliceed_header menu(), rules(), "[Sorting]", @ses.expand_sort
  IF ses.expand_sort THEN
-  sliceed_rule_ubyte rules(), "autosort", @.AutoSort, 0, slAutoSortLAST
   a_append menu(), " Auto-sort children: " & AutoSortCaptions(.AutoSort)
-  sliceed_rule rules(), "sortorder", erIntgrabber, @.Sorter, INT_MIN, INT_MAX
+  sliceed_rule_ubyte rules(), "autosort", @.AutoSort, 0, slAutoSortLAST
   DIM sortNA as string
   IF .Parent = NULL ORELSE .Parent->AutoSort <> slAutoSortCustom THEN sortNA = " (N/A)"
   a_append menu(), " Custom sort order" & sortNA & ": " & .Sorter
+  sliceed_rule rules(), "sortorder", erIntgrabber, @.Sorter, INT_MIN, INT_MAX
  END IF
 
  sliceed_header menu(), rules(), "[Movement]", @ses.expand_movement
@@ -2870,6 +3004,33 @@ SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuS
    a_append menu(), "  Target Y: " & .Targ.Y
    sliceed_rule rules(), "target", erIntgrabber, @.Targ.Y, -999999, 999999
   END IF
+ END IF
+
+ sliceed_header menu(), rules(), "[Animation]", @ses.expand_animation
+ IF ses.expand_animation THEN
+  a_append menu(), " EXPERIMENTAL! Read F1 help"
+  sliceed_rule_none rules(), "animations_experimental"
+
+  IF sl->AnimState ANDALSO sl->AnimState->anim THEN
+   WITH *sl->AnimState->anim
+    a_append menu(), " Current animation: " & RTRIM(.name & " " & .variant)
+   END WITH
+  ELSE
+   a_append menu(), " Current animation: (none)"
+  END IF
+  sliceed_rule_none rules(), "current_animation", slgrPICKANIMATION
+  IF sl->Animations ANDALSO sl->Animations->slice_specific THEN
+   a_append menu(), " Has " & v_len(sl->Animations->animations) & " custom animations"
+  ELSE
+   a_append menu(), " Has no custom animations"
+  END IF
+  sliceed_rule_none rules(), "num_custom_animations", slgrEDITANIMATIONS  'slgrEDITANIMATIONS does nothing in Game
+  #IFDEF IS_CUSTOM
+   a_append menu(), " Edit animations..."
+   sliceed_rule_none rules(), "edit_animations", slgrEDITANIMATIONS
+  #ENDIF
+  a_append menu(), " Preview animations..."
+  sliceed_rule_none rules(), "preview_animations", slgrPREVIEWANIMATIONS
  END IF
 
  sliceed_header menu(), rules(), "[Metadata]", @ses.expand_meta
@@ -2905,9 +3066,10 @@ SUB slice_edit_detail_refresh (byref ses as SliceEditState, byref state as MenuS
 
  END WITH
 
- state.hit_test_data = @menu(0)  'Must be before init_menu_state
+ convert_to_basicmenuitems menu()
+ state.hit_test_data = menuitems  'Must be before init_menu_state
 
- init_menu_state state, menu(), menuopts
+ init_menu_state state, menuitems, menuopts
 
  'Try to find the previously selected setting back, since its index might have changed
  prev_item = LEFT(prev_item, INSTR(prev_item, ":"))
@@ -3856,3 +4018,10 @@ SUB slice_editor_load_settings(byref ses as SliceEditState)
  'See above
  IF ses.recursive = NO THEN ses.show_root = read_config_bool("sliceedit.show_root2", YES)
 END SUB
+
+
+#IFDEF IS_CUSTOM
+
+#include "sliceedit_edkit.bas"
+
+#ENDIF

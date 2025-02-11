@@ -356,9 +356,9 @@ Type Slice
   TargResidue as Float2    'Not saved
   TargTicks as integer
 
-  Animations as AnimationSet ptr   'NULL until GetAnimations() is called. Currently a reference to spriteset
-                                   'animations, in future may be a separate set
-  Declare Function GetAnimations() as AnimationSet ptr
+  Animations as AnimationSet ptr   'NULL until GetAnimations() is called. Can be a reference to either
+                                   'slice_specific or shared (e.g. spriteset) animations.
+  Declare Function GetAnimations(slice_specific as bool = NO) as AnimationSet ptr
   AnimState as AnimationState ptr  'NULL until GetAnimState() is called. TODO: Not yet saved, but should be
   Declare Function GetAnimState() as AnimationState ptr
 
@@ -639,7 +639,7 @@ Type PanelSliceData
  vertical as bool 'Defaults to horizontal. Becomes vertical if this is YES
  primary as integer '0 or 1, determines if the first or second child is primary
  pixels as integer 'Fixed-pixel size of the primary. Pixels and percent are combined.
- percent as double 'Percent size of the primary. Pixels and percent are combined
+ percent as double 'Fraction (not percent!) of the primary size. Pixels and percent are combined
                     'stored as a float. 1.0=100% 0.5=50% 0.01=1%
  padding as integer ' pixels of padding between the sub-panels
 End Type
@@ -649,7 +649,7 @@ DECLARE Function NewSliceOfType(byval t as SliceTypes, byval parent as Slice Ptr
 DECLARE Function NewClassSlice(parent as Slice ptr, inst as ClassSlice ptr) as Slice ptr
 DECLARE Sub DeleteSlice(byval s as Slice ptr ptr, byval debugme as integer = 0)
 DECLARE Sub DeleteSliceChildren(byval s as Slice ptr, byval debugme as integer = 0)
-DECLARE Function CloneSliceTree(byval sl as Slice ptr, recurse as bool = YES, copy_special as bool = YES) as Slice ptr
+DECLARE FUNCTION CloneSliceTree(byval sl as Slice ptr, recurse as bool = YES, copy_special as bool = YES, byref find_slice as Slice ptr = NULL) as Slice ptr
 DECLARE Function CloneTemplate(byval templatesl as Slice ptr) as Slice ptr
 
 DECLARE Sub OrphanSlice(byval sl as slice ptr)

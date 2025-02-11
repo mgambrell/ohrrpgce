@@ -171,6 +171,10 @@ sub set_animation_framerate(ms as integer)
 	ms_per_frame = bound(ms, 5, 200)
 end sub
 
+function get_animation_framerate() as integer
+	return ms_per_frame
+end function
+
 function ms_to_frames(ms as integer) as integer
 	if ms <= 0 then return 0
 	return large(1, CINT(ms / ms_per_frame))  'Round to nearest
@@ -239,7 +243,7 @@ destructor AnimationSet()
 	'(The Animations can remain referenced, but the Frames might be gone)
 	delete_all_animations(YES)  'check_no_references = YES
 
-	animset_unload @global_animations
+	animset_unload @fallback_set
 end destructor
 
 ' Increment refcount.
@@ -247,7 +251,7 @@ function AnimationSet.reference() as AnimationSet ptr
 	' The SpriteSet.reference override should get called when refcount = NOREFC
 	BUG_IF(refcount = NOREFC, "Bad AnimationSet.refcount", @this)
 	refcount += 1
-	DEBUG_ANIM_CACHE(? "AnimationSet.reference(" & debugname & "): refc=" & refcount)
+	DEBUG_ANIM_CACHE(? "AnimationSet.reference(" & name & "): refc=" & refcount)
 	return @this
 end function
 
@@ -279,58 +283,65 @@ sub AnimationSet.delete_all_animations(check_no_references as bool = NO)
 	v_free animations
 end sub
 
-' variantname can contain a trailing space
-sub split_variantname(variantname as string, byref animname as string, byref variant as string)
-	dim spacepos as integer = instr(variantname, " ")
+' animvariant can contain a trailing space
+sub split_animvariant(animvariant as string, byref animname as string, byref variant as string)
+	dim spacepos as integer = instr(animvariant, " ")
 	if spacepos then
-		animname = left(variantname, spacepos - 1)
-		variant = mid(variantname, spacepos + 1)
+		animname = left(animvariant, spacepos - 1)
+		variant = mid(animvariant, spacepos + 1)
 	else
-		animname = variantname
+		animname = animvariant
 		variant = ""
 	end if
 end sub
 
 ' Searches for an animation with a certain name, or NULL if there's no match.
 ' If exact=YES, the variant must match exactly, otherwise looks for best match.
-' variantname is either just the name of the animation, or the
+' If recurse=YES, go through the chain of fallback_sets as if they were all concatenated.
+' animvariant is either just the name of the animation, or the
 ' name plus an optional variant separated by a space, e.g. "walk upleft", "walk ", "walk".
 ' The nearest match is picked amongst animations which match the name:
 '  - prefer variant as specified
 '  - then prefer an animation with blank variant
 '  - then prefer the first animation (with that name)
-function AnimationSet.find_animation(variantname as string, exact as bool = NO) as Animation ptr
-	dim idx as integer = find_animation_idx(variantname, exact)
-	if idx < 0 then
-		return NULL
-	else
-		return animations[idx]
-	end if
-end function
-
-function AnimationSet.find_animation_idx(variantname as string, exact as bool = NO) as integer
+function AnimationSet.find_animation(animvariant as string, exact as bool = NO, recurse as bool = YES, byref _best_score as integer = 0) as Animation ptr
 	dim as string name, variant
-	split_variantname variantname, name, variant
+	split_animvariant animvariant, name, variant
 
-	dim best_match as integer = -1
+	dim as Animation ptr best_match, anim, best_fallback
 	for idx as integer = 0 to v_len(animations) - 1
-		if animations[idx]->name = name then
-			' Right name, check how good the match is
-			if animations[idx]->variant = variant then
-				return idx        'Exact match
-			elseif len(animations[idx]->variant) = 0 then
-				best_match = idx  'Prefer nonvariant animations
-			elseif best_match = NULL then
-				best_match = idx  'Otherwise, default to the first variant
+		anim = animations[idx]
+		if anim->name = name then
+			' Right name, check how good the match of variants is
+			dim score as integer
+			if anim->variant = variant then
+				_best_score = 1000
+				return anim        'Exact match
+			elseif len(anim->variant) = 0 then
+				'Prefer nonvariant animations
+				score = 10
+			else
+				'Otherwise, default to the first variant
+				score = 1
+			end if
+			if exact = NO andalso _best_score < score then
+				best_match = anim
+				_best_score = score
 			end if
 		end if
 	next
-	if exact then
-		'Didn't find exact match
-		return -1
-	else
-		return best_match
+	if recurse andalso fallback_set then
+		' When called recursively, returns null unless a better match
+		' than _best_score was found, which is updated.
+		best_fallback = fallback_set->find_animation(animvariant, exact, YES, _best_score)
+		if best_fallback then best_match = best_fallback
 	end if
+	return best_match
+end function
+
+' Get exactly this animvariant and do not recurse
+function AnimationSet.get_animation(animvariant as string) as Animation ptr
+	return find_animation(animvariant, YES, NO)
 end function
 
 ' Append a new blank animation and return pointer
@@ -343,11 +354,10 @@ function AnimationSet.new_animation(name as string = "", variant as string = "")
 	return ret
 end function
 
-sub AnimationSet.delete_animation(variantname as string)
-	dim idx as integer = find_animation_idx(variantname, YES)  'exact=YES
-	if idx >= 0 then
-		animations[idx]->dereference()
-		v_delete_slice animations, idx, idx + 1
+sub AnimationSet.delete_animation(anim as Animation ptr)
+	if anim then
+		anim->dereference()
+		v_remove animations, anim
 	end if
 end sub
 
@@ -373,16 +383,17 @@ destructor AnimationState()
 end destructor
 
 ' Lookup an animation and start it. See AnimationSet.find_animation() for documentation
-' of variantname (animation name plus optional variant).
+' of animvariant (animation name plus optional variant).
 ' Normally an animation specifies how many times it loops (unimplemented), or ends in Repeat
 ' to loop forever. loopcount <> 0 overrides this, giving a fixed number of
 ' times to play, or < 0 to repeat forever
-sub AnimationState.start_animation(variantname as string, loopcount as integer = 0)
-	start_animation(sl->Animations->find_animation(variantname), loopcount)
-end sub
+function AnimationState.start_animation(animvariant as string, loopcount as integer = 0) as Animation ptr
+	start_animation(sl->Animations->find_animation(animvariant), loopcount)
+	return anim
+end function
 
 'OK for anim to be NULL
-sub AnimationState.start_animation(anim as Animation ptr, loopcount as integer = 0)
+function AnimationState.start_animation(anim as Animation ptr, loopcount as integer = 0) as Animation ptr
 	anim_wait = 0
 	'anim_step = 0
 	anim_advanced = YES
@@ -394,7 +405,8 @@ sub AnimationState.start_animation(anim as Animation ptr, loopcount as integer =
 	else
 		curop = NULL
 	end if
-end sub
+	return anim
+end function
 
 ' Doesn't reset the sprite.
 sub AnimationState.stop_animation()
@@ -498,14 +510,16 @@ function AnimationState.animate_step() as bool
 			'anim_step = 0
 			anim_looplimit -= 1
 			return YES
-/'
 		case animOpSetOffset
+			/'
 			offset.x = curop."x"
 			offset.y = curop."y"
+			'/
 		case animOpRelOffset
+			/'
 			offset.x += curop."x"
 			offset.y += curop."y"
-'/
+			'/
 		case animOpPlayFrameGroup
 			if sl->SliceType <> slSprite then exit select  'Skip op
 

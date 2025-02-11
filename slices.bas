@@ -4042,8 +4042,9 @@ Sub AdvanceSlice(byval s as Slice ptr)
  end if
 end sub
 
-'Initialise as needed and return Animations
-Function Slice.GetAnimations() as AnimationSet ptr
+'Initialise as needed and then return sl->Animations.
+'Only initialise slice-specific animations if they are explicitly requested.
+Function Slice.GetAnimations(slice_specific as bool = NO) as AnimationSet ptr
  if this.Animations = NULL then
   if this.SliceType = slSprite then
    'Animations are loaded from rgfx into a SpriteSet object, but the pointer isn't
@@ -4055,9 +4056,13 @@ Function Slice.GetAnimations() as AnimationSet ptr
   end if
  end if
 
- if this.Animations = NULL then
+ if this.Animations = NULL orelse (slice_specific andalso this.Animations->slice_specific = NO) then
+  dim fallback as AnimationSet ptr = this.Animations
   this.Animations = new AnimationSet
   this.Animations->reference()
+  this.Animations->name = "Animations for this specific slice"
+  this.Animations->fallback_set = fallback
+  this.Animations->slice_specific = YES
  end if
  return this.Animations
 end function
@@ -4594,10 +4599,10 @@ End Sub
 
 '==Slice cloning===============================================================
 
-Function CloneSliceTree(byval sl as Slice ptr, recurse as bool = YES, copy_special as bool = YES) as Slice ptr
- 'clone a duplicate of a slice and, if recurse=YES, all its children.
- 'copy_special: copy Special slices and lookup codes. .Protect bit not copied.
- 'The resulting clone is parentless
+'Duplicate a slice and, if recurse=YES, the whole tree. The resulting clone is parentless.
+'copy_special: copy Special slices and lookup codes. .Protect bit not copied.
+'find_slice: if find_slice is cloned, this variable is replaced with the new Slice ptr.
+Function CloneSliceTree(byval sl as Slice ptr, recurse as bool = YES, copy_special as bool = YES, byref find_slice as Slice ptr = NULL) as Slice ptr
  if sl = NULL orelse sl->SliceType = slMap then return NULL
  dim clone as Slice Ptr
  '--Create another slice of the same type
@@ -4669,11 +4674,12 @@ Function CloneSliceTree(byval sl as Slice ptr, recurse as bool = YES, copy_speci
  dim ch_slice as Slice Ptr = sl->FirstChild
  dim ch_clone as Slice Ptr
  do while ch_slice <> 0
-  ch_clone = CloneSliceTree(ch_slice, YES, copy_special)
+  ch_clone = CloneSliceTree(ch_slice, YES, copy_special, find_slice)
   if ch_clone then SetSliceParent ch_clone, clone
   ch_slice = ch_slice->NextSibling
  loop
  '--return the clone
+ if find_slice andalso sl = find_slice then find_slice = clone
  return clone
 end function
 
@@ -4795,6 +4801,13 @@ Sub SliceSaveToNode(byval sl as Slice Ptr, node as Reload.Nodeptr, save_handles 
  sl->Save(sl, node)
  '--Contexts may or may not be savable
  if sl->Context then sl->Context->save(node)
+ if sl->Animations andalso sl->Animations->slice_specific then
+  'Empty AnimationSets will be created if entering the animation editor in the
+  'slice editor. They don't need to be saved.
+  if v_len(sl->Animations->animations) then
+   save_animations_node node, sl->Animations
+  end if
+ end if
  'FIXME: save AnimState
  if sl->AnimState then
  end if
@@ -4954,6 +4967,10 @@ Function SliceLoadFromNode(byval sl as Slice Ptr, node as Reload.Nodeptr, load_h
  end if
  '--Load properties specific to this slice type
  sl->Load(sl, node)
+ 'After we know the spriteset record we can call GetAnimations. Load any slice-specific animations
+ if GetChildByName(node, "_animations") then  'FIXME: temporary location
+  load_animations_node(node, sl->GetAnimations(YES))  'slice_specific=YES
+ end if
  '--Now load all the children
  dim children as Reload.NodePtr
  children = Reload.GetChildByName(node, "children")
