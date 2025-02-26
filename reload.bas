@@ -29,7 +29,7 @@ Declare Sub AddItem(h as HashPtr, interned_key as zstring ptr, item as intptr_t)
 Declare Sub RemoveKey(byval h as HashPtr, byval interned_key as zstring ptr, byval num as integer = 1)
 
 'Convert a zstring ptr to a uinteger which can be used as a hash modulo a prime number
-#define zstr2int(zs) cast(uinteger, cast(intptr_t, zs))
+#define zstr2int(zs) cast(uinteger, cast(intptr_t, zs))   'cintptr32
 
 'Another hash table implementation... This one stores data in the RHeap private heap (if applicable),
 'except for the keys, which are globally interned strings.
@@ -146,10 +146,6 @@ end function
 'creates and initializes a blank document
 Function CreateDocument() as DocPtr
 	dim ret as DocPtr
-
-	'CreateDocument gets called at the module level (in common.rbas)
-	'so someone need to call this.
-	init_intern_string
 
 	'Holy crap! allocating memory with malloc (and friends), and freeing it with delete?!
 	'never, ever do that! In this case, it probably didn't hurt anything, since Doc doesn't
@@ -777,7 +773,7 @@ sub serializeBin(byval nod as NodePtr, byval f as BufferedFile ptr, byval doc as
 		case rltFloat
 			Buffered_putc(f, rliFloat)
 			Buffered_write(f, @(nod->flo), 8)
-		case rltString
+		case rltString, rltInternString
 			Buffered_putc(f, rliString)
 			WriteVLI(f, nod->strSize)
 			Buffered_write(f, nod->str, nod->strSize)
@@ -864,6 +860,20 @@ sub SetContent(byval nod as NodePtr, byval zstr as zstring ptr, byval size as in
 	if zstr <> NULL andalso size <> 0 then memcpy(nod->str, zstr, size)
 end sub
 
+'This marks a node as a read-only string type and interns its value. This
+'has the benefits of making GetInternedString very fast, and of not allocating any
+'memory for the string data.
+sub SetInternedString(byval nod as NodePtr, byval zstr as zstring ptr)
+	if nod = null then exit sub
+	if nod->nodeType = rltString then
+		if nod->str then RDeallocate(nod->str, nod->doc)
+		nod->str = 0
+	end if
+	nod->nodeType = rltInternString
+	nod->str = intern_string(zstr)
+	nod->strSize = strlen(zstr)
+end sub
+
 'This marks a node as an integer, and sets its data to the provided integer
 sub SetContent(byval nod as NodePtr, byval dat as longint)
 	if nod = null then exit sub
@@ -873,6 +883,11 @@ sub SetContent(byval nod as NodePtr, byval dat as longint)
 	end if
 	nod->nodeType = rltInt
 	nod->num = dat
+end sub
+
+'By convention, bools are stored as 0/1 (or not-present/present)
+sub SetContentBool(byval nod as NodePtr, byval dat as bool)
+	SetContent nod, iif(dat, 1, 0)
 end sub
 
 'This marks a node as a floating-point number, and sets its data to the provided double
@@ -1044,11 +1059,11 @@ end function
 local function NodeNeedsEncoding(byval node as NodePtr, byval debugging as bool, byval shortform as bool) as integer
 	if node = null then return 0
 
-	if node->nodeType <> rltString then
+	if node->nodeType <> rltString andalso node->nodeType <> rltInternString then
 		return 0
 	end if
 
-	if shortform and node->nodeType = rltString andalso node->strSize > 300 then
+	if shortform andalso node->strSize > 300 then
 		return 3
 	end if
 
@@ -1291,12 +1306,30 @@ Function GetString(byval node as NodePtr) as string
 			return str(node->flo)
 		case rltNull
 			return ""
-		case rltString
+		case rltString, rltInternString
 			'FB's string assignment will always do a strlen on zstring arguments, so we need to
 			'manually copy the data into a string, in case it is a binary blob containing null bytes
 			return blob_to_string(node->str, node->strSize)
 		case else
 			return "Unknown value: " & node->nodeType
+	end select
+End Function
+
+'Equivalent to intern_string(GetString(node)), if it's a string type, but returns NULL
+'for other types.
+'Interns the contents of the node so it's fast next time, so the string becomes readonly!
+Function GetInternedString(byval node as NodePtr) as zstring ptr
+	if node = null then return NULL
+	select case node->nodeType
+		case rltInternString
+			return node->str
+		case rltString
+			'Lazy code: intern_string gets called twice, because otherwise we'd free
+			'the string before we can intern it.
+			SetInternedString node, intern_string(node->str)
+			return node->str
+		case else
+			return NULL
 	end select
 End Function
 
@@ -1313,7 +1346,7 @@ Function GetInteger(byval node as NodePtr) as longint
 			return clngint(node->flo)
 		case rltNull
 			return 0
-		case rltString
+		case rltString, rltInternString
 			return cint(*node->str)
 		case else
 			return 0
@@ -1333,7 +1366,7 @@ Function GetFloat(byval node as NodePtr) as double
 			return node->flo
 		case rltNull
 			return 0.0
-		case rltString
+		case rltString, rltInternString
 			return cdbl(*node->str)
 		case else
 			return 0.0
@@ -1345,7 +1378,7 @@ End Function
 Function GetZString(byval node as NodePtr) as zstring ptr
 	if node = null then return 0
 	
-	if node->nodeType <> rltString then
+	if node->nodeType <> rltString andalso node->nodeType <> rltInternString then
 		return 0
 	end if
 	
@@ -1355,7 +1388,7 @@ End Function
 Function GetZStringSize(byval node as NodePtr) as integer
 	if node = null then return 0
 	
-	if node->nodeType <> rltString then
+	if node->nodeType <> rltString andalso node->nodeType <> rltInternString then
 		return 0
 	end if
 	
@@ -1372,9 +1405,14 @@ End Function
 'to overwrite it :)
 Function ResizeZString(byval node as NodePtr, byval newsize as integer) as zstring ptr
 	if node = null then return 0
-	
-	if node->nodeType <> rltString then
-		return 0
+
+	if node->nodeType = rltInternString then
+		'Can support this but really shouldn't, because if you didn't
+		'resize then you can't modify the string.
+		'SetContent(node, GetString(node))
+		showbug "ResizeZstring on interned string"
+	elseif node->nodeType <> rltString then
+		showbug "ResizeZstring on non-string"
 	end if
 	
 	dim n as zstring ptr = node->str
@@ -1458,6 +1496,11 @@ Function SetChildNodeDate(byval parent as NodePtr, n as zstring ptr, val as doub
 	return node
 end Function
 
+'By convention bools are stored 0/1 not 0/-1
+Function SetChildNodeBool(byval parent as NodePtr, n as zstring ptr, val as bool) as NodePtr
+	return SetChildNode(parent, n, iif(val, 1, 0))
+end Function
+
 'Toggle a node to a zero/nonzero value (sets it to 0 or 1). Creates the node if it does not exist
 Sub ToggleBoolChildNode(byval parent as NodePtr, n as zstring ptr)
 	dim ret as NodePtr = GetOrCreateChild(parent, n)
@@ -1520,7 +1563,7 @@ Function GetChildNodeStr(byval parent as NodePtr, n as zstring ptr, d as string)
 end function
 
 'looks for a child node of the name n, and retrieves its value. d is the default, if n doesn't exist
-Function GetChildNodeBool(byval parent as NodePtr, n as zstring ptr, byval d as integer) as integer
+Function GetChildNodeBool(byval parent as NodePtr, n as zstring ptr, byval d as integer) as bool
 	dim nod as NodePtr = GetChildByName(parent, n)
 	if nod = 0 then return d
 	return GetInteger(nod) <> 0
@@ -1760,6 +1803,8 @@ Function CloneNodeTree(byval nod as NodePtr, byval doc as DocPtr=0) as NodePtr
 			SetContent(n, GetFloat(nod))
 		case rltString:
 			SetContent(n, GetString(nod))
+		case rltInternString:
+			SetInternedString(n, nod->str)
 	end select
 	dim ch as NodePtr
 	ch = FirstChild(nod)

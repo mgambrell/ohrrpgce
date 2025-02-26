@@ -3683,6 +3683,7 @@ END SUB
 
 'Undoes sprite_editor_initialise()
 SUB sprite_editor_cleanup(byref ss as SpriteEditState)
+ frame_unload @ss.sprite
  palette16_unload @ss.palette
  v_free ss.undo_history
 
@@ -4239,10 +4240,15 @@ TYPE ResizeSpritesetMenu EXTENDS ModularMenu
   pal as integer
   confirmed as bool  'Didn't cancel
 
+  DECLARE DESTRUCTOR ()
   DECLARE SUB update ()
   DECLARE FUNCTION each_tick () as bool
   DECLARE SUB draw_underlays()
 END TYPE
+
+DESTRUCTOR ResizeSpritesetMenu
+  DeleteSlice @root
+END DESTRUCTOR
 
 SUB ResizeSpritesetMenu.update ()
   REDIM menu(5)
@@ -4346,6 +4352,7 @@ TYPE SpriteSetBrowser
   STATIC copy_buffer as Frame ptr vector 'One or more copied frames
   STATIC copied_whole_set as bool        'Copied a spriteset rather than a single frame (ignore if nothing copied)
   STATIC copied_defpal as integer        'The default palette of the copied spriteset, or -1 for none
+  STATIC copied_animations as AnimationSet ptr 'If copied_whole_set, a duplicate copy of the sprite's animations
 
   'The following are only set inside and immediately after calling edit_frame() or import_any();
   'they're used for SpriteSetBrowser_save_callback*
@@ -4362,11 +4369,12 @@ TYPE SpriteSetBrowser
   hover as Slice ptr              'Slice hovering over
   highlight_ss_id as bool         'Highlight the spriteset number, while typing
   ps as PlankState
+  need_update as bool             'update_info() will be called
 
   DECLARE SUB build_menu()
   DECLARE SUB rebuild_menu()
   DECLARE SUB delete_menu_items()
-  DECLARE SUB update()
+  DECLARE SUB update_info()
   DECLARE SUB set_focus(setnum as integer, framenum as integer)
   DECLARE SUB replace_spriteset(setnum as integer, ss as Frame ptr = NULL)
   DECLARE SUB run()
@@ -4392,6 +4400,7 @@ END TYPE
 DIM SpriteSetBrowser.copy_buffer as Frame ptr vector
 DIM SpriteSetBrowser.copied_whole_set as bool
 DIM SpriteSetBrowser.copied_defpal as integer = -1
+DIM SpriteSetBrowser.copied_animations as AnimationSet ptr
 DIM SpriteSetBrowser.remem_setnum(sprTypeLastPickable) as integer
 DIM SpriteSetBrowser.remem_framenum(sprTypeLastPickable) as integer
 
@@ -4427,7 +4436,6 @@ SUB spriteset_editor(sprtype as SpriteType)
   editor.run()
 END SUB
 
-
 FUNCTION SpriteSetBrowser.cur_setnum() as integer
   IF ps.cur = NULL THEN RETURN -1
   RETURN ps.cur->Extra(0)
@@ -4443,8 +4451,56 @@ FUNCTION SpriteSetBrowser.cur_frameid() as integer
   RETURN ps.cur->Extra(2)
 END FUNCTION
 
-FUNCTION frame_name(setnum as integer, frameid as integer) as string
-  RETURN ""
+FUNCTION frame_name(sprtype as SpriteType, frameid as integer) as string
+ DIM name as string
+ SELECT CASE sprtype
+  CASE sprTypeHero
+   SELECT CASE frameid
+    CASE 0: name = "Standing"
+    CASE 1: name = "Stepping"
+    CASE 100: name = "Attack A"
+    CASE 101: name = "Attack B"
+    CASE 200: name = "Casting"
+    CASE 300: name = "Hurt"
+    CASE 400: name = "Weak"
+    CASE 500: name = "Dead"
+   END SELECT
+  CASE sprTypeWalkabout
+   SELECT CASE frameid \ 100
+    CASE 0: name = "Up "
+    CASE 1: name = "Right "
+    CASE 2: name = "Down "
+    CASE 3: name = "Left "
+   END SELECT
+   IF LEN(name) THEN
+    name &= frameid MOD 100
+   END IF
+  CASE sprTypeWeapon
+   SELECT CASE frameid
+    CASE 0: name = "A"
+    CASE 1: name = "B"
+   END SELECT
+  CASE sprTypeBoxBorder
+   SELECT CASE frameid
+    CASE 0: name = "Top left corner"
+    CASE 1: name = "Top edge left end"
+    CASE 2: name = "Top edge repeat"
+    CASE 3: name = "Top edge right end"
+    CASE 4: name = "Top right corner"
+    CASE 5: name = "Left edge top end"
+    CASE 6: name = "Right edge top end"
+    CASE 7: name = "Left edge repeat"
+    CASE 8: name = "Right edge repeat"
+    CASE 9: name = "Left edge bottom end"
+    CASE 10: name = "Right edge bottom end"
+    CASE 11: name = "Bottom left corner"
+    CASE 12: name = "Bottom edge left end"
+    CASE 13: name = "Bottom edge repeat"
+    CASE 14: name = "Bottom edge right end"
+    CASE 15: name = "Bottom right corner"
+   END SELECT
+ END SELECT
+ RETURN name
 END FUNCTION
 
 SUB SpriteSetBrowser_set_plank_state_callback(sl as Slice Ptr, state as PlankItemState)
@@ -4584,16 +4640,17 @@ SUB SpriteSetBrowser.rebuild_menu()
     ps.cur = top_left_plank(ps)
   END IF
   update_plank_scrolling ps
-  update()
+  need_update = YES
 
   '? "rebuild_menu() in " & (TIMER - starttime)
 END SUB
 
-'Called when the cursor moves, updates info displays
-SUB SpriteSetBrowser.update()
+'Called when the cursor moves to update info displays. Does not update the
+'spriteset slices, which requires a rebuild_menu call.
+SUB SpriteSetBrowser.update_info()
   DIM info_text as Slice ptr = edsl(ssed_info_text, root)
-  DIM info_text_right as Slice ptr = edsl(ssed_info_text_right, root)
-  IF info_text = NULL ORELSE info_text_right = NULL ORELSE ps.cur = NULL THEN EXIT SUB
+  DIM tooltip_text as Slice ptr = edsl(ssed_tooltip_text, root)
+  IF info_text = NULL ORELSE tooltip_text = NULL ORELSE ps.cur = NULL THEN EXIT SUB
   DIM as TextSliceData ptr info_text_dat = info_text->SliceData
   DIM caption_text as Slice ptr = edsl(ssed_caption_text, root)
 
@@ -4601,17 +4658,28 @@ SUB SpriteSetBrowser.update()
   IF pal_root = NULL THEN EXIT SUB
 
   DIM info_str as string
-  DIM caption_str as string = ""
-  info_text_right->Visible = NO
+  DIM caption_str as string
+  DIM tooltip as string
   IF cur_setnum = -1 THEN  'Add new
-    info_str = "ENTER to add a new spriteset"
     info_text_dat->show_insert = NO
     pal_root->Visible = NO
   ELSE
-    IF cur_framenum = -1 OR get_resolution.x >= 380 THEN  'Only if there's room
-      info_text_right->Visible = YES
-      info_text_right->TextData->use_render_text = YES
-      ChangeTextSlice info_text_right, "SHIFT: move by spriteset"
+    tooltip = "Shift: move by set"
+    IF cur_setnum >= 0 THEN
+      IF cur_framenum = -1 THEN
+        tooltip &= "  Enter: spriteset menu"
+      END IF
+      IF sprite_sizes(sprtype).fixed_framecount = NO ANDALSO cur_framenum > -1 THEN
+        tooltip &= "  [Shift-]Insert: add frame"
+      END IF
+    END IF
+
+    IF v_len(copy_buffer) THEN
+      IF cur_framenum > -1 ANDALSO copied_whole_set THEN  'whole->one
+        tooltip = "Ctrl-V: paste frame 0  Ctrl-T: transparent paste"
+      ELSE
+        tooltip = "Ctrl-V: paste  Ctrl-T: transparent paste"
+      END IF
     END IF
 
     info_str = "Spriteset " & cur_setnum
@@ -4625,66 +4693,10 @@ SUB SpriteSetBrowser.update()
 
     IF cur_frameid < 0 THEN
       'Whole spriteset selected rather than a frame
-      'info_str &= "  ENTER to edit"
-      caption_str = "Entire spriteset"
+      'caption_str = "Entire spriteset"
     ELSE
-      'info_str &= "  Frame ID " & cur_frameid & "  " & frame_name(cur_setnum, cur_frameid)
-      info_str &= "  Frame " & cur_framenum
-      'FIXME: Replace these hard-coded names with frame group names later
-      SELECT CASE sprtype
-       CASE sprTypeHero
-        SELECT CASE cur_frameid
-         CASE 0: caption_str = "Standing"
-         CASE 1: caption_str = "Stepping"
-         CASE 100: caption_str = "Attack A"
-         CASE 101: caption_str = "Attack B"
-         CASE 200: caption_str = "Casting"
-         CASE 300: caption_str = "Hurt"
-         CASE 400: caption_str = "Weak"
-         CASE 500: caption_str = "Dead"
-        END SELECT
-       CASE sprTypeWalkabout
-        SELECT CASE cur_frameid
-         CASE 0: caption_str = "Up 0"
-         CASE 1: caption_str = "Up 1"
-         CASE 100: caption_str = "Right 0"
-         CASE 101: caption_str = "Right 1"
-         CASE 200: caption_str = "Down 0"
-         CASE 201: caption_str = "Down 1"
-         CASE 300: caption_str = "Left 0"
-         CASE 301: caption_str = "Left 1"
-        END SELECT
-       CASE sprTypeWeapon
-        SELECT CASE cur_frameid
-         CASE 0: caption_str = "Frame A"
-         CASE 1: caption_str = "Frame B"
-        END SELECT
-       CASE sprTypeAttack
-        SELECT CASE cur_frameid
-         CASE 0: caption_str = "Frame 0"
-         CASE 1: caption_str = "Frame 1"
-         CASE 2: caption_str = "Frame 2"
-        END SELECT
-       CASE sprTypeBoxBorder
-        SELECT CASE cur_frameid
-         CASE 0: caption_str = "Top left corner"
-         CASE 1: caption_str = "Top edge left connector"
-         CASE 2: caption_str = "Top edge"
-         CASE 3: caption_str = "Top edge right connector"
-         CASE 4: caption_str = "Top right corner"
-         CASE 5: caption_str = "Left edge top connector"
-         CASE 6: caption_str = "Right edge top connector"
-         CASE 7: caption_str = "Left edge"
-         CASE 8: caption_str = "Right edge"
-         CASE 9: caption_str = "Left edge bottom connector"
-         CASE 10: caption_str = "Right edge bottom connector"
-         CASE 11: caption_str = "Bottom left corner"
-         CASE 12: caption_str = "Bottom edge left connector"
-         CASE 13: caption_str = "Bottom edge"
-         CASE 14: caption_str = "Bottom edge right connector"
-         CASE 15: caption_str = "Bottom right corner"
-        END SELECT
-      END SELECT
+      caption_str = frame_name(sprtype, cur_frameid)
+      info_str &= "  Frame " & cur_framenum & " ID " & cur_frameid
     END IF
 
     'DIM fr as Frame ptr = frame_load(sprtype, cur_setnum) 'Check for inconsistent .rgfx and defpal#.bin defpals
@@ -4713,6 +4725,7 @@ SUB SpriteSetBrowser.update()
 
   ChangeTextSlice info_text, info_str
   ChangeTextSlice caption_text, caption_str
+  ChangeTextSlice tooltip_text, tooltip
 
   'TODO: This is here to update the positioning of the palette box,
   'and can be removed when CoverChildren is fixed to compute the size
@@ -4743,6 +4756,7 @@ SUB SpriteSetBrowser.set_focus(setnum as integer, framenum as integer)
 
   remem_setnum(sprtype) = setnum
   remem_framenum(sprtype) = framenum
+  need_update = YES
 END SUB
 
 LOCAL FUNCTION create_spriteset(sprtype as SpriteType, framesize as XYPair) as Frame ptr
@@ -4809,8 +4823,10 @@ END SUB
 'Callback for sprite_editor, while editing a spriteset in fullset mode
 SUB SpriteSetBrowser_save_callback_fullset(spr as Frame ptr, context as any ptr, defpal as integer)
  DIM byref this as SpriteSetBrowser = *cast(SpriteSetBrowser ptr, context)
- 'TODO: Assigns default frameids to frames, doesn't support variable frame count!
- DIM split_ss as Frame ptr = spriteset_from_basic_spritesheet(spr, this.sprtype, sprite_sizes(this.sprtype).frames)
+
+ DIM split_ss as Frame ptr = spriteset_from_basic_spritesheet(spr, this.sprtype, this.editing_spriteset->arraylen)
+ copy_spriteset_frameids split_ss, this.editing_spriteset
+ copy_spriteset_data split_ss, this.editing_spriteset
 
  'Save default palettes immediately for live previewing
  this.defpalettes(this.editing_setnum) = defpal
@@ -4848,7 +4864,8 @@ SUB SpriteSetBrowser.setup_editstate(edstate as SpriteEditState, setnum as integ
       .framename = ""
     ELSE
       .save_callback = @SpriteSetBrowser_save_callback
-      .framename = "Frame " & editing_spriteset[framenum].frameid  'info(ss.framenum)
+      DIM frameid as integer = editing_spriteset[framenum].frameid
+      .framename = "Frame " & frameid & " " & frame_name(sprtype, frameid)
     END IF
     .save_callback_context = @this
     .pal_num = defpalettes(setnum)
@@ -4896,28 +4913,33 @@ SUB SpriteSetBrowser.edit_any(setnum as integer, framenum as integer)
 END SUB
 
 SUB SpriteSetBrowser.edit_spriteset(setnum as integer)
-  DIM _choices(...) as string = {"Draw spritesheet", "Export spritesheet", "Import spritesheet", "Resize", "Detail/Animations"}
+  DIM _choices(...) as string = { _
+        "Exit menu", _
+        "Draw full spritesheet", "Export spritesheet", _
+        "Import spritesheet", "Resize", "Add frame group" _
+  }
   REDIM choices() as string
   a_copy _choices(), choices()
-  IF keyval(scShift) = 0 THEN a_pop choices()  'Remove Animations
+  IF sprite_sizes(sprtype).fixed_framecount THEN a_pop choices()  'Remove Add frame group
   DIM choice as integer = popup_choice("", choices())
   SELECT CASE choice
    CASE 0
-    edit_any setnum, -1
    CASE 1
-    export_any
+    edit_any setnum, -1
    CASE 2
-    import_any
+    export_any
    CASE 3
+    import_any
+   CASE 4
     DIM resized as Frame ptr
     resized = spriteset_resize_menu(sprtype, setnum, defpalettes(setnum))
     IF resized THEN
       replace_spriteset setnum, resized
       rebuild_menu
     END IF
-   CASE 4
-    spriteset_detail_editor sprtype, setnum
-    rebuild_menu
+   CASE 5
+    ' Add a frame group in the first empty slot
+    add_frame(cur_setnum, YES)
   END SELECT
 END SUB
 
@@ -4973,6 +4995,22 @@ SUB SpriteSetBrowser.import_any()
   rebuild_menu()
 END SUB
 
+'Renumber any following frames in the same framegroup so frameids are in sequence without dups,
+'starting with ensuring frvec[framenum] = frameid.
+'Assumes that this is called after deleting at most one frame!
+SUB fix_following_frameids(frvec as Frame ptr vector, framenum as integer, frameid as integer)
+  'DIM as integer framenum = 0, frameid = new_id + 1
+  WHILE framenum < v_len(frvec)
+    'If you put 101 frames in a framegroup, we increment all the frameids in the next group.
+    'So effectively groups can have unlimited frames.
+    'That's why we treat a gap of 2 as the end of the group.
+    IF frvec[framenum]->frameid > frameid + 1 THEN EXIT WHILE
+    frvec[framenum]->frameid = frameid
+    frameid += 1
+    framenum += 1
+  WEND
+END SUB
+
 'Delete a frame from a spriteset
 SUB SpriteSetBrowser.delete_frame(setnum as integer, framenum as integer)
   DIM ss as Frame ptr = frame_load(sprtype, setnum)
@@ -4983,11 +5021,15 @@ SUB SpriteSetBrowser.delete_frame(setnum as integer, framenum as integer)
     EXIT SUB
   END IF
 
+  DIM frameid as integer = ss[framenum].frameid
+
   DIM frvec as Frame ptr vector = frame_array_to_vector(ss)
   frame_unload @ss
 
   'Frame ptr vectors autodelete the Frames
   v_delete_slice frvec, framenum, framenum + 1
+
+  fix_following_frameids(frvec, framenum, frameid)
 
   ss = frame_vector_to_array(frvec)
   v_free frvec
@@ -5006,22 +5048,30 @@ SUB SpriteSetBrowser.add_frame(setnum as integer, new_group as bool = NO, framen
   DIM new_id as integer
   DIM insertidx as integer
   IF new_group THEN
-    'framenum ignored
-    insertidx = v_len(frvec)
-    new_id = ((v_last(frvec)->frameid \ 100) + 1) * 100
+    'Insert the first missing group after the current
+    DIM group as integer = 0
+    IF framenum >= 0 THEN group = frvec[framenum]->frameid \ 100
+    WHILE frameid_to_frame(ss, 100 * group, YES) > -1  'Already exists
+     group += 1
+    WEND
+    new_id = 100 * group
+    insertidx = 0
+    WHILE insertidx < v_len(frvec) ANDALSO frvec[insertidx]->frameid < new_id
+     insertidx += 1
+    WEND
   ELSE
-    'Find the next ID that isn't already taken (and its insertidx)
     new_id = frvec[framenum]->frameid + 1
-    FOR insertidx = framenum + 1 TO v_len(frvec) - 1
-      IF frvec[insertidx]->frameid = new_id THEN new_id += 1 ELSE EXIT FOR
-    NEXT
+    insertidx = framenum + 1
   END IF
 
   WITH *frvec[0]
     DIM fr as Frame ptr = frame_new(.w, .h, , YES, .mask <> NULL)
     fr->frameid = new_id
     v_insert frvec, insertidx, fr
+    frame_unload @fr
   END WITH
+
+  fix_following_frameids frvec, insertidx, new_id
 
   frame_unload @ss
   ss = frame_vector_to_array(frvec)
@@ -5029,6 +5079,7 @@ SUB SpriteSetBrowser.add_frame(setnum as integer, new_group as bool = NO, framen
 
   replace_spriteset setnum, ss
   rebuild_menu
+  set_focus setnum, insertidx
 END SUB
 
 'If ss is given: Save ss, empty the cache, and free ss.
@@ -5037,11 +5088,20 @@ END SUB
 'Note: rebuild_menu() must be called afterwards!
 SUB SpriteSetBrowser.replace_spriteset(setnum as integer, ss as Frame ptr = NULL)
   IF ss THEN
+    IF ss->sprset = NULL THEN
+      'The animations are missing, so copy them over. Happens whenever created a new
+      'Frame array: add/deleting frames, resizing frames, fullset editing, importing.
+      DIM existing_sprite as Frame ptr = frame_load(sprtype, setnum)
+      copy_spriteset_data ss, existing_sprite
+      frame_unload @existing_sprite
+    END IF
+
     rgfx_save_spriteset ss, sprtype, setnum, defpalettes(setnum)
     frame_unload @ss
   END IF
 
   delete_menu_items()   'Required in order to empty cache
+  'Deletes the clipboard
   sprite_empty_cache sprtype, setnum
 END SUB
 
@@ -5057,11 +5117,13 @@ SUB SpriteSetBrowser.change_def_pal(diff as integer)
   rebuild_menu()
 END SUB
 
-'Save current frame or spriteset
+'Copy current frame or spriteset into copy_buffer.
 SUB SpriteSetBrowser.copy_any()
   IF cur_setnum < 0 THEN EXIT SUB
 
-  v_resize copy_buffer, 0
+  v_new copy_buffer
+  animset_unload @copied_animations
+
   editing_spriteset = frame_load(sprtype, cur_setnum)
 
   DIM fr as Frame ptr
@@ -5080,6 +5142,10 @@ SUB SpriteSetBrowser.copy_any()
     NEXT
     copied_defpal = defpalettes(cur_setnum)
     copied_whole_set = YES
+    'Duplicate rather than reference animations to avoid confusing semantics
+    IF editing_spriteset->sprset THEN
+      copied_animations = editing_spriteset->sprset->get_animset->duplicate()
+    END IF
   END IF
   frame_unload @editing_spriteset
 END SUB
@@ -5098,13 +5164,25 @@ SUB SpriteSetBrowser.paste_any(transparent as bool)
 
   editing_spriteset = frame_load(sprtype, cur_setnum)
 
+  DIM overwrote as bool = NO
+
   IF cur_framenum = -1 THEN  'Whole spriteset
-    'copy_buffer might be either a single frame or a while spriteset.
+    'copy_buffer might be either a single frame or a whole spriteset.
     IF copied_whole_set ANDALSO transparent = NO THEN
-      'Overwrite the original spriteset completely, but instead of a simple copy
-      'create a new spriteset so that we have the correct number of frames and frame IDs
-      frame_assign @editing_spriteset, create_spriteset(sprtype, copy_buffer[0]->size)
-      'frame_assign @editing_spriteset, frame_vector_to_array(copy_buffer)  'Overwrites
+      'Overwrite the original spriteset completely
+      WITH sprite_sizes(sprtype)
+        '(Currently, fixed_size implies fixed_framecount)
+        IF .fixed_framecount ORELSE .fixed_size THEN
+          'Instead of a simple copy create a new spriteset so that we have the
+          'correct number of frames, size, and frame IDs
+          DIM size as XYPair = IIF(.fixed_size, .size, copy_buffer[0]->size)
+          frame_assign @editing_spriteset, create_spriteset(sprtype, size)
+        ELSE
+          'Overwrite (use frame IDs from copy_buffer)
+          frame_assign @editing_spriteset, frame_vector_to_array(copy_buffer)
+          overwrote = YES
+        END IF
+      END WITH
 
       'Also copy over the default palette
       IF copied_defpal > -1 THEN
@@ -5112,12 +5190,20 @@ SUB SpriteSetBrowser.paste_any(transparent as bool)
         defpalettes(cur_setnum) = copied_defpal
         savedefaultpals sprtype, defpalettes(), UBOUND(defpalettes)
       END IF
+
+      IF copied_animations THEN
+        DIM ss as SpriteSet ptr = spriteset_for_frame(editing_spriteset)
+        animset_unload @ss->animset
+        ss->animset = copied_animations->duplicate()
+      END IF
     END IF
 
-    'Paste each frame individually, keeping the original frame size and frame IDs
-    FOR idx as integer = 0 TO small(v_len(copy_buffer), editing_spriteset->arraylen) - 1
-      paste_frame(copy_buffer[idx], @editing_spriteset[idx], transparent)
-    NEXT
+    IF overwrote = NO THEN
+      'Paste each frame individually, keeping editing_spriteset's frame size and frame IDs
+      FOR idx as integer = 0 TO small(v_len(copy_buffer), editing_spriteset->arraylen) - 1
+        paste_frame(copy_buffer[idx], @editing_spriteset[idx], transparent)
+      NEXT
+    END IF
   ELSE
     paste_frame(copy_buffer[0], @editing_spriteset[cur_framenum], transparent)
   END IF
@@ -5126,7 +5212,13 @@ SUB SpriteSetBrowser.paste_any(transparent as bool)
   rebuild_menu()
 END SUB
 
+SUB spriteset_editor_delete_clipboard()
+  v_free SpriteSetBrowser.copy_buffer
+  animset_unload @SpriteSetBrowser.copied_animations
+END SUB
+
 SUB SpriteSetBrowser.run()
+  'copy_buffer is never deleted
   IF copy_buffer = NULL THEN v_new copy_buffer
   ps.state_callback = @SpriteSetBrowser_set_plank_state_callback
 
@@ -5204,7 +5296,8 @@ SUB SpriteSetBrowser.run()
       cursor_moved = plank_menu_home(ps)
     END IF
     plank_menu_mouse_wheel(ps)
-    IF intgrabber(setnum, 0, gen(genmax), scNone, scNone, YES, NO) THEN
+    'Reserve Delete for deleting frames/sets, not digits of setnum
+    IF keyval(scDelete) = 0 ANDALSO intgrabber(setnum, 0, gen(genmax), scNone, scNone, YES, NO) THEN
       set_focus(setnum, cur_framenum)
       cursor_moved = YES
       highlight_ss_id = YES
@@ -5228,31 +5321,43 @@ SUB SpriteSetBrowser.run()
       END IF
     END IF
 
-    /'
     'Delete frames or spritesets
     IF cur_setnum >= 0 THEN
       IF cropafter_keycombo(NO) THEN  'Whole spriteset
         'crop_spriteset()
       ELSEIF cur_framenum >= 0 ANDALSO keyval(scDelete) > 1 THEN  'One frame
-        delete_frame(cur_setnum, cur_framenum)
+        IF sprite_sizes(sprtype).fixed_framecount THEN
+          notification sprite_sizes(sprtype).name & " sprites currently don't support adding or removing frames."
+        ELSEIF yesno("Really delete this frame? There's no undo!", NO) THEN
+          delete_frame(cur_setnum, cur_framenum)
+        END IF
       END IF
     END IF
 
     '+: Add new frame or frame group
     IF keyval(scPlus) > 1 ORELSE keyval(scNumpadPlus) > 1 ORELSE keyval(scInsert) > 1 THEN
-      IF cur_framenum = -1 THEN  'Whole spriteset
-        add_frame(cur_setnum, YES)  'New group
+      IF sprite_sizes(sprtype).fixed_framecount THEN
+       notification sprite_sizes(sprtype).name & " sprites currently don't support adding or removing frames."
+      ELSEIF cur_framenum = -1 THEN  'Whole spriteset
+        'New group in first empty slot
+        add_frame(cur_setnum, YES)
       ELSE
-        add_frame(cur_setnum, NO, cur_framenum)  'After existing frame
+        'Shift: add a new frame group in the first empty space after the existing one
+        'W/o shift: add a frame after the current one
+        add_frame(cur_setnum, keyval(scShift) > 0, cur_framenum)
       END IF
     END IF
-    '/
 
     IF enter_or_space() ORELSE ((mouse.release AND mouseLeft) ANDALSO hover = ps.cur) then
       IF cur_setnum = -1 THEN  'Add new
         add_spriteset()
       ELSEIF cur_framenum = -1 THEN  'Whole spriteset: Spriteset menu
-        edit_spriteset(cur_setnum)
+        IF keyval(scShift) > 0 THEN
+          spriteset_detail_editor sprtype, setnum
+          rebuild_menu
+        ELSE
+          edit_spriteset(cur_setnum)
+        END IF
       ELSE  'Single frame
         edit_any(cur_setnum, cur_framenum)
       END IF
@@ -5267,7 +5372,8 @@ SUB SpriteSetBrowser.run()
       IF keyval(scRightBrace) > 1 THEN change_def_pal(1)
 
       IF copy_keychord() THEN copy_any()
-      IF paste_keychord() THEN paste_any(NO)
+      'Don't use paste_keychord, which includes Shift-Insert
+      IF keyval(scCtrl) > 0 AND keyval(scV) > 1 THEN paste_any(NO)
       IF keyval(scCtrl) > 0 ANDALSO keyval(scT) > 1 THEN paste_any(YES)
 
       IF keyval(scE) > 1 THEN export_any()
@@ -5284,9 +5390,13 @@ SUB SpriteSetBrowser.run()
       remem_setnum(sprtype) = cur_setnum
       remem_framenum(sprtype) = cur_framenum
       update_plank_scrolling ps
-      update()
+      need_update = YES
+      cursor_moved = NO
     END IF
-    cursor_moved = NO
+    IF need_update THEN
+      update_info()
+      need_update = NO
+     END IF
 
     clearpage vpage
 
@@ -5393,19 +5503,20 @@ SUB SpriteSetEditor.update_previews()
  ERASE overridden_animations
 
  DIM as integer idx, colidx
+ DIM animset as AnimationSet ptr = ss->get_animset
 
- FOR idx = 0 TO v_len(ss->animations) - 1
-  create_preview ss->animations[idx], 1, idx
+ FOR idx = 0 TO v_len(animset->animations) - 1
+  create_preview animset->animations[idx], 1, idx
  NEXT
 
- DIM global as AnimationSet ptr = ss->fallback_set
+ DIM global as AnimationSet ptr = animset->fallback_set
  IF global THEN
   FOR idx = 0 TO v_len(global->animations) - 1
    DIM name as string
    WITH *global->animations[idx]
     name = .name & " " & .variant
    END WITH
-   IF ss->get_animation(name) THEN
+   IF animset->get_animation(name) THEN
     a_append(overridden_animations(), name)
    ELSE
     create_preview global->animations[idx], 2, colidx
@@ -5433,8 +5544,8 @@ SUB SpriteSetEditor.run()
   IF keyval(scE) > 1 ORELSE enter_or_space() THEN
    DIM animsl as Slice ptr = NewSliceOfType(slSprite)
    ChangeSpriteSlice animsl, sprtype, setnum
-   ' animsl->GetAnimations() == ss
-   animations_editor animsl, ss, context, default_export_name(sprtype, setnum)
+   ' animsl->GetAnimations() == ss->animset
+   animations_editor animsl, ss->get_animset, context, default_export_name(sprtype, setnum)
    DeleteSlice @animsl
    update_previews()
   ELSEIF keyval(scP) > 1 THEN
@@ -5456,8 +5567,7 @@ SUB SpriteSetEditor.run()
  'FIXME: save_animations_node / load_animations_node saves the animations to a temporary
  'node which we will ignore in future.
  rgfx_save_spriteset ss->frames, sprtype, setnum
- 'TODO: Editing global animations not implemented yet
- 'rgfx_save_global_animations sprtype
+ rgfx_save_global_animations sprtype
 
  spriteset_unload @ss
  palette16_unload @pal

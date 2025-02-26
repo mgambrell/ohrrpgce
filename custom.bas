@@ -102,6 +102,9 @@ DIM cleanup_workingdir_on_exit as bool = YES
 'If not, we should cleanup working.tmp instead of preserving it
 DIM cleanup_workingdir_on_error as bool = YES
 
+setup_global_reload_doc
+
+
 '======================== Setup directories & debug log =======================
 ' This is almost identical to startup code in Game; please don't unnecessarily diverge.
 
@@ -750,7 +753,7 @@ SUB cleanup_and_terminate (show_quit_msg as bool = YES, retval as integer = 0)
  clear_fixbits_cache
  game = ""
  sourcerpg = ""
- 'catch sprite leaks
+ 'Catch sprite leaks (also deletes the slice editor and spriteset clipboards)
  sprite_empty_cache
  palette16_reload_cache   'Read default palettes (now that game="")
 

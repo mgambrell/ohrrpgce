@@ -55,7 +55,7 @@ CONST SL_EDITOR_SSED_PALETTE_TEXT      = -407
 CONST SL_EDITOR_SSED_SET_INFO          = -408
 CONST SL_EDITOR_SSED_SET               = -409
 CONST SL_EDITOR_SSED_PALETTE_ROOT      = -410
-CONST SL_EDITOR_SSED_INFO_TEXT_RIGHT   = -411
+CONST SL_EDITOR_SSED_TOOLTIP_TEXT      = -411
 CONST SL_EDITOR_SSED_CAPTION_TEXT      = -412
 CONST SL_EDITOR_ENEMY_SPRITE           = -500
 CONST SL_ROOT                 = -100000
@@ -188,6 +188,7 @@ CONST SL_COLLECT_VIRTUALKEYBOARDSCREEN = 21
 Type SliceTypes as integer
 Enum 'SliceTypes
  slInvalid = -1
+ slNone = -1
  '0 was slRoot
  slSpecial = 1
  slContainer
@@ -559,9 +560,10 @@ Type SpriteSliceData
  d_back as boolean ' backwards: NO dissolve away, YES dissolve back in
  d_auto as boolean ' YES if the dissolve is animating automatically
                    ' (d_tick advances when drawn) (FIXME: wrong place for that)
- d_time as integer ' number of ticks that the dissolve should last
- d_tick as integer ' counts which tick the dissolve is in right now
- d_type as integer ' id number of the dissolve animation
+ d_time as integer ' number of ticks that the dissolve should last, -1 for size-based default
+ d_tick as integer ' counts which tick the dissolve is in right now, normally =0 is no effect and =d_time
+                   ' is totally blank, except Vapourize which takes 1 tick longer (-1 when backward)
+ d_type as integer ' id number of the dissolve animation, 0 to dissolveTypeMax
 
  declare function get_numframes(sl as Slice ptr) as integer
  declare sub set_frame(sl as Slice ptr, frameidx as integer)
@@ -649,7 +651,7 @@ DECLARE Function NewSliceOfType(byval t as SliceTypes, byval parent as Slice Ptr
 DECLARE Function NewClassSlice(parent as Slice ptr, inst as ClassSlice ptr) as Slice ptr
 DECLARE Sub DeleteSlice(byval s as Slice ptr ptr, byval debugme as integer = 0)
 DECLARE Sub DeleteSliceChildren(byval s as Slice ptr, byval debugme as integer = 0)
-DECLARE FUNCTION CloneSliceTree(byval sl as Slice ptr, recurse as bool = YES, copy_special as bool = YES, byref find_slice as Slice ptr = NULL) as Slice ptr
+DECLARE Function CloneSliceTree(byval sl as Slice ptr, recurse as bool = YES, copy_special as bool = YES, byref find_slice as Slice ptr = NULL, duplicate_animations as bool = NO) as Slice ptr
 DECLARE Function CloneTemplate(byval templatesl as Slice ptr) as Slice ptr
 
 DECLARE Sub OrphanSlice(byval sl as slice ptr)

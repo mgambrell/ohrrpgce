@@ -7,4 +7,20 @@
 # Add --show-reachable=yes for more complete memory leak checking.
 # With older valgrind, --db-attach=yes instead of --vgdb-error=1 can be convenient.
 
-valgrind --suppressions=misc/valgrind_suppressions.txt --track-fds=yes --read-var-info=yes --gen-suppressions=yes --leak-check=full --vgdb-error=1 ./ohrrpgce-game $*
+if [ "$1" = "--no-attach" ]; then
+    # For spawning from Custom: don't pass any options that would cause valgrind to pause
+    MOREOPTS=
+    # Wait for key so can see leaks before the xterm closes
+    WAIT=1
+    shift
+else
+    echo "Pass --no-attach to avoid suppression prompts or pausing to attach gdb"
+    MOREOPTS="--vgdb-error=1 --gen-suppressions=yes"
+    WAIT=
+fi
+
+DIR="$(dirname "$(readlink -e "$0")")"
+
+valgrind --suppressions=$DIR/misc/valgrind_suppressions.txt --track-fds=yes --read-var-info=yes --leak-check=full $MOREOPTS $DIR/ohrrpgce-game $*
+
+[ -n "$WAIT" ] && (echo "Press any key"; read)

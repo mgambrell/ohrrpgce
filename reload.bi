@@ -41,7 +41,8 @@ ENUM NodeTypes
 	rltNull
 	rltInt
 	rltFloat
-	rltString
+	rltString        'Allocated string or blob of data, modifiable
+	rltInternString  'Pointer to an interned (read-only) string
 END ENUM
 
 ENUM LoadOptions
@@ -99,7 +100,8 @@ TYPE NodePtr as Node ptr
 		Union 'this saves sizeof(Double) bytes per node!
 			num as longint
 			flo as double
-			str as zstring ptr
+			str as zstring ptr  'rltString: an allocated string which must be freed
+			                    'rltInterdString: an interned string which mustn't be freed
 		end Union
 		strSize as integer
 		numChildren as integer
@@ -136,6 +138,8 @@ Declare sub SetContent(byval nod as NodePtr, byval zstr as zstring ptr, byval si
 Declare sub SetContent(byval nod as NodePtr, byval dat as longint)
 Declare sub SetContent(byval nod as NodePtr, byval dat as double)
 Declare sub SetContent(byval nod as NodePtr)
+Declare sub SetContentBool(byval nod as NodePtr, byval dat as bool)
+Declare sub SetInternedString(byval nod as NodePtr, byval zstr as zstring ptr)
 Declare sub AddSiblingBefore(byval sib as NodePtr, byval nod as NodePtr)
 Declare sub AddSiblingAfter(byval sib as NodePtr, byval nod as NodePtr)
 Declare sub AddChild(byval par as NodePtr, byval nod as NodePtr)
@@ -156,6 +160,8 @@ Declare Function GetFloat(byval node as nodeptr) as double
 Declare Function GetZString(byval node as nodeptr) as zstring ptr
 Declare Function ResizeZString(byval node as nodeptr, byval newsize as integer) as zstring ptr
 Declare Function GetZStringSize(byval node as nodeptr) as integer
+Declare Function GetInternedString(byval node as NodePtr) as zstring ptr
+
 
 Declare Function GetChildByName(byval nod as NodePtr, byval nam as zstring ptr) as NodePtr 'NOT recursive
 Declare Function FindDescendentByName(byval nod as NodePtr, nam as zstring ptr) as NodePtr 'recursive depth first search
@@ -185,6 +191,7 @@ Declare Function SetChildNode Overload (byval parent as NodePtr, n as zstring pt
 Declare Function SetChildNode(byval parent as NodePtr, n as zstring ptr, byval val as longint) as NodePtr
 Declare Function SetChildNode(byval parent as NodePtr, n as zstring ptr, byval val as double) as NodePtr
 Declare Function SetChildNode(byval parent as NodePtr, n as zstring ptr, val as string) as NodePtr
+Declare Function SetChildNodeBool(byval parent as NodePtr, n as zstring ptr, val as bool) as NodePtr
 Declare Function SetChildNodeDate(byval parent as NodePtr, n as zstring ptr, val as double) as NodePtr
 Declare Sub ToggleBoolChildNode(byval parent as NodePtr, n as zstring ptr)
 Declare Sub ToggleChildNode(byval parent as NodePtr, n as zstring ptr)
@@ -192,7 +199,7 @@ Declare Sub FreeChildNode(byval parent as NodePtr, n as zstring ptr)
 Declare Function GetChildNodeInt(byval parent as NodePtr, n as zstring ptr, byval d as longint = 0) as longint
 Declare Function GetChildNodeFloat(byval parent as NodePtr, n as zstring ptr, byval d as double = 0.0) as Double
 Declare Function GetChildNodeStr(byval parent as NodePtr, n as zstring ptr, d as string = "") as string
-Declare Function GetChildNodeBool(byval parent as NodePtr, n as zstring ptr, byval d as integer = 0) as integer
+Declare Function GetChildNodeBool(byval parent as NodePtr, n as zstring ptr, byval d as integer = 0) as bool
 Declare Function GetChildNodeExists(byval parent as NodePtr, n as zstring ptr) as bool
 Declare Function AppendChildNode Overload (byval parent as NodePtr, n as zstring ptr) as NodePtr
 Declare Function AppendChildNode(byval parent as NodePtr, n as zstring ptr, byval val as longint) as NodePtr

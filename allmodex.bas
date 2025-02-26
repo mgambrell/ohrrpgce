@@ -26,6 +26,7 @@
 #include "loading.bi"
 #include "cmdline.bi"
 #include "steam.bi"
+#include "sliceedit.bi"
 
 using Reload
 
@@ -35,6 +36,7 @@ using Reload
 
 #ifdef IS_CUSTOM
 	#include "cglobals.bi"  'For channel_to_Game
+	#include "custom.bi"  'For spriteset_editor_delete_clipboard
 #endif
 
 #ifdef __FB_ANDROID__
@@ -183,7 +185,7 @@ dim shared numpad2text(...) as zstring*2 => {"7","8","9","","4","5","6","","1","
 
 ' Frame type table
 DEFINE_VECTOR_OF_TYPE_COMMON(Frame ptr, Frame_ptr, @_frame_copyctor, @frame_unload)
-DEFINE_VECTOR_OF_TYPE(Animation ptr, Animation_ptr)
+DEFINE_VECTOR_OF_POD_TYPE(Animation ptr, Animation_ptr)
 
 
 '--------- Module shared variables ---------
@@ -480,7 +482,7 @@ MAKETYPE_DListItem(SpriteCacheEntry)
 type SpriteCacheEntry
 	'cachelist used only if object is a member of sprcacheB
 	cacheB as DListItem(SpriteCacheEntry)
-	hash as integer   'Used as HashTable hash/key
+	key as integer   'Used as HashTable key
 	p as Frame ptr
 	cost as integer
 	Bcached as bool
@@ -4773,11 +4775,11 @@ sub drawmap (tmap as TileMap, x as integer, y as integer, tilesetsprite as Frame
 
 	'Division rounded to negative infinity
 	if x < 0 then
-		xstart = (x \ 20) - 1
+		xstart = (x - 19) \ 20
 	else
 		xstart = x \ 20
 	end if
-	start_destpos.x = -POSMOD(x, 20)
+	start_destpos.x = -(x - xstart*20)  ' == -POSMOD(x, 20)
 	'We start drawing not at 0,0 but at -maxTileOffset,-maxTileOffset in case
 	'of tiles just out-of-view that are shifted into it by a tile animation
 	while start_destpos.x > -maxTileOffset
@@ -4787,11 +4789,11 @@ sub drawmap (tmap as TileMap, x as integer, y as integer, tilesetsprite as Frame
 	wend
 
 	if y < 0 then
-		ypos = (y \ 20) - 1
+		ypos = (y - 19) \ 20
 	else
 		ypos = y \ 20
 	end if
-	start_destpos.y = -POSMOD(y, 20)
+	start_destpos.y = -(y - ypos*20)  ' == -POSMOD(y, 20)
 	while start_destpos.y > -maxTileOffset
 		start_destpos.y -= 20
 		ypos -= 1
@@ -9490,6 +9492,7 @@ declare sub frame_freemem(f as Frame ptr)
 declare sub spriteset_freemem(sprset as SpriteSet ptr)
 'Assumes pitch == w
 declare sub frame_add_mask(fr as Frame ptr, clr as bool = NO)
+declare sub sprite_add_cache(sprtype as SpriteType, record as integer, p as Frame ptr)
 
 
 'The sprite cache holds Frame ptrs, which may also be Frame arrays and SpriteSets. Since
@@ -9525,7 +9528,7 @@ CONST SPRCACHE_BASE_SZ = 4096  'bytes
         'Set TRACE_SPRITE to the particular spriteset you want to trace
         #define TRACE_SPRITE  SPRITE_CACHE_KEY(sprTypeWalkabout, 1)  'walkabout set 1
         #macro TRACE_CACHE(fr, msg)
-                if fr->cacheentry andalso fr->cacheentry->hash = TRACE_SPRITE then
+                if fr->cacheentry andalso fr->cacheentry->key = TRACE_SPRITE then
                         debug msg ", spr " & TRACE_SPRITE & " refc=" & fr->refcount
                 end if
         #endmacro
@@ -9533,11 +9536,12 @@ CONST SPRCACHE_BASE_SZ = 4096  'bytes
         #define TRACE_CACHE(fr, msg)
 #endif
 
-' removes a sprite from the cache, and frees it.
-local sub sprite_remove_cache(entry as SpriteCacheEntry ptr)
-	TRACE_CACHE(entry->p, "freeing from cache")
+' Remove a spriteset from the cache, delete the SpriteCacheEntry,
+' and call frame_unload to remove the cache's reference.
+local sub sprite_remove_from_cache(entry as SpriteCacheEntry ptr)
+	TRACE_CACHE(entry->p, "removing from cache")
 	dlist_remove(sprcacheB.generic, entry)
-	sprcache.remove(entry->hash)
+	sprcache.remove(entry->key)
 	#ifdef COMBINED_SPRCACHE_LIMIT
 		sprcacheB_used -= entry->cost
 	#else
@@ -9545,14 +9549,21 @@ local sub sprite_remove_cache(entry as SpriteCacheEntry ptr)
 			sprcacheB_used -= entry->cost
 		end if
 	#endif
-	if entry->p->refcount <> 1 then
-		debugc errBug, "sprite cache leak/invalid sprite_remove_cache(): " & entry->hash & " " & frame_describe(entry->p)
-		'Leak instead of deleting the Frame, to avoid crashes
-	else
-		entry->p->cacheentry = NULL  'help to detect double free
-		frame_freemem(entry->p)
-	end if
+	entry->p->cached = NO
+	entry->p->cacheentry = NULL
+	'Remove the reference due cache (have to do this after clearing ->cached, or would decrement twice)
+	frame_unload @entry->p
 	delete entry
+end sub
+
+' Removes the final reference to a sprite from the cache, freeing it (and entry)
+local sub sprite_delete_from_cache(entry as SpriteCacheEntry ptr)
+	if entry->p->refcount <> 1 then
+		debugc errBug, "sprite cache leak/invalid sprite_delete_from_cache(): " & entry->key & " " & frame_describe(entry->p)
+		'Leak instead of deleting the Frame, to avoid crashes
+	end if
+
+	sprite_remove_from_cache(entry)
 end sub
 
 'Free some sprites from the end of the B cache
@@ -9565,7 +9576,7 @@ local function sprite_cacheB_shrink(amount as integer) as bool
 	pt = sprcacheB.last
 	while pt
 		prevpt = pt->cacheB.prev
-		sprite_remove_cache(pt)
+		sprite_delete_from_cache(pt)
 		if sprcacheB_used + amount <= SPRCACHEB_SZ then exit function
 		pt = prevpt
 	wend
@@ -9579,15 +9590,15 @@ local sub sprite_empty_cache_range(minkey as integer, maxkey as integer)
 	pt = sprcache.iter(iterstate, nextpt)
 	while pt
 		nextpt = sprcache.iter(iterstate, pt)
-		if pt->hash >= minkey andalso pt->hash <= maxkey then
-			sprite_remove_cache(pt)
+		if pt->key >= minkey andalso pt->key <= maxkey then
+			sprite_delete_from_cache(pt)
 		end if
 		pt = nextpt
 	wend
 end sub
 
-'Unlike sprite_empty_cache, this reloads (in-use) sprites from file, without changing the pointers
-'to them. Any sprite that's not actually in use is removed from the cache as it's unnecessary to reload.
+'Unlike sprite_empty_cache, this reloads (in-use) sprites from file, modifying in-place where possible.
+'Any sprite that's not actually in use is removed from the cache as it's unnecessary to reload.
 local sub sprite_update_cache_range(minkey as integer, maxkey as integer)
 	dim iterstate as uinteger = 0
 	dim as SpriteCacheEntry ptr pt, nextpt
@@ -9597,61 +9608,97 @@ local sub sprite_update_cache_range(minkey as integer, maxkey as integer)
 	while pt
 		nextpt = sprcache.iter(iterstate, pt)
 
-		if pt->hash < minkey or pt->hash > maxkey then
+		if pt->key < minkey or pt->key > maxkey then
 			pt = nextpt
 			continue while
 		end if
 
-		'recall that the cache counts as a reference
-		if pt->p->refcount <> 1 then
-			dim sprtype as integer = pt->hash \ SPRITE_CACHE_MULT
-			dim record as integer = pt->hash mod SPRITE_CACHE_MULT
+		dim oldframes as Frame ptr = pt->p
 
-			dim newframe as Frame ptr
-			newframe = frame_load_uncached(sprtype, record)
-
-			if newframe <> NULL then
-				dim numframes as integer = newframe->arraylen
-				if newframe->arraylen <> pt->p->arraylen then
-					'Unfortunately, this error will occur if you change the number
-					'of frames in the spriteset editor. Only thing we can do about it is
-					'try to unload all affected Frames before updating the cache.
-					showbug "sprite_update_cache: number of frames changed for sprite " & pt->hash
-					numframes = small(numframes, pt->p->arraylen)
-				end if
-
-				'Transplant the data from the new Frame into the old Frame, so that no
-				'pointers need to be updated. pt (the SpriteCacheEntry) doesn't need to
-				'to be modified at all
-
-				dim refcount as integer = pt->p->refcount
-				dim wantmask as bool = (pt->p->mask <> NULL)
-				'Remove the host's previous organs (deletes SpriteSet)
-				frame_delete_members pt->p
-				'Insert the new organs
-				memcpy(pt->p, newframe, sizeof(Frame) * numframes)
-				'Having removed everything from the donor, dispose of it
-				Deallocate(newframe)
-				'Fix the bits we just clobbered
-				pt->p->cached = 1
-				pt->p->refcount = refcount
-				pt->p->cacheentry = pt
-				if pt->p->sprset then
-					'We DON'T do the same trick with SpriteSets.
-					'You mustn't hold onto SpriteSet ptrs when gfx are reloaded, they will become invalid!
-					'However, it's OK to keep an Animation ptr which has been ->referenced()
-
-					'Update cross-link
-					pt->p->sprset->frames = pt->p
-				end if
-				'Make sure we don't crash if we were using a mask (might be the wrong mask though)
-				if wantmask then frame_add_mask pt->p
-				'Increment version number
-				pt->p->generation += 1
-			end if
+		if oldframes->refcount <= 1 then
+			'Don't bother if not referenced outside the cache
+			sprite_delete_from_cache(pt)
 		else
-			'Don't bother if not in use
-			sprite_remove_cache(pt)
+			dim sprtype as integer = pt->key \ SPRITE_CACHE_MULT
+			dim record as integer = pt->key mod SPRITE_CACHE_MULT
+			dim newframes as Frame ptr
+			newframes = frame_load_uncached(sprtype, record)
+
+			if newframes = NULL then
+				'I guess it was deleted.
+				debuginfo "sprite_update_cache: Couldn't reload " & pt->key
+			elseif newframes->arraylen = oldframes->arraylen then
+				'If the number of frames haven't changed then we can modify the
+				'existing Frame array in-place. There are still a few non-sprite-slice
+				'uses of Frames in Game which will only reload if the frame count
+				'doesn't change. Most notably, tilesets.
+				'This also benefits Custom if multiple editors are open at once.
+
+				'Transplant the data from the new Frame array and SpriteSet into the
+				'old Frames and SpriteSet, so that no pointers need to be
+				'updated. pt (the SpriteCacheEntry) doesn't need to to be modified
+				'at all.
+
+				dim oldsprset as SpriteSet ptr = oldframes->sprset
+
+				'Move over any animations from the new SpriteSet to the old one.
+				if newframes->sprset <> NULL then
+					if oldsprset = NULL then
+						'OK then, just keep the new SpriteSet (but this should never happen)
+						oldsprset = newframes->sprset
+						newframes->sprset = NULL
+					else
+						if oldsprset->animset then
+							oldsprset->animset->dereference()
+						end if
+						oldsprset->animset = newframes->sprset->animset
+						newframes->sprset->animset = NULL
+					end if
+				end if
+
+				dim refcount as integer = oldframes->refcount
+				dim wantmask as bool = (oldframes->mask <> NULL)
+				'Remove the host's previous organs
+				oldframes->sprset = NULL  'Don't delete the SpriteSet
+				frame_delete_members oldframes
+				'Insert the new organs
+				memcpy(oldframes, newframes, sizeof(Frame) * newframes->arraylen)
+				'Having removed everything from the donor, dispose of it
+				if newframes->sprset then
+					delete newframes->sprset
+				end if
+				deallocate(newframes)
+				'Fix the bits we just clobbered
+				oldframes->cached = 1
+				oldframes->refcount = refcount
+				oldframes->cacheentry = pt
+				oldframes->sprset = oldsprset
+
+				'Make sure we don't crash if we were using a mask (might be the wrong mask though)
+				if wantmask then frame_add_mask oldframes
+				'Incrementing version number still needed so that 'scaled' Sprite slices reload
+				oldframes->generation += 1
+			else
+
+				'Let any existing users of oldframes keep using it. We remove it
+				'from the cache and replace it with the new one, and increment the
+				'generation so that Sprite slices reload and switch to newframes.
+
+				TRACE_CACHE(oldframes, "Removing from cache (frames changed), to be replaced")
+
+				'Decrements oldframes->refcount, but doesn't delete it, because we
+				'already checked there's another reference.
+				sprite_remove_from_cache(pt)
+
+				sprite_add_cache(sprtype, record, newframes)
+				TRACE_CACHE(newframes, "Caching, replacing previous version")
+
+				oldframes->generation += 1
+
+				'We could update oldframes->sprset (if it exists) to point to the newframes
+				'animations, but pretty pointless: you'd need to be using a Sprite slice
+				'to use them anyway.
+			end if
 		end if
 		pt = nextpt
 	wend
@@ -9670,6 +9717,16 @@ end sub
 'By default, remove everything. With an argument: remove specific sprite type,
 'or with two: remove a specific spriteset
 sub sprite_empty_cache(sprtype as SpriteType = sprTypeInvalid, setnum as integer = -1)
+	#if defined(IS_GAME) or defined(IS_CUSTOM)
+		'The clipboard may contain Sprite slices with sl->Animation references to SpriteSets,
+		'although they have sl->SpriteData->loaded = NO.
+		'Putting this here is ugly, but better to be sure it's called
+		slice_editor_delete_clipboard
+	#endif
+	#if defined(IS_CUSTOM)
+		spriteset_editor_delete_clipboard
+	#endif
+
 	if sprtype = sprTypeInvalid then
 		sprite_empty_cache_range(INT_MIN, INT_MAX)
 		if sprcacheB_used <> 0 or sprcache.numitems <> 0 then
@@ -9691,13 +9748,13 @@ sub sprite_debug_cache()
 	dim pt as SpriteCacheEntry ptr = NULL
 
 	while sprcache.iter(iterstate, pt)
-		debug pt->hash & " cost=" & pt->cost & " : " & frame_describe(pt->p)
+		debug pt->key & " cost=" & pt->cost & " : " & frame_describe(pt->p)
 	wend
 
 	debug "==sprcacheB== (used units = " & sprcacheB_used & "/" & SPRCACHEB_SZ & ")"
 	pt = sprcacheB.first
 	while pt
-		debug pt->hash & " cost=" & pt->cost & " : " & frame_describe(pt->p)
+		debug pt->key & " cost=" & pt->cost & " : " & frame_describe(pt->p)
 		pt = pt->cacheB.next
 	wend
 end sub
@@ -9708,7 +9765,7 @@ local sub sprite_to_B_cache(entry as SpriteCacheEntry ptr)
 
 	if sprite_cacheB_shrink(entry->cost) = NO then
 		'fringe case: bigger than the max cache size
-		sprite_remove_cache(entry)
+		sprite_delete_from_cache(entry)
 		exit sub
 	end if
 
@@ -9759,7 +9816,7 @@ local sub sprite_add_cache(sprtype as SpriteType, record as integer, p as Frame 
 	dim entry as SpriteCacheEntry ptr
 	entry = new SpriteCacheEntry
 
-	entry->hash = SPRITE_CACHE_KEY(sprtype, record)
+	entry->key = SPRITE_CACHE_KEY(sprtype, record)
 	entry->p = p
 	entry->cost = (p->w * p->h * p->arraylen) \ SPRCACHE_BASE_SZ + 1
 	'leave entry->cacheB unlinked
@@ -9769,7 +9826,7 @@ local sub sprite_add_cache(sprtype as SpriteType, record as integer, p as Frame 
 	p->cached = 1
 	p->refcount += 1
 	p->cacheentry = entry
-	sprcache.add(entry->hash, entry)
+	sprcache.add(entry->key, entry)
 
 	#ifdef COMBINED_SPRCACHE_LIMIT
 		sprcacheB_used += entry->cost
@@ -10176,7 +10233,7 @@ function frame_load_uncached(sprtype as SpriteType, record as integer) as Frame 
 				initialise_backcompat_pt_frameids ret, sprtype
 				sprset = new SpriteSet(ret)  'Attaches to ret
 				DEBUG_ANIM_CACHE(sprset->name = "SpriteSet " & sprtype & "_" & record)
-				sprset->fallback_set = spriteset_load_global_animations(sprtype)
+				sprset->get_animset->fallback_set = spriteset_load_global_animations(sprtype)
 			end if
 		end if
 	end if
@@ -10389,9 +10446,6 @@ sub frame_unload cdecl(ppfr as Frame ptr ptr)
 	*ppfr = 0
 	if fr = 0 then exit sub
 
-	dim byref cliprect as ClipState = get_cliprect()
-	if cliprect.frame = fr then cliprect.frame = 0
-
 	with *fr
 		if .refcount = FREEDREFC then
 			debug frame_describe(fr) & " already freed!"
@@ -10407,6 +10461,9 @@ sub frame_unload cdecl(ppfr as Frame ptr ptr)
 		'if cached, can free two references at once
 		if (.refcount - .cached) <= 0 then
 			TRACE_CACHE(fr, "now unused")
+
+			dim byref cliprect as ClipState = get_cliprect()
+			if cliprect.frame = fr then cliprect.frame = 0
 
 			if .arrayelem then
 				'this should not happen, because each arrayelem gets an extra refcount
@@ -10510,7 +10567,9 @@ function frame_is_valid(p as Frame ptr) as bool
 	if ret = NO then
 		showbug "Invalid sprite " & frame_describe(p)
 		'if we get here, we are probably doomed, but this might be a recovery
-		if p->cacheentry then sprite_remove_cache(p->cacheentry)
+		if p->cacheentry then
+			sprite_remove_from_cache(p->cacheentry)
+		end if
 	end if
 	return ret
 end function
@@ -10842,7 +10901,7 @@ end sub
 'Extended portions are filled with bgcol.
 'Can also be used to scroll (does not wrap around)
 'Turns an 8-bit Surface-backed Frame into a regular Frame, and works on 32-bit Surface-backed ones too.
-'Like all functions that return new Frames, the new Frame doesn't have a SpriteSet ptr.
+'Like all functions that return new Frames, the new Frame doesn't have a SpriteSet ptr (see copy_spriteset_data)
 function frame_resized(spr as Frame ptr, wide as integer, high as integer, shiftx as integer = 0, shifty as integer = 0, bgcol as integer = 0) as Frame ptr
 	dim as Frame ptr ret
 	dim with_surface32 as bool = (spr->surf <> NULL andalso spr->surf->format = SF_32bit)
@@ -11924,6 +11983,20 @@ function frameid_to_frame(frameset as Frame ptr, frameid as integer, exact as bo
 	return -1
 end function
 
+function num_frames_in_group(frameset as Frame ptr, group as integer) as integer
+	dim ret as integer = 0
+	for idx as integer = 0 to frameset->arraylen - 1
+		dim thisid as integer = frameset[idx].frameid
+		if thisid >= 100 * (group + 1) then
+			exit for
+		end if
+		if thisid >= 100 * group then
+			ret += 1
+		end if
+	next
+	return ret
+end function
+
 sub FrameGroupInfo.set(frameid as integer, name as string, default_num as integer)
 	this.frameid = frameid
 	this.name = name
@@ -11936,16 +12009,21 @@ constructor SpriteSet(frameset as Frame ptr)
 	BUG_IF(frameset->sprset, "Overwriting Frame->sprset ptr")
 	frames = frameset
 	frameset->sprset = @this
-	refcount = NOREFC
-	'No need to init the animations vector until one is created
+	'No need to create animset until needed
 end constructor
+
+' This destructor isn't responsible for deleting this.frames (see how it's called in sprite_update_cache_range)
+destructor SpriteSet()
+	animset_unload @animset
+end destructor
 
 function SpriteSet.num_frames() as integer
 	return frames->arraylen
 end function
 
-function SpriteSet.num_frame_groups() as integer
-	return 1 + frames[frames->arraylen - 1].frameid \ 100
+'Note that frame groups can be empty
+function SpriteSet.last_frame_group() as integer
+	return frames[frames->arraylen - 1].frameid \ 100
 end function
 
 function SpriteSet.frame_starts_group(frameidx as integer) as bool
@@ -11953,13 +12031,42 @@ function SpriteSet.frame_starts_group(frameidx as integer) as bool
 	return (frames[frameidx].frameid MOD 100) = 0
 end function
 
-'Create a SpriteSet for a Frame if it doesn't have one
+function SpriteSet.get_animset() as AnimationSet ptr
+	if animset = NULL then
+		animset = new AnimationSet
+		animset->reference()
+	end if
+	return animset
+end function
+
+'Create a SpriteSet for a Frame array if it doesn't have one.
 function spriteset_for_frame(fr as Frame ptr) as SpriteSet ptr
 	if fr->sprset then return fr->sprset
 	var ret = new SpriteSet(fr)
 	DEBUG_ANIM_CACHE(ret->name = "spriteset_for_frame")
 	return ret
 end function
+
+'Copy over (actually, share) animations.
+'When modifying a Frame array that has a SpriteSet, most functions,
+'e.g. frame_resized, don't copy the SpriteSet and you need this so the new
+'sprite can be animated or saved to .rgfx.
+'If from_sprite has animset=NULL, to_sprite's animset is not deleted.
+sub copy_spriteset_data(to_sprite as Frame ptr, from_sprite as Frame ptr)
+	dim from_ss as SpriteSet ptr = from_sprite->sprset
+	if from_ss andalso from_ss->animset then
+		dim to_ss as SpriteSet ptr = spriteset_for_frame(to_sprite)
+		animset_unload @to_ss->animset
+		to_ss->animset = from_ss->animset->reference()
+	end if
+end sub
+
+sub copy_spriteset_frameids(to_sprite as Frame ptr, from_sprite as Frame ptr)
+	BUG_IF(to_sprite->arraylen <> from_sprite->arraylen, "mismatched Frame arrays")
+	for idx as integer = 0 to to_sprite->arraylen - 1
+		to_sprite[idx].frameid = from_sprite[idx].frameid
+	next
+end sub
 
 ' Load the global animations for a sprtype from rgfx, or defaults if they don't exist.
 ' If loadinto=NULL, creates a new AnimationSet with .refcount=1, otherwise returns loadinto with its animations replaced.
@@ -11998,13 +12105,13 @@ function spriteset_load_global_animations(sprtype as SpriteType, rgfxdoc as Doc 
 	if ret then return ret->reference()
 
 	ret = spriteset_load_global_animations_uncached(sprtype, rgfxdoc)
+	DEBUG_ANIM_CACHE(? strprintf("load global_animations_cache(%d)", sprtype))
 	' ret has .refcount = 1
 	spriteset_global_animations_cache(sprtype) = ret
 	return ret->reference()
 end function
 
 ' Called when updating the sprite cache. Updates the AnimationSet of global animations in-place
-' (unlike normal SpriteSets, which don't need to be modified inplace).
 local sub update_spriteset_global_animations_cache(sprtype as SpriteType)
 	dim byref cached as AnimationSet ptr = spriteset_global_animations_cache(sprtype)
 
@@ -12019,8 +12126,7 @@ sub empty_spriteset_global_animations_cache()
 	for sprtype as SpriteType = lbound(spriteset_global_animations_cache) to ubound(spriteset_global_animations_cache)
 		var byref cached = spriteset_global_animations_cache(sprtype)
 		if cached andalso cached->refcount > 1 then
-			'TODO: switch to debugc errBug
-			showbug strprintf("global_animations_cache(%d) leak with refc=%d", sprtype, cached->refcount)
+			debugc errBug, strprintf("global_animations_cache(%d) leak with refc=%d", sprtype, cached->refcount)
 		end if
 		DEBUG_ANIM_CACHE(if cached then ? strprintf("empty_global_animations_cache(%d)", sprtype))
 		animset_unload @cached
@@ -12038,9 +12144,16 @@ function spriteset_load(ptno as SpriteType, record as integer) as SpriteSet ptr
 	return frameset->sprset
 end function
 
+' Decrement refcount and delete on zero.
+sub spriteset_unload(pp as SpriteSet ptr ptr)
+	if *pp then
+		(*pp)->dereference()
+		*pp = NULL
+	end if
+end sub
+
 ' Increment refcount.
 function SpriteSet.reference() as SpriteSet ptr
-	BUG_IF(refcount <> NOREFC, "Bad SpriteSet.refcount", @this)
 	if frames then
 		frame_reference frames
 	else
@@ -12054,16 +12167,16 @@ end function
 ' Exactly one of spriteset_unload/dereference or frame_unload should be called,
 ' since the two share the same refcount and lifetime.
 sub SpriteSet.dereference()
-	BUG_IF(refcount <> NOREFC, "Bad SpriteSet.refcount")
 	' A SpriteSet and its Frame array are never unloaded separately;
 	' frame_unload is responsible for all refcounting and unloading
 	dim temp as Frame ptr = frames
+	DEBUG_ANIM_CACHE(? "SpriteSet.dereference(" & name & "): new frames.refc=" & frames->refcount - 1)
 	frame_unload @temp
 end sub
 
 function SpriteSet.describe() as string
 	return "spriteset:<" & num_frames & " frames: 0x" & hexptr(frames) _
-	       & ", " & v_len(animations) & " animations>"
+	       & ", " & iif(animset, v_len(animset->animations), 0) & " animations>"
 end function
 
 

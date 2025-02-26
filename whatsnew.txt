@@ -1,10 +1,26 @@
 WHAT IS NEW?
 
-February 17 2025 [Jocoserious]
+Not Today [Jocoserious+1]
+  *** Plotscripting Features
+    * "set hero frame" and "set npc frame" support more than 2 frames [Ralph]
+
+  *** Bugfixes
+    * Fix rare crash (since fufluns) when entering the Global Text Strings
+      menu [Ralph]
+    * Update spriteset copy/pasting and full-set drawing to support adding/
+      deleting frames (without shredding the spriteset) [Ralph]
+
+
+February 20 2025 [Jocoserious]
 
   *** New Features
     * Shift Tile tileset animation command. Non-animated uses likely! [Ralph]
-    * Add Movement section to the slice editor for Velocity and Target [Ralph]
+    * Add Movement section to the slice editor for Velocity and Target.
+      And you can preview it with a new Preview Animations option. [Ralph]
+    * You can add (and delete) frames to Walkabout and Portrait spritesets!
+      Frames are arranged by ID in frame groups. All frames in a walkabout's
+      first four groups are used for walking animations, and you can add more
+      groups have no builtin use. [Ralph]
 
    * Battle Features
     * Attacks can set a tag if their targetting fails [James]
@@ -26,6 +42,11 @@ February 17 2025 [Jocoserious]
       not enough room in the inventory to hold whatever item needed to be
       removed from the slot to make room for the new item
 
+  *** Changes
+    * Removed a random delay of up to a few ticks before pacing NPCs bounced
+      off the hero [Ralph]
+    * The map editor no longer animates NPCs set to stand still [Ralph]
+
   *** Bugfixes
     * It is now possible to re-enable any tag disabled battle menu item,
       not just specific attacks [James]
@@ -44,6 +65,8 @@ February 17 2025 [Jocoserious]
       hero sprites [James]
     * Text box portrait boxes now size correctly to the portrait sprite
       instead of always being 50x50 [James]
+    * Out of range "set sprite frame" no longer shows a BUG message [Ralph]
+    * Fix crash when Quicksaving while pathfinding heroes [James]
 
 
 October 28 2024 [Ichorescent]

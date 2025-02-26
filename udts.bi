@@ -69,8 +69,10 @@ TYPE MenuDefItem EXTENDS BasicMenuItem
   handle    as integer ' Of type HandleType.MenuItem
   caption   as string  ' This is the caption as set in the menu editor/set menu item caption
   trueorder as DListItem(MenuDefItem) ' contains next, prev
-  t         as integer ' Item type; of type MenuItemType in-game, except in battles. You're free to assign own meaning.
-  sub_t     as integer ' Sub-type. Free to assign own meaning. See const.bi.
+  t         as integer ' Item type; if menu.game_menu=YES then this is a MenuItemType, or its
+                       ' extension BattleMenuItemType in battles.
+                       ' Otherwise it can be used for anything.
+  sub_t     as integer ' Sub-type. Free to assign own meaning. For game_menu=YES see const.bi.
   tag1      as integer
   tag2      as integer
   settag    as integer
@@ -94,9 +96,11 @@ END TYPE
 DECLARE_VECTOR_OF_TYPE(MenuDefItem, MenuDefItem)
 
 TYPE MenuDef
+  game_menu as bool = YES  ' Whether to interpret MenuDefItem.t as a MenuItemType (e.g. draw volume bars)
   record    as integer = -1
   handle    as integer     ' Of type HandleType.Menu
   name      as string
+  helpkey   as string      ' Mostly useful for MenuStack, but has no effect
   boxstyle  as integer
   textcolor as integer  'Default. 0=use uiMenuItem, >0 is color index, <0 is a UI color
   disabled_textcolor as integer  'Default. 0=use uiDisabledItem, >0 is color index, <0 is a UI color
@@ -1188,6 +1192,7 @@ TYPE SpriteSize
  name as string
  size as XYPair            'Default size
  fixed_size as bool        'Sizes other than the default not allowed
+ fixed_framecount as bool  'Frame counts other than the default not allowed
  frames as integer
  directions as integer
  paletted as bool          'Whether it should use a Palette16

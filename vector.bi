@@ -16,7 +16,7 @@
 
 'For each type from which you want to be able to form vectors from, add a 
 'DECLARE_VECTOR_OF_TYPE line somewhere (probably a header, make it this one
-'only if the type is a primitive one visible here), and a DEFINE_VECTOR_OF_TYPE
+'only if the type is a primitive one visible here), and a DEFINE_VECTOR_OF_POD_TYPE
 'or DEFINE_VECTOR_OF_CLASS or DEFINE_CUSTOM_VECTOR_TYPE line in some module
 '(vector.bas for anything declared here). If it is a vector of vectors,
 'instead use DEFINE_VECTOR_VECTOR_OF
@@ -189,6 +189,7 @@ end extern
   'Convention: always mark anything you return from a function as temporary!
   declare function v_ret overload alias "array_temp" (byval this as T vector) as T vector
 
+  'Length. Valid to call v_len on an uninitialised (NULL) vector
   declare function v_len overload alias "array_length" (byval this as T vector) as int32
 
   'Changes the length of a vector. Elements are deleted or constructed as needed
@@ -339,10 +340,9 @@ declare function cdecl array_create(byval tbl as typeTable, ...)
 
 '''''''''''''''''''''''''''''' Definition macros '''''''''''''''''''''''''''''''
 
-
 'For UDTs not having a [copy] constructor or destructor (which those containing strings have).
 'T is a type, and TID is T with spaces replaced with underscores.
-#MACRO DEFINE_VECTOR_OF_TYPE(T, TID)
+#MACRO DEFINE_VECTOR_OF_POD_TYPE(T, TID)
 
   private sub TID##_copyconstr_func cdecl (byval p1 as T ptr, byval p2 as T ptr)
     '(Only works for simple types not containing strings, because p1 contains garbage)
@@ -411,7 +411,9 @@ declare function cdecl array_create(byval tbl as typeTable, ...)
 
 
 #MACRO DEFINE_TYPE_TABLE(T, TID, CTOR_FUNC, COPYCTOR_FUNC, DTOR_FUNC, COMPARE_FUNC, INEQUAL_FUNC, HASH_FUNC, STR_FUNC, COPY_FUNC, DELETE_FUNC)
-  DIM type_table(TID) as TypeTable = ( _
+  'FB doesn't let you use function addresses in initialisers, considered non-constant
+  DIM type_table(TID) as TypeTable
+  type_table(TID) = Type( _
      sizeof(T),                     /'element_len'/          _
      PASS_BYVAL,                    /'passtype'/             _
      cast(FnCtor, CTOR_FUNC),       /'ctor'/                 _

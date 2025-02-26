@@ -61,9 +61,9 @@ DECLARE SUB archive_log_file(logfile as string, archivefile as string)
 #ENDIF
 
 
-DEFINE_VECTOR_OF_TYPE(TagRangeCheck, TagRangeCheck)
-DEFINE_VECTOR_OF_TYPE(TileMap ptr, TileMap_ptr)
-DEFINE_VECTOR_OF_TYPE(TilesetData ptr, TilesetData_ptr)
+DEFINE_VECTOR_OF_POD_TYPE(TagRangeCheck, TagRangeCheck)
+DEFINE_VECTOR_OF_POD_TYPE(TileMap ptr, TileMap_ptr)
+DEFINE_VECTOR_OF_POD_TYPE(TilesetData ptr, TilesetData_ptr)
 
 
 '============================== Global variables ============================='
@@ -159,9 +159,7 @@ REDIM gen(499)
 DIM gen_reld_doc as DocPtr
 
 'The global reload document acts as a parent to any misc reload data structures (e.g. hero data) kept in memory.
-DIM global_reload_doc as reload.DocPtr
-global_reload_doc = reload.CreateDocument()
-reload.SetRootNode(global_reload_doc, reload.CreateNode(global_reload_doc, ""))
+DIM global_reload_doc as Reload.DocPtr
 
 'Data caches
 DIM statnames() as string
@@ -747,6 +745,7 @@ FUNCTION notification (msg as zstring ptr, shrink as bool = NO) as KBScancode
  copypage vpage, holdpage
  basic_textbox msg, uilook(uiText), holdpage, , , shrink
  setvispage holdpage
+ setkeys
  DIM scancode as KBScancode = waitforanykey()
  freepage holdpage
  restore_previous_palette
@@ -3279,6 +3278,7 @@ SUB init_multichoice_menu(menu as MenuDef, state as MenuState, where as XYPair=X
  menu.suppress_borders = YES
  menu.itemspacing = 1
  IF popup_style THEN
+  'FIXME: if there is a scrollbar, the menu text will overlap it
   menu.bordersize = -6  'Total border (+8) is 2px
   menu.textalign = alignLeft
   state.drag_selecting = readmouse.buttons
@@ -7076,6 +7076,7 @@ SUB setup_sprite_sizes ()
   .size.x = 32
   .size.y = 40
   .frames = 8
+  .fixed_framecount = YES
   .directions = 4
   .paletted = YES
   .genmax = genMaxHeroPic
@@ -7085,6 +7086,7 @@ SUB setup_sprite_sizes ()
   .size.x = 34
   .size.y = 34
   .frames = 1
+  .fixed_framecount = YES
   .directions = 1
   .paletted = YES
   .genmax = genMaxEnemy1Pic
@@ -7094,6 +7096,7 @@ SUB setup_sprite_sizes ()
   .size.x = 50
   .size.y = 50
   .frames = 1
+  .fixed_framecount = YES
   .directions = 1
   .paletted = YES
   .genmax = genMaxEnemy2Pic
@@ -7103,6 +7106,7 @@ SUB setup_sprite_sizes ()
   .size.x = 80
   .size.y = 80
   .frames = 1
+  .fixed_framecount = YES
   .directions = 1
   .paletted = YES
   .genmax = genMaxEnemy3Pic
@@ -7121,6 +7125,7 @@ SUB setup_sprite_sizes ()
   .size.x = 24
   .size.y = 24
   .frames = 2
+  .fixed_framecount = YES
   .directions = 1
   .paletted = YES
   .genmax = genMaxWeaponPic
@@ -7130,6 +7135,7 @@ SUB setup_sprite_sizes ()
   .size.x = 50
   .size.y = 50
   .frames = 3
+  .fixed_framecount = YES
   .directions = 1
   .paletted = YES
   .genmax = genMaxAttackPic
@@ -7140,6 +7146,7 @@ SUB setup_sprite_sizes ()
   .size.y = 16
   .fixed_size = YES
   .frames = 16
+  .fixed_framecount = YES
   .directions = 1
   .paletted = YES
   .genmax = genMaxBoxBorder
@@ -7158,6 +7165,7 @@ SUB setup_sprite_sizes ()
   .size.x = 320
   .size.y = 200
   .frames = 1
+  .fixed_framecount = YES
   .directions = 1
   .paletted = NO
   .genmax = genNumBackdrops
@@ -7168,6 +7176,7 @@ SUB setup_sprite_sizes ()
   .size.x = 50  'This is the default size when adding a new Enemy
   .size.y = 50
   .frames = 1
+  .fixed_framecount = YES
   .directions = 1
   .paletted = YES
   .genmax = genMaxEnemyPic
@@ -7178,6 +7187,7 @@ SUB setup_sprite_sizes ()
   .size.h = 200
   .fixed_size = YES
   .frames = 1
+  .fixed_framecount = YES
   .directions = 1
   .paletted = NO
   .genmax = genMaxTile
@@ -7188,6 +7198,7 @@ SUB setup_sprite_sizes ()
   .size.h = 160 * 20
   .fixed_size = YES
   .frames = 1
+  .fixed_framecount = YES
   .directions = 1
   .paletted = NO
   .genmax = genMaxTile
@@ -7989,23 +8000,43 @@ FUNCTION wtog_ticks() as integer
  RETURN ret
 END FUNCTION
 
+'Number of frames a walkabout set has for a direction
+FUNCTION walkabout_walk_frames(fr as Frame ptr, direction as DirNum) as integer
+ RETURN num_frames_in_group(fr, direction)
+END FUNCTION
+
 'Value that wtog (for walking animation) loops up to:
 'ticks to complete a walking animation loop minus 1.
 'This is temporary until walking animations are handled by the animation system.
-FUNCTION max_wtog() as integer
- RETURN WALKFRAMES * wtog_ticks() - 1
+FUNCTION max_wtog(fr as Frame ptr, direction as DirNum) as integer
+ RETURN large(0, walkabout_walk_frames(fr, direction) * wtog_ticks() - 1)
+END FUNCTION
+
+'Wrapper for the walkabout container slice
+FUNCTION max_wtog(walkabout_sl as Slice ptr, direction as DirNum) as integer
+ DIM sprsl as Slice ptr
+ IF walkabout_sl THEN
+  sprsl = LookupSlice(SL_WALKABOUT_SPRITE_COMPONENT, walkabout_sl, slSprite)
+ END IF
+ IF sprsl ANDALSO sprsl->SpriteData->loaded THEN
+  RETURN max_wtog(sprsl->SpriteData->img.sprite, direction)
+ END IF
 END FUNCTION
 
 FUNCTION wtog_to_frame(wtog as integer) as integer
- 'The reason for this wrapper is to ensure frame numbers don't go out of bounds if
- 'you change genTicksPerWalkFrame while live previewing (or even "write general")
- 'or loading an old save
- RETURN small(wtog \ wtog_ticks(), WALKFRAMES - 1)
+ 'The reason for this wrapper was to ensure frame numbers don't go out of bounds
+ 'but it no longer matters
+ RETURN wtog \ wtog_ticks()
 END FUNCTION
 
 '==========================================================================================
 '                                   global_reload_doc
 '==========================================================================================
+
+SUB setup_global_reload_doc ()
+ global_reload_doc = reload.CreateDocument()
+ reload.SetRootNode(global_reload_doc, reload.CreateNode(global_reload_doc, ""))
+END SUB
 
 SUB cleanup_global_reload_doc ()
  DIM rnod as reload.NodePtr = reload.DocumentRoot(global_reload_doc)
@@ -8595,7 +8626,7 @@ SUB set_gen_bool(nodepath as zstring ptr, byval v as bool)
  'This changes the node, but does not call write_general_reld()
  DIM gen_root as NodePtr = get_general_reld()
  DIM node as NodePtr = NodeByPath(gen_root, nodepath, YES)
- SetContent(node, IIF(v, 1, 0))
+ SetContentBool(node, v)
 END SUB
 
 SUB set_gen_int(nodepath as zstring ptr, byval v as integer)

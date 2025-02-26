@@ -288,7 +288,6 @@ DECLARE SUB slice_editor_refresh (byref ses as SliceEditState, edslice as Slice 
 DECLARE SUB slice_editor_refresh_append (byref ses as SliceEditState, id as SliceMenuItemID, caption as string, sl as Slice ptr = 0, indent as integer = 0, icon_group_x as integer = 0)
 DECLARE SUB slice_editor_refresh_recurse (ses as SliceEditState, byref indent as integer, edslice as Slice Ptr, sl as Slice Ptr, hidden_slice as Slice Ptr)
 DECLARE SUB slice_editor_invalidate_ptrs (byref ses as SliceEditState)
-DECLARE SUB slice_edit_updates (sl as Slice ptr, dataptr as any ptr)
 DECLARE SUB slice_edit_detail (byref ses as SliceEditState, edslice as Slice ptr, sl as Slice Ptr)
 DECLARE SUB slice_edit_detail_keys (byref ses as SliceEditState, edslice as Slice ptr, byref state as MenuState, sl as Slice Ptr, rules() as EditRule, usemenu_flag as bool)
 DECLARE SUB slice_editor_xy (xy1 as XYPair ptr, xy2 as XYPair ptr = NULL, focussl as Slice ptr, rootsl as Slice ptr, byref show_ants as bool, ctrl_msg as string = "", helpkey as string = "sliceedit_xy")
@@ -315,7 +314,7 @@ DECLARE SUB preview_SelectSlice_parents (byval sl as Slice ptr)
 DECLARE SUB slice_editor_settings_menu(byref ses as SliceEditState, byref edslice as Slice ptr, in_detail_editor as bool)
 DECLARE SUB slice_editor_save_settings(byref ses as SliceEditState)
 DECLARE SUB slice_editor_load_settings(byref ses as SliceEditState)
-DECLARE FUNCTION collection_context(edslice as Slice ptr) as SliceCollectionContext ptr
+DECLARE FUNCTION collection_context(edslice as Slice ptr, expect_exists as bool = NO) as SliceCollectionContext ptr
 DECLARE SUB slice_editor_preview_animations(byref ses as SliceEditState, slice_to_animate as Slice ptr = NULL)
 
 DECLARE SUB edkit_slice_detail_menu (sl as Slice ptr, ses_draw_root as Slice ptr)
@@ -430,7 +429,7 @@ SUB CollectionPickerMenu.update ()
  collectionsl = LoadSliceCollection(SL_COLLECT_USERDEFINED, id)
  IF collectionsl THEN
   SetSliceParent collectionsl, draw_root
-  VAR context = collection_context(collectionsl)
+  VAR context = collection_context(collectionsl, YES)
   IF context THEN name = context->name
  END IF
 
@@ -762,7 +761,7 @@ SUB slice_editor_main (byref ses as SliceEditState, byref edslice as Slice ptr, 
   END IF
 
   IF state.need_update = NO ANDALSO ses.focus = focusMenu ANDALSO ses.slicemenu(state.pt).id = mnidCollectionName THEN
-   VAR context = collection_context(edslice)
+   VAR context = collection_context(edslice, YES)
    IF context ANDALSO strgrabber(context->name) THEN state.need_update = YES
   END IF
 
@@ -1328,7 +1327,7 @@ END FUNCTION
 
 'Get the SliceCollectionContext in which shared data for this slice collection is stored
 '(edslice may be a subtree, so we search up the tree)
-FUNCTION collection_context(edslice as Slice ptr) as SliceCollectionContext ptr
+FUNCTION collection_context(edslice as Slice ptr, expect_exists as bool = NO) as SliceCollectionContext ptr
  DIM sl as Slice ptr = edslice
  WHILE sl
   IF *sl->Context IS SliceCollectionContext THEN
@@ -1336,7 +1335,9 @@ FUNCTION collection_context(edslice as Slice ptr) as SliceCollectionContext ptr
   END IF
   sl = sl->Parent
  WEND
- debug "Can't find a SliceCollectionContext"
+ IF expect_exists THEN
+  debugc errBug, "Can't find a SliceCollectionContext"
+ END IF
  RETURN NULL
 END FUNCTION
 
@@ -1650,7 +1651,7 @@ FUNCTION slice_editor_insert_import(byref ses as SliceEditState, edslice as Slic
     'The SliceCollectionContext marks which the collection it was loaded from,
     'Which is actually probably useful, but also duplicates the collection name,
     'so better not save it, at least for now.
-    VAR collcontext = collection_context(ret)
+    VAR collcontext = collection_context(ret, YES)
     IF collcontext THEN collcontext->dont_save = YES
    END IF
    RETURN ret
@@ -1801,6 +1802,10 @@ FUNCTION slice_editor_save_when_leaving(byref ses as SliceEditState, edslice as 
  RETURN YES
 END FUNCTION
 
+SUB slice_editor_delete_clipboard()
+  IF clipboard THEN DeleteSlice @clipboard
+END SUB
+
 'Copy a slice 'tocopy' to the internal clipboard, or if NULL, the whole tree (edslice)
 SUB slice_editor_copy(byref ses as SliceEditState, byval tocopy as Slice Ptr, byval edslice as Slice Ptr)
  IF clipboard THEN DeleteSlice @clipboard
@@ -1828,7 +1833,9 @@ SUB slice_editor_paste(byref ses as SliceEditState, byval putbefore as Slice Ptr
   DIM child as Slice Ptr
   child = clipboard->LastChild
   WHILE child
-   DIM copied as Slice Ptr = CloneSliceTree(child)
+   'Perform a deep copy of slice-specific animations, because that will happen anyway when the collection
+   'is saved to file and loaded. To make slices share animations we need an explicit, saveable mechanism.
+   DIM copied as Slice Ptr = CloneSliceTree(child, , , , YES)
    IF ses.privileged = NO THEN
     slice_editor_forbidden_search copied, ses.specialcodes(), forbidden_error, YES  'clean=YES
    END IF
@@ -2070,6 +2077,8 @@ SUB slice_edit_updates (sl as Slice ptr, dataptr as any ptr)
   IF dataptr = @.SliceType THEN
    .CoverChildren AND= SliceLegalCoverModes(sl)
   END IF
+
+  'When adding anything here, may want to call this sub from set_slice_property
 
  END WITH
 END SUB
@@ -2342,8 +2351,16 @@ SUB slice_edit_detail_keys (byref ses as SliceEditState, edslice as Slice ptr, b
 #IFDEF IS_CUSTOM
  IF rule.group AND slgrEDITANIMATIONS THEN
   IF enter_space_click(state) THEN
-   ' Initialise a slice-specific AnimationSet. It won't actually be saved if empty.
+   ' GetAnimations: Initialise a slice-specific AnimationSet. It won't actually be saved if empty.
    animations_editor sl, sl->GetAnimations(YES), acHeroSprite/'FIXME'/
+   IF sl->SliceType = slSprite THEN
+    WITH *sl->SpriteData
+     IF .loaded ANDALSO in_bound(.spritetype, sprTypeFirstLoadable, sprTypeLastPickable) THEN  'Not sprTypeFrame
+      rgfx_save_spriteset .original_img, .spritetype, .record
+      rgfx_save_global_animations .spritetype
+     END IF
+    END WITH
+   END IF
    state.need_update = YES
   END IF
  END IF
@@ -3471,7 +3488,7 @@ FUNCTION edit_slice_lookup_codes(byref ses as SliceEditState, byval sl as Slice 
   append_simplemenu_item menu, "editor_ssed_set_info", , , -408
   append_simplemenu_item menu, "editor_ssed_set", , , -409
   append_simplemenu_item menu, "editor_ssed_palette_root", , , -410
-  append_simplemenu_item menu, "editor_ssed_info_text_right", , , -411
+  append_simplemenu_item menu, "editor_ssed_tooltip_text", , , -411
   append_simplemenu_item menu, "editor_ssed_caption_text", , , -412
   append_simplemenu_item menu, "editor_enemy_sprite", , , -500
   append_simplemenu_item menu, "root", , , -100000

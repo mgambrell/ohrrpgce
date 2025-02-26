@@ -192,7 +192,7 @@
 
 using Reload.Ext
 
-DEFINE_VECTOR_OF_TYPE(SubmenuState, SubmenuState)
+DEFINE_VECTOR_OF_POD_TYPE(SubmenuState, SubmenuState)
 
 
 '===============================================================================
@@ -475,7 +475,7 @@ sub EditorKit.write_value()
 			case writerNodeInt
 				SetContent(.node, outvalue)
 			case writerNodeBool
-				SetContent(.node, iif(outvalue, 1, 0))
+				SetContentBool(.node, outvalue)
 			case writerNodeStr
 				SetContent(.node, valuestr)
 			case writerNodeFloat
@@ -875,7 +875,7 @@ end sub
 ' Set which help page is opened by F1 while the current menu item is selected
 ' Also sets a default tooltip "F1 for details" while selected
 sub EditorKit.set_helpkey(key as zstring ptr)
-	if process then
+	if process or refresh then
 		base.helpkey = *key
 		cur_item.helpkey = *key
 	end if
@@ -1346,6 +1346,8 @@ end function
 
 function EditorKit.edit_int(byref datum as integer, min as integer, max as integer) as bool
 	val_int datum
+	cur_item.range_min = min
+	cur_item.range_max = max
 	if process then
 		edited or= intgrabber(value, min, max)
 		if edited then write_value
@@ -1357,6 +1359,8 @@ end function
 ' actually wanting to use them anywhere)
 function EditorKit.edit_int(byref datum as longint, min as integer, max as integer) as bool
 	val_int datum
+	cur_item.range_min = min
+	cur_item.range_max = max
 	if process then
 		edited or= intgrabber(value, min, max)
 		if edited then write_value
@@ -1366,6 +1370,8 @@ end function
 
 function EditorKit.edit_int(byref datum as ubyte, min as integer, max as integer) as bool
 	val_int datum
+	cur_item.range_min = min
+	cur_item.range_max = max
 	if process then
 		edited or= intgrabber(value, min, max)
 		if edited then write_value
@@ -1418,6 +1424,8 @@ end function
 
 function EditorKit.edit_float(byref datum as single, min as double, max as double, sigfigs as integer = 4, is_percent as bool = YES, cyclic as bool = NO) as bool
 	val_float datum, is_percent
+	cur_item.range_min_float = min
+	cur_item.range_max_float = max
 	if process then
 		edited or= percent_grabber(valuefloat, "", min, max, sigfigs, YES, is_percent)
 		if edited then write_value
@@ -1449,6 +1457,8 @@ end function
 ' Backspace/Delete on value <= 0 goes to -1.
 function EditorKit.edit_zint(byref datum as integer, min as integer, max as integer) as bool
 	val_int datum
+	cur_item.range_min = min
+	cur_item.range_max = max
 	if process then
 		value += 1
 		edited or= zintgrabber(value, min, max)

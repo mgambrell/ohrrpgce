@@ -322,6 +322,7 @@ Type HashTable
   key_delete as FnDelete      'May be NULL
   key_length as integer       'May be 0. Needed only if key_hash is NULL and not using integer keys
   key_is_integer as bool      'Whether key_type is integer, rather than using ptrs as keys
+  key_is_opaque_ptr as bool   'keys are pointers which should be treated as integers (intptr_t)
   value_copy as FnCopy        'May be NULL
   value_delete as FnDelete    'May be NULL
   value_is_string as bool     'value_type is type_table(string)
@@ -334,6 +335,7 @@ Type HashTable
 
   'Use this constructor if either keys and values are just integers or opaque ptrs,
   'or if you want to set the .key_* and .value_* members yourself.
+  'Set .key_is_opaque_ptr=YES to allow pointers as keys compared by value.
   'E.g. set tbl.value_delete = @DEALLOCATE to free values when they are removed.
   'tablesize should be manually adjusted to something suitable, because it does not grow automatically.
   'If there are N items in the table, then time to lookup a key will be on average N/tablesize.
@@ -1072,6 +1074,7 @@ declare function split_str_int(z as zstring ptr, byref action as string, byref a
 declare function str2bool(q as string, default as integer = NO) as integer
 declare function rotascii (s as string, o as integer) as string
 declare function titlecase(word as string) as string
+declare function untitlecase(word as string) as string
 
 declare function escape_string(s as string, chars as string) as string
 declare function replacestr overload (byref buffer as string, replacewhat as string, replacefunc as FnReplacement, arg as any ptr, maxtimes as integer = -1, caseinsensitive as bool = NO) as integer

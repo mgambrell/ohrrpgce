@@ -193,8 +193,8 @@ WITH *ScreenSlice
  .Height = get_resolution().h
 END WITH
 
-DEFINE_VECTOR_OF_TYPE(Slice ptr, Slice_ptr)
-DEFINE_VECTOR_OF_TYPE(SliceContext ptr, SliceContext_ptr)
+DEFINE_VECTOR_OF_POD_TYPE(Slice ptr, Slice_ptr)
+DEFINE_VECTOR_OF_POD_TYPE(SliceContext ptr, SliceContext_ptr)
 
 'Built up while inside DrawSlice, otherwise NULL.
 'A stack of all the non-NULL .Context ptrs for all the ancestors of the current slice.
@@ -459,7 +459,7 @@ FUNCTION SliceLookupCodename (byval code as integer, use_default as bool = YES) 
   CASE SL_EDITOR_SSED_SET_INFO: RETURN "editor ssed set info"
   CASE SL_EDITOR_SSED_SET: RETURN "editor ssed set"
   CASE SL_EDITOR_SSED_PALETTE_ROOT: RETURN "editor ssed palette root"
-  CASE SL_EDITOR_SSED_INFO_TEXT_RIGHT: RETURN "editor ssed info text right"
+  CASE SL_EDITOR_SSED_TOOLTIP_TEXT: RETURN "editor ssed tooltip text"
   CASE SL_EDITOR_SSED_CAPTION_TEXT: RETURN "editor ssed caption text"
   CASE SL_EDITOR_ENEMY_SPRITE: RETURN "editor enemy sprite"
   CASE SL_ROOT: RETURN "root"
@@ -1758,7 +1758,7 @@ Sub NewDrawTextSlice(byval sl as Slice ptr, byval p as integer, col as integer)
   dim charpos as StringCharPos
   find_text_char_position(@charpos, text, dat->insert, wide, fontnum)
   dim insert_pos as XYPair = sl->ScreenPos + charpos.pos
-  rectangle(vpages(p), XY_WH(insert_pos, charpos.size), uilook(uiHighlight + dat->insert_tog))
+  rectangle(vpages(p), XY_WH(insert_pos, charpos.size), uilook(eduiTextCursor + dat->insert_tog))
  end if
 
  textcolor col, ColorIndex(dat->bgcol)
@@ -2118,8 +2118,8 @@ Sub DrawSpriteSlice(byval sl as Slice ptr, byval page as integer)
   end if
 
   if .frame >= spr->arraylen or .frame < 0 then
-   'Shouldn't happen, as LoadSpriteSliceImage clamps to spr->arraylen
-   showbug "out of range frame " & .frame & " for slice " & SlicePath(sl)
+   'Shouldn't happen, as LoadSpriteSliceImage, ChangeSpriteSlice, LoadSpriteSlice, set_frame[id] all ensure validity
+   debugc errBug, "out of range frame " & .frame & " for slice " & SlicePath(sl)
    .frame = 0
   end if
   'Only a single frame is scaled and cached
@@ -2296,7 +2296,7 @@ Sub SetSpriteToFrame(sl as Slice ptr, fr as Frame ptr, pal16 as Palette16 ptr = 
  end with
 End Sub
 
-'Cloning sprTypeFrame sprite slices does not work!
+'Zoom and rotate settings aren't cloned!
 Sub CloneSpriteSlice(byval sl as Slice ptr, byval cl as Slice ptr)
  if sl = 0 or cl = 0 then debug "CloneSpriteSlice null ptr": exit sub
  dim dat as SpriteSliceData Ptr = sl->SpriteData
@@ -2358,6 +2358,8 @@ Sub SaveSpriteSlice(byval sl as Slice ptr, byval node as Reload.Nodeptr)
   if dat->paletted then
    SavePropAlways node, "pal", dat->pal
   end if
+  'We prefer to load frameid, but still save frame for older versions
+  SaveProp node, "frameid", dat->get_frameid(sl)
   SaveProp node, "frame", dat->frame
  end if
  SaveProp node, "fliph", dat->flipHoriz
@@ -2387,31 +2389,45 @@ Sub LoadSpriteSlice (byval sl as Slice ptr, byval node as Reload.Nodeptr)
  dim dat as SpriteSliceData Ptr
  dat = sl->SliceData
  dat->spritetype = LoadProp(node, "sprtype")
- if dat->spritetype < sprTypeFirst or dat->spritetype > sprTypeLastPickable then
+ if dat->spritetype < sprTypeFirst orelse dat->spritetype > sprTypeLastPickable then
   reporterr "LoadSpriteSlice: Unknown type " & dat->spritetype, serrError
+  dat->spritetype = sprTypeFirst
+ elseif dat->spritetype >= sprTypeFirstLoadable then  'not sprTypeFrame
+  dat->record    = LoadProp(node, "rec")
+  with sprite_sizes(dat->spritetype)
+   if dat->record < 0 orelse dat->record > .lastrec then
+    reporterr "LoadSpriteSlice: Invalid " & .name & " spriteset " & dat->record, serrError
+    dat->record = 0
+   end if
+  end with
  end if
- dat->record     = LoadProp(node, "rec")
  dat->paletted   = sprite_sizes(dat->spritetype).paletted
  dat->pal        = LoadProp(node, "pal", -1)
- dat->frame      = LoadProp(node, "frame")
- dat->flipHoriz  = LoadProp(node, "fliph")
- dat->flipVert   = LoadProp(node, "flipv")
+ dat->flipHoriz  = LoadPropBool(node, "fliph")
+ dat->flipVert   = LoadPropBool(node, "flipv")
  dat->trans      = LoadPropBool(node, "trans", YES)
  dat->scaled     = LoadPropBool(node, "scaled")
  dat->dissolving = LoadPropBool(node, "dissolving")
  dat->d_type     = bound(LoadProp(node, "d_type"), 0, dissolveTypeMax)
- dat->d_time     = LoadProp(node, "d_time")
+ dat->d_time     = large(LoadProp(node, "d_time"), -1)
  dat->d_tick     = bound(LoadProp(node, "d_tick"), -1, large(dat->d_time + 1, 0))
  dat->d_back     = LoadPropBool(node, "d_back")
  dat->d_auto     = LoadPropBool(node, "d_auto")
  LoadDrawOpts dat->drawopts, node
+ 'Load frameid if it exists, or fallback to frame in old files
+ '(If the frameid doesn't exist, we shouldn't fallback to loading "frame")
+ dim frameid as integer = LoadProp(node, "frameid", -1)
+ if frameid <> -1 then
+  dat->set_frameid(sl, frameid)
+ else
+  dat->set_frame(sl, LoadProp(node, "frame"))
+ end if
 
  if dat->spritetype = sprTypeFrame then
   dat->load_asset_as_32bit = LoadPropBool(node, "32bit_asset")
   SetSpriteToAsset sl, LoadPropStr(node, "asset")
- else
-  'Load the sprite already in order to ensure the size is correct. This could be
-  'skipped, since the slice was probably saved with the correct size...
+ elseif dat->loaded = NO then  'set_frame[id] already loads it
+  'Load the sprite already in order to ensure the size is correct
   LoadSpriteSliceImage sl
  end if
 End Sub
@@ -2472,7 +2488,12 @@ Sub ChangeSpriteSlice(byval sl as Slice ptr,_
    end if
   end if
   if frame >= 0 andalso .frame <> frame then
-   .frame = frame
+   if .loaded then
+    .set_frame(sl, frame)
+   else
+    'LoadSpriteSliceImage will check it
+    .frame = frame
+   end if
    'Only a single frame is scaled and cached, so need to reload when it changes
    if .scaled then .loaded = NO
   end if
@@ -2513,7 +2534,7 @@ Sub SpriteSliceUpdate(sl as Slice ptr)
     .flipVert = NO
    end if
   else
-   .record = small(.record, sprite_sizes(.spritetype).lastrec)
+   .record = bound(.record, 0, sprite_sizes(.spritetype).lastrec)
 
    'Reload the sprite image (and palette) immediately, so that the size of the slice
    'and number of frames are correct. This will bound .frame
@@ -2589,7 +2610,8 @@ Sub DissolveSpriteSlice(byval sl as Slice ptr, byval dissolve_type as integer, b
   '(Note that the bounds checking here and in LoadSpriteSlice is bypassed by the slice editor)
   .d_type = bound(dissolve_type, 0, dissolveTypeMax)
   .d_time = over_ticks
-  'Allow -1 (when backwards) and length+1 so that can set Vaporise and Phase Out animations to a totally blank state.
+  'Allow -1 (for when backwards) and length+1 so that can you set Vaporize animation to a totally blank state:
+  'it takes one tick longer than the others. (The slice editor allows larger values...)
   .d_tick = bound(start_tick, -1, large(over_ticks + 1, 0))
   .d_back = backwards <> 0
   .d_auto = auto_animate <> 0
@@ -4052,7 +4074,7 @@ Function Slice.GetAnimations(slice_specific as bool = NO) as AnimationSet ptr
    '(In future, animations can also be saved to .slice files)
    if this.SpriteData->loaded = NO then LoadSpriteSliceImage @this
    'Use original_img since if scaled=YES, animations won't be copied to img.sprite
-   this.Animations = spriteset_for_frame(this.SpriteData->original_img)->reference()
+   this.Animations = spriteset_for_frame(this.SpriteData->original_img)->get_animset()->reference()
   end if
  end if
 
@@ -4602,7 +4624,9 @@ End Sub
 'Duplicate a slice and, if recurse=YES, the whole tree. The resulting clone is parentless.
 'copy_special: copy Special slices and lookup codes. .Protect bit not copied.
 'find_slice: if find_slice is cloned, this variable is replaced with the new Slice ptr.
-Function CloneSliceTree(byval sl as Slice ptr, recurse as bool = YES, copy_special as bool = YES, byref find_slice as Slice ptr = NULL) as Slice ptr
+'duplicate_animations: perform a deep copy of slice-specific Animations. This is normally
+'  unwanted unless the animations of the clone will be edited independently.
+Function CloneSliceTree(byval sl as Slice ptr, recurse as bool = YES, copy_special as bool = YES, byref find_slice as Slice ptr = NULL, duplicate_animations as bool = NO) as Slice ptr
  if sl = NULL orelse sl->SliceType = slMap then return NULL
  dim clone as Slice Ptr
  '--Create another slice of the same type
@@ -4660,7 +4684,11 @@ Function CloneSliceTree(byval sl as Slice ptr, recurse as bool = YES, copy_speci
    v_copy .ExtraVec, sl->ExtraVec
   end if
   if sl->Animations then
-   .Animations = sl->Animations->reference()
+   if duplicate_animations andalso sl->Animations->slice_specific then
+    .Animations = sl->Animations->duplicate()
+   else
+    .Animations = sl->Animations->reference()
+   end if
   end if
   if sl->AnimState then
    .AnimState = new AnimationState(*sl->AnimState)
@@ -4674,7 +4702,7 @@ Function CloneSliceTree(byval sl as Slice ptr, recurse as bool = YES, copy_speci
  dim ch_slice as Slice Ptr = sl->FirstChild
  dim ch_clone as Slice Ptr
  do while ch_slice <> 0
-  ch_clone = CloneSliceTree(ch_slice, YES, copy_special, find_slice)
+  ch_clone = CloneSliceTree(ch_slice, YES, copy_special, find_slice, duplicate_animations)
   if ch_clone then SetSliceParent ch_clone, clone
   ch_slice = ch_slice->NextSibling
  loop

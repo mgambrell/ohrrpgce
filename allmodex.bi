@@ -671,6 +671,8 @@ declare function frame_load_mxs(filen as string, record as integer) as Frame ptr
 declare function frameset_to_node(fr as Frame ptr, parent as Reload.NodePtr) as Reload.NodePtr
 declare function frameset_from_node(node as Reload.NodePtr) as Frame ptr
 declare function frameid_to_frame(frameset as Frame ptr, frameid as integer, exact as bool = NO) as integer
+declare function num_frames_in_group(frameset as Frame ptr, group as integer) as integer
+
 extern "C"
 declare function frame_reference (p as Frame ptr) as Frame ptr
 declare sub frame_assign(ptr_to_replace as Frame ptr ptr, new_value as Frame ptr)
@@ -754,27 +756,32 @@ declare function masterpal_to_gfxpal(pal() as RGBcolor) as RGBPalette ptr
 '(by frame_freemem), although a Frame array might not have a SpriteSet until
 'spriteset_for_frame() is called.
 'SpriteSet references need to be managed using ->reference() and spriteset_unload()
-Type SpriteSet Extends AnimationSet
+Type SpriteSet
 	'refcount is set to NOREFC and references are instead tracked with frames->refcount
 
 	frames as Frame ptr    'Never NULL. Does NOT count as a reference
+	animset as AnimationSet ptr  'May be NULL; call get_animset() to initialize
 
-	'This is private! Should be called only by frame_load or spriteset_for_frame
+	'These are private! Constructor should be called only by frame_load or spriteset_for_frame
 	declare constructor(frameset as Frame ptr)
+	declare destructor()
 
-	declare virtual function reference() as SpriteSet ptr override
+	declare function reference() as SpriteSet ptr
 	'Recommended to call the spriteset_unload() wrapper instead, to zero out the pointer
-	declare virtual sub dereference() override
+	declare sub dereference()
 
+	declare function get_animset() as AnimationSet ptr
 	declare function num_frames() as integer
-	declare function num_frame_groups() as integer
+	declare function last_frame_group() as integer
 	declare function frame_starts_group(frameidx as integer) as bool
 	declare function describe() as string
 End Type
 
 declare function spriteset_load(ptno as SpriteType, record as integer) as SpriteSet ptr
-declare sub spriteset_unload alias "ANIMSET_UNLOAD" (ss as SpriteSet ptr ptr)
+declare sub spriteset_unload(ss as SpriteSet ptr ptr)
 declare function spriteset_for_frame(fr as Frame ptr) as SpriteSet ptr
+declare sub copy_spriteset_data(to_sprite as Frame ptr, from_sprite as Frame ptr)
+declare sub copy_spriteset_frameids(to_sprite as Frame ptr, from_sprite as Frame ptr)
 declare function spriteset_load_global_animations(sprtype as SpriteType, rgfxdoc as Reload.DocPtr = NULL) as AnimationSet ptr
 
 declare function frame_array_to_vector(frames as Frame ptr) as Frame ptr vector

@@ -198,6 +198,8 @@ scratp = @scrat(0)
 scriptp = @script(0)
 retvalsp = @retvals(0)
 
+setup_global_reload_doc
+
 
 '======================== Setup directories & debug log =======================
 ' This is almost identical to startup code in Custom; please don't unnecessarily diverge.
@@ -1073,10 +1075,11 @@ SUB reset_game_final_cleanup()
  gam.ingame = NO
  save_game_config 'Call before cleaning up everything.
 
-#IFDEF __FB_JS__
-web_unmount_persistent_storage(savedir)
-web_unmount_persistent_storage(prefsdir)
-#ENDIF
+ #IFDEF __FB_JS__
+  'Are there no temp files we should cleanup first?
+  web_unmount_persistent_storage(savedir)
+  web_unmount_persistent_storage(prefsdir)
+ #ENDIF
 
  ' This sticky bit is cleared when returning to the file browser
  IF LEN(gam.want.rungame) = 0 THEN gam.shared_fullscreen_setting = NO
@@ -1593,7 +1596,7 @@ SUB update_heroes(force_step_check as bool=NO)
  'Walk animations
  FOR whoi as integer = 0 TO active_party_slots() - 1
   IF didgo(whoi) ORELSE prefbit(42) THEN  '"Heroes use Walk in Place animation while idle"
-   loopvar herow(whoi).wtog, 0, max_wtog()
+   loopvar herow(whoi).wtog, 0, max_wtog(herow(whoi).sl, herodir(whoi))
   END IF
  NEXT whoi
 
@@ -1810,6 +1813,7 @@ SUB update_npcs ()
      npc(o).z = heroz(0) 'NPC Z value is matched to the hero in update_vehicle_state for simplicity, but
                          'this is here in case of setheroz or setnpcz or loaded map state or other funkiness happens
      npc(o).dir = herodir(0)
+     'FIXME: this is definitely not going to work properly for more frames
      npc(o).wtog = herow(0).wtog
     END IF
    ELSE
@@ -1900,7 +1904,7 @@ SUB npcmove_meandering_avoid(npci as NPCInst)
 END SUB
 
 SUB npcmove_walk_in_place(npci as NPCInst)
- loopvar npci.wtog, 0, max_wtog()
+ loopvar npci.wtog, 0, max_wtog(npci.sl, npci.dir)
 END SUB
 
 SUB npcmove_direct_chase(npci as NPCInst, npcdata as NPCType)
@@ -2207,7 +2211,7 @@ FUNCTION perform_npc_move(byval npcnum as NPCIndex, npci as NPCInst, npcdata as 
  DIM finished_step as bool = NO
  'Inconsistency: NPCs advance walk frame when they try to walk into a wall (which must be
  'preserved) but heroes don't (probably doesn't matter)
- loopvar npci.wtog, 0, max_wtog()
+ loopvar npci.wtog, 0, max_wtog(npci.sl, npci.dir)
  DIM hit_something as bool = NO
  IF movdivis(npci.xgo) OR movdivis(npci.ygo) THEN
   'This check only happens when the NPC is about to start moving to a new tile
@@ -2216,15 +2220,10 @@ FUNCTION perform_npc_move(byval npcnum as NPCIndex, npci as NPCInst, npcdata as 
    npci.xgo = 0
    npci.ygo = 0
    IF collision_type = collideHero THEN
-    '--a random 0 to max_wtog() tick delay before pacing enemies bounce off hero
-    'James: "This delay feels like something I must have done by mistake in the late 90's"
-    'Any delay here will break Follow walls stop for others, so disable the delay.
-    'Yuck, maybe we should just remove this.
-    'TODO: well now with variable walk toggle speed this makes much less sense
-    IF npci.wtog = max_wtog() ORELSE (npcdata.movetype = 13 OR npcdata.movetype = 14) THEN
-     npchitwall(npci, npcdata, collision_type)
-     hit_something = YES
-    END IF
+    'There used to be a random 0-3 tick delay here before pacing NPCs bounce off the hero,
+    'maybe a mistake or an attempt to make NPCs easier to activate. It was too much trouble.
+    npchitwall(npci, npcdata, collision_type)
+    hit_something = YES
    ELSE
     npchitwall(npci, npcdata, collision_type)
     hit_something = YES

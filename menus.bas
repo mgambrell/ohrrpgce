@@ -150,12 +150,22 @@ SUB append_simplemenu_item (byref menu as SimpleMenuItem vector, caption as zstr
  END WITH
 END SUB
 
+' Calculate the on-screen position and size for a menu item in a non-MenuDef menu.
+' (See also menudef_item_rect)
+FUNCTION standardmenu_item_rect(state as MenuState, menutext as string, index as integer) as RectType
+ DIM itempos as XYPair = state.rect.xy
+ itempos.y += state.spacing * (index - state.top)
+ RETURN XY_WH(itempos, textsize(menutext))
+END FUNCTION
+
+FUNCTION standardmenu_item_rect(menu as BasicMenuItem vector, state as MenuState) as RectType
+ RETURN standardmenu_item_rect(state, v_at(menu, state.pt)->text, state.pt)
+END FUNCTION
+
 'Is pos on menutext, which is the 'index'th menu item in the menu with given state?
 FUNCTION menutext_hit_tester(menutext as string, state as MenuState, index as integer, pos as XYPair) as bool
  'IF NOT state.position_known THEN RETURN NO   'Unnecessary?
- DIM itempos as XYPair = state.rect.xy
- itempos.y += state.spacing * (index - state.top)
- RETURN rect_collide_point(XY_WH(itempos, textsize(menutext)), pos)
+ RETURN rect_collide_point(standardmenu_item_rect(state, menutext, index), pos)
 END FUNCTION
 
 'A function usable as MenuState.hit_test if using standardmenu with a string array.
@@ -658,6 +668,7 @@ SUB standardmenu (byval menu as BasicMenuItem vector, state as MenuState, x as R
 
  FOR i as integer = state.top TO state.top + state.size
   IF i < v_len(menu) THEN
+   'NOTE: we use v_at() instead of menu[i] to support derived types of BasicMenuItem!
    WITH *v_at(menu, i)
 
     DIM linewidth as integer = textwidth(.text, IIF(menuopts.edged, fontEdged, fontPlain))
@@ -1613,9 +1624,9 @@ SUB draw_menu (menu as MenuDef, state as MenuState, byval page as integer)
     col = menu_item_color(state, elem, .disabled, .unselectable, .col, .disabled_col, menu.textcolor, menu.disabled_textcolor)
 
     IF .visible THEN
-     position_menu_item menu, .text, i, where
+     DIM itemrect as RectType = menudef_item_rect(menu, state, .text, elem)
 
-     IF .t = mtypeSpecial THEN
+     IF menu.game_menu ANDALSO .t = mtypeSpecial THEN
       ' Check for menu items with bars behind. The bar is drawn using the menu's boxstyle and Line border
       DIM bar_width as integer = 0
       DIM metermax as integer
@@ -1628,11 +1639,11 @@ SUB draw_menu (menu as MenuDef, state as MenuState, byval page as integer)
        bar_width = get_safe_zone_margin() * metermax \ 10
       END IF
       IF bar_width THEN
-       edgeboxstyle menu.rect.x + (menu.rect.wide - metermax) \ 2, where.y, bar_width, 10, menu.boxstyle, page, NO, YES
+       edgeboxstyle menu.rect.x + (menu.rect.wide - metermax) \ 2, itemrect.y, bar_width, 10, menu.boxstyle, page, NO, YES
       END IF
      END IF
 
-     edgeprint .text, where.x, where.y, col, page, menu.withtags
+     edgeprint .text, itemrect.x, itemrect.y, col, page, menu.withtags
     END IF
    END WITH
   END IF
@@ -1640,23 +1651,27 @@ SUB draw_menu (menu as MenuDef, state as MenuState, byval page as integer)
  
 END SUB
 
-' Calculate top-left corner of the text, placed in 'where'
-SUB position_menu_item (menu as MenuDef, cap as string, byval i as integer, byref where as XYPair)
+' Calculate the on-screen position and size for a menu item (excluding volume bars or anything like that).
+' (See also standardmenu_item_rect)
+FUNCTION menudef_item_rect (menu as MenuDef, state as MenuState, menutext as string, index as integer) as RectType
+ DIM ret as RectType
+ ret.wh = textsize(menutext)
  'Adding bord to menu.rect like this should equal state.rect. TODO: use state.rect instead?
  DIM bord as integer
  bord = 8 + menu.bordersize
  WITH menu.rect
   SELECT CASE menu.textalign
    CASE alignLeft
-    where.x = .x + bord
+    ret.x = .x + bord
    CASE alignCenter
-    where.x = .x + (.wide - textwidth(cap)) / 2
+    ret.x = .x + (.wide - ret.w) / 2
    CASE alignRight
-    where.x = .x + .wide - bord - textwidth(cap)
+    ret.x = .x + .wide - bord - ret.w
   END SELECT
-  where.y = .y + bord + (i * (10 + menu.itemspacing))
+  ret.y = .y + bord + ((index - state.top) * (10 + menu.itemspacing))
  END WITH
-END SUB
+ RETURN ret
+END FUNCTION
 
 ' Calculate state.size of a MenuDef menu from menu.maxrows
 ' .maxrows=0 is the MenuDef equivalent of state.autosize (which isn't used for MenuDef)
@@ -1772,7 +1787,7 @@ END FUNCTION
 FUNCTION get_menu_item_caption (mi as MenuDefItem, menu as MenuDef) as string
  DIM cap as string
  cap = mi.caption
- IF LEN(cap) = 0 THEN
+ IF menu.game_menu ANDALSO LEN(cap) = 0 THEN
   'No caption, use the default
   SELECT CASE mi.t
    CASE mtypeSpecial
@@ -1934,7 +1949,7 @@ END SUB
 
 
 '==========================================================================================
-'                                   Generic menu system
+'                                       ModularMenu
 '==========================================================================================
 
 
@@ -2155,3 +2170,204 @@ SUB ModularMenu.run()
  clear_menu()
  running = NO
 END SUB
+
+
+'==========================================================================================
+'                                         MenuStack
+'==========================================================================================
+
+
+#IFDEF IS_CUSTOM
+
+FUNCTION MenuStack.cur_menu() as MenuDef ptr
+  DIM idx as integer = UBOUND(menus)
+  IF idx < 0 THEN RETURN NULL
+  RETURN @menus(idx)
+END FUNCTION
+
+FUNCTION MenuStack.cur_item() as MenuDefItem ptr
+  DIM idx as integer = UBOUND(menus)
+  IF idx < 0 THEN RETURN NULL
+  DIM byref menu as MenuDef = menus(idx)
+  DIM byref state as MenuState = states(idx)
+  IF state.pt < 0 ORELSE state.pt >= menu.numitems THEN RETURN NULL
+  RETURN menu.items[state.pt]
+END FUNCTION
+
+FUNCTION MenuStack.add_item(text as string, t as integer = 0, sub_t as integer = 0, dataptr as any ptr = 0) byref as MenuDefItem
+  DIM byref menu as MenuDef = menus(UBOUND(menus))
+
+  DIM midx as integer = append_menu_item(menu, text, t, sub_t, dataptr)
+  RETURN *menu.items[midx]
+END FUNCTION
+
+' Opens a new menu at the default position: the mouse position for the first menu,
+' or right of the current active menu item if there is a menu open.
+' Call open_menu(), then add_item() to add to the new menu, then finish with finish_open().
+SUB MenuStack.open_menu()
+  DIM idx as integer = UBOUND(menus)
+
+  IF idx >= 0 THEN
+    DIM byref menu as MenuDef = menus(idx)
+    DIM byref state as MenuState = states(idx)
+    open_menu_at menudef_item_rect(menu, state, menu.items[state.pt]->text, state.pt)
+    open_at_mouse = NO
+  ELSE
+    open_menu_at(XYWH(0,0,0,0))
+    open_at_mouse = YES
+  END IF
+END SUB
+
+' Open a new menu to the right of some existing menu item/widget at itemrect
+SUB MenuStack.open_menu_at(itemrect as RectType)
+  DIM idx as integer = UBOUND(menus) + 1
+  REDIM PRESERVE menus(idx)
+  REDIM PRESERVE states(idx)
+  DIM byref menu as MenuDef = menus(idx)
+
+  menu.game_menu = NO
+  menu.offset = itemrect.xy + XY(itemrect.w + 3, -1)
+  menu.highlight_selection = YES
+  'Add a little more border in case of a scrollbar
+  'menu.bordersize += 4  'Seems to do nothing...
+  menu.no_box = YES
+  'menu.suppress_borders = YES
+
+  IF idx > 0 THEN
+    states(idx - 1).active = NO
+  END IF
+END SUB
+
+' Must be called after open_menu[_at] and add_item
+SUB MenuStack.finish_open()
+  DIM idx as integer = UBOUND(menus)
+  DIM byref menu as MenuDef = menus(idx)
+  DIM byref state as MenuState = states(idx)
+  init_multichoice_menu menu, state, menu.offset, , YES  'popup_style=YES
+  update_menu_captions menu
+  calc_menu_rect state, menu, vpage  'Get the menu size
+  IF open_at_mouse THEN
+    ' By default the menu's at the mouse pointer and clamped to screen, move it so doesn't overlap the mouse
+    DIM menusize as XYPair = menu.rect.wh + 4   'menu.rect includes the border, state.rect doesn't
+    IF LEN(menu.name) THEN
+      DIM titlesize as XYPair = textsize(menu.name) + XY(4, 4)
+      menusize.w = large(menusize.w, titlesize.w)
+      menusize.h += titlesize.h
+    END IF
+    menu.offset = pick_tooltip_pos(menusize)
+    calc_menu_rect state, menu, vpage  'Get the menu position
+  END IF
+END SUB
+
+' Close the topmost menu
+SUB MenuStack.close_menu()
+  IF UBOUND(menus) < 0 THEN EXIT SUB
+  DIM idx as integer = UBOUND(menus) - 1
+  ClearMenuData menus(idx + 1)
+  IF idx = -1 THEN
+    ERASE menus
+    ERASE states
+  ELSE
+    REDIM PRESERVE menus(idx)
+    REDIM PRESERVE states(idx)
+    states(idx).active = YES
+  END IF
+END SUB
+
+FUNCTION MenuStack.is_open() as bool
+  RETURN UBOUND(menus) >= 0
+END FUNCTION
+
+FUNCTION MenuStack.is_active() as bool
+  IF UBOUND(menus) < 0 THEN RETURN NO
+  DIM byref state as MenuState = states(UBOUND(states))
+  RETURN state.active
+END FUNCTION
+
+' Does not check actually active
+FUNCTION MenuStack.activate() as bool
+  IF UBOUND(menus) < 0 THEN RETURN NO
+  DIM byref state as MenuState = states(UBOUND(states))
+  RETURN enter_space_click(state) ORELSE keyval(ccRight) > 1
+END FUNCTION
+
+' You may have to override this to handle 'activate' properly
+FUNCTION MenuStack.controls() as bool
+  IF UBOUND(menus) < 0 THEN RETURN NO
+
+  DIM byref state as MenuState = states(UBOUND(states))
+  IF state.active = NO THEN RETURN NO
+
+  IF keyval(scF1) > 1 ANDALSO LEN(helpkey) > 0 THEN
+   show_help helpkey
+  END IF
+
+  IF activate THEN
+    RETURN YES
+  ELSE
+    default_menu_controls state
+    IF keyval(ccLeft) > 1 THEN state.active = NO
+    IF state.active = NO THEN  'Set when quitting (or activating)
+      close_menu()
+    END IF
+  END IF
+END FUNCTION
+
+SUB MenuStack.draw(page as integer)
+  FOR midx as integer = 0 TO UBOUND(menus)
+    DIM byref menu as MenuDef = menus(midx)
+    DIM byref state as MenuState = states(midx)
+
+    IF midx < UBOUND(menus) THEN
+      ' Tint background menu items darker
+      WITH master(uilook(uiMenuItem))
+        menu.textcolor = findrgb(.r - 32, .g - 32, .b - 32)
+      END WITH
+    ELSE
+      menu.textcolor = 0  'Reset
+    END IF
+
+    DIM res as XYPair = get_resolution
+
+    ' Display the menu name as a title in a box above
+    ' Maybe this should be a feature of draw_menu, but probably better that people use separate slices for it
+    IF LEN(menu.name) THEN
+      DIM titlesize as XYPair = textsize(menu.name) + XY(4, 4)
+      menu.rect.x = small(menu.rect.x, res.w - titlesize.w)
+      menu.rect.y = large(menu.rect.y, titlesize.h)
+
+      DIM titlerect as RectType = menu.rect
+      titlerect.wh = titlesize
+      titlerect.y -= titlerect.h
+
+      drawbox vpages(page), titlerect.x + 2, titlerect.y + 2, titlerect.w, titlerect.h, findrgb(0, 0, 0), 2
+      rectangle vpages(page), titlerect, findrgb(0, 80, 140)
+
+      DIM uicol as integer = IIF(midx = UBOUND(menus), uiText, uiMenuItem)
+      edgeprint menu.name, titlerect.x + 2, titlerect.y + 2, uilook(uicol), page
+    END IF
+
+    ' Draw a drop shadow
+    drawbox vpages(page), menu.rect.x + 3, menu.rect.y + 3, menu.rect.w, menu.rect.h, findrgb(0, 0, 0), 3
+    rectangle vpages(page), menu.rect, findrgb(40, 40, 70)
+    ' Draw outline
+    drawbox vpages(page), menu.rect.x, menu.rect.y, menu.rect.w, menu.rect.h, findrgb(80, 80, 80), 1
+
+    'menu.max_chars = get_resolution().w \ 8 - 2
+    draw_menu menu, state, page
+
+    IF LEN(helpkey) THEN
+      DIM x as integer
+      ' Don't overlap the menu
+      IF menu.rect.x + menu.rect.w > res.w - 60 ANDALSO menu.rect.y + menu.rect.h > res.h - 15 THEN
+       x = pInfoX
+      ELSE
+       x = pInfoRight
+      END IF
+      edgeprint "F1 Help", x, pInfoY, uilook(uiMenuItem), vpage
+    END IF
+    ' wrapprintbg *extra_message, pLeft, pBottom, uilook(uiMenuItem), vpage, , , , fontBuiltinEdged
+  NEXT
+END SUB
+
+#ENDIF  'IS_CUSTOM

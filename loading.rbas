@@ -2068,10 +2068,10 @@ SUB save_hero_as_reload(hero as HeroDef, byval parent as NodePtr)
  ch = WritePicPalNode(appear, "battle", hero.sprite, hero.sprite_pal)
  WriteXYPairNode ch, "hand_a", hero.hand_pos(0)
  WriteXYPairNode ch, "hand_b", hero.hand_pos(1)
- SetChildNode appear, "skipvicdance", IIF(hero.skip_victory_dance, 1, 0)
+ SetChildNodeBool appear, "skipvicdance", hero.skip_victory_dance
  IF hero.def_level >= 0 THEN SetChildNode parent, "default_level", hero.def_level
  SetChildNode parent, "default_weapon", hero.def_weapon
- SetChildNode parent, "default_auto_battle", IIF(hero.default_auto_battle, 1, 0)
+ SetChildNodeBool parent, "default_auto_battle", hero.default_auto_battle
  SetChildNode parent, "exp_mult", hero.exp_mult
 
  WriteStatsNode(parent, "stats_at_zero", hero.Lev0)
@@ -3601,6 +3601,7 @@ END FUNCTION
 '==========================================================================================
 
 
+'fr must have a number of frames equal to the sprite_sizes(sprtype).frames default
 SUB initialise_backcompat_pt_frameids(fr as Frame ptr, sprtype as SpriteType)
 ' For heroes
   STATIC default_pt0_frameids(7) as integer = {0, 1, 100, 101, 200, 300, 400, 500}
@@ -3974,23 +3975,23 @@ FUNCTION rgfx_load_spriteset(rgfxdoc as DocPtr, sprtype as SpriteType, setnum as
   fr = frameset_from_node(frameset_node)
   IF fr = NULL THEN RETURN fr
 
-  'Create SpriteSet
-  DIM sprset as SpriteSet ptr
-  sprset = spriteset_for_frame(fr)
+  'Create SpriteSet & AnimationSet
+  DIM animset as AnimationSet ptr
+  animset = spriteset_for_frame(fr)->get_animset()
 
   'Default palette
   fr->defpal = ss_node."defpal".default(-1)
-  sprset->name = sprite_sizes(sprtype).name & " spriteset " & setnum & " animations"
+  animset->name = sprite_sizes(sprtype).name & " spriteset " & setnum & " animations"
 
   'Animations, if they exist
-  load_animations_node(ss_node, sprset)
+  load_animations_node(ss_node, animset)
 
   'Global animations
   IF cache_def_anims THEN
     'Get from/add to cache
-    sprset->fallback_set = spriteset_load_global_animations(sprtype, rgfxdoc)
+    animset->fallback_set = spriteset_load_global_animations(sprtype, rgfxdoc)
   ELSE
-    sprset->fallback_set = rgfx_load_global_animations(rgfxdoc)
+    animset->fallback_set = rgfx_load_global_animations(rgfxdoc)
   END IF
 
   RETURN fr
@@ -4007,6 +4008,7 @@ FUNCTION rgfx_load_spriteset(sprtype as SpriteType, setnum as integer, expect_ex
   RETURN ret
 END FUNCTION
 
+'defpal overrides fr->defpal
 SUB rgfx_save_spriteset(rgfxdoc as DocPtr, fr as Frame ptr, sprtype as SpriteType, setnum as integer, defpal as integer = -1)
   DIM as Node ptr ss_node, root_node, frameset_node
   root_node = DocumentRoot(rgfxdoc)
@@ -4037,11 +4039,16 @@ SUB rgfx_save_spriteset(rgfxdoc as DocPtr, fr as Frame ptr, sprtype as SpriteTyp
   END IF
 
   'Animations
-  DIM sprset as SpriteSet ptr = fr->sprset
-  IF sprset THEN
-    IF v_len(sprset->animations) > 0 THEN
-      save_animations_node ss_node, sprset
+  IF fr->sprset THEN
+    DIM animset as AnimationSet ptr = fr->sprset->animset
+    IF animset THEN
+      IF v_len(animset->animations) > 0 THEN
+        save_animations_node ss_node, animset
+      END IF
     END IF
+  ELSE
+    'This happens because SpriteSetBrowser needs fixing; it currently wipes animations in some cases
+    debug "suspicious rgfx_save_spriteset with no SpriteSet"
   END IF
 
   'Extra info
@@ -4061,9 +4068,11 @@ SUB rgfx_save_spriteset(fr as Frame ptr, sprtype as SpriteType, setnum as intege
   FreeDocument rgfxdoc
 END SUB
 
+'Save the cached global animations (accessed via any loaded SpriteSet)
 SUB rgfx_save_global_animations(sprtype as SpriteType)
   DIM rgfxdoc as Doc ptr = rgfx_open(sprtype, YES, optNoDelay)
   IF rgfxdoc = NULL THEN EXIT SUB
+  'If no sprtype sprite has ever been loaded, this would load from rgfxdoc or generate defaults
   DIM animset as AnimationSet ptr = spriteset_load_global_animations(sprtype, rgfxdoc)
   rgfx_save_global_animations(rgfxdoc, animset)
   animset_unload @animset
@@ -4071,10 +4080,10 @@ SUB rgfx_save_global_animations(sprtype as SpriteType)
   FreeDocument rgfxdoc
 END SUB
 
-SUB rgfx_save_global_animations(rgfxdoc as DocPtr, def_anim as AnimationSet ptr)
+SUB rgfx_save_global_animations(rgfxdoc as DocPtr, animset as AnimationSet ptr)
   DIM root_node as Node ptr = DocumentRoot(rgfxdoc)
   FreeChildNode root_node, "_animations"  'If it exists  FIXME: temporary location
-  save_animations_node root_node, def_anim
+  save_animations_node root_node, animset
 END SUB
 
 
@@ -5193,7 +5202,7 @@ SUB save_distrib_state(byref distinfo as DistribState, byval node as Reload.Node
  SetChildNode node, "copyright_year", distinfo.copyright_year
  SetChildNode node, "itch_user",   distinfo.itch_user
  SetChildNode node, "itch_gamename", distinfo.itch_gamename
- SetChildNode node, "itch_upload_web", IIF(distinfo.itch_upload_web, 1, 0)
+ SetChildNodeBool node, "itch_upload_web", distinfo.itch_upload_web
  SetChildNode node, "steam_appid", distinfo.steam_appid
  IF distinfo.omit_readme THEN SetChildNode node, "omit_readme", 1
  IF distinfo.omit_license THEN SetChildNode node, "omit_license", 1
