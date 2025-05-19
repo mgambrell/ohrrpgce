@@ -1449,7 +1449,7 @@ SUB script_commands(byval cmdid as integer)
    'It's not important to bound to a currently valid frame (but .wtog should not be < 0),
    'and you can defeat this bound by changing the direction/spriteset. We bound for an
    'abundance of backcompat (previously clamped to 0/1), and so that "hero frame" is accurate.
-   herow(rank).wtog = bound(retvals(1), 0, max_wtog(herow(rank).sl, herodir(rank)))
+   herow(rank).wtog = bound(retvals(1) * wtog_ticks(), 0, max_wtog(herow(rank).sl, herodir(rank)))
   END IF
  CASE 27'--suspend overlay
   setbit gen(), genSuspendBits, suspendoverlay, 1
@@ -2433,7 +2433,7 @@ SUB script_commands(byval cmdid as integer)
  CASE 347 '--sprite frame count
   sl = get_arg_spritesl(0)
   IF sl THEN
-   scriptret = sl->SpriteData->get_numframes(sl)
+   scriptret = sl->SpriteData->get_num_frames(sl)
   END IF
  CASE 348 '--slice x
   sl = get_arg_slice(0)
@@ -3679,7 +3679,7 @@ SUB script_commands(byval cmdid as integer)
   IF npcref >= 0 THEN
    WITH npc(npcref)
     'See comments on "set hero frame"
-    .wtog = bound(retvals(1), 0, max_wtog(.sl, .dir))
+    .wtog = bound(retvals(1) * wtog_ticks(), 0, max_wtog(.sl, .dir))
    END WITH
   END IF
  CASE 39'--camera follows NPC
@@ -5358,6 +5358,33 @@ SUB script_commands(byval cmdid as integer)
   scriptret = IIF(sys = "SWITCH", 1, 0)
 
 
+ CASE 776 '--get sprite frame id
+  sl = get_arg_spritesl(0)
+  IF sl THEN
+   scriptret = sl->SpriteData->get_frameid(sl)
+  ELSE
+   scriptret = -1
+  END IF
+ CASE 777 '--set sprite frame id (handle, frameid, exact=false)
+  sl = get_arg_spritesl(0)
+  IF sl THEN
+   scriptret = sl->SpriteData->set_frameid(sl, retvals(1), retvals(2))
+  ELSE
+   scriptret = -1
+  END IF
+ CASE 778 '--find sprite frame id (handle, frameid)
+  sl = get_arg_spritesl(0)
+  IF sl THEN
+   scriptret = sl->SpriteData->find_frameid(sl, retvals(1), YES)
+  ELSE
+   scriptret = -1
+  END IF
+ CASE 779 '--sprite frame group size (handle, group = -1)
+  sl = get_arg_spritesl(0)
+  IF sl THEN
+   scriptret = sl->SpriteData->get_num_frames_in_group(sl, retvals(1))
+  END IF
+
  CASE ELSE
   'We also check the HSP header at load time to check there aren't unsupported commands
   scripterr "Unsupported script command " & cmdid & " " & commandname(cmdid) & ". " _
@@ -5572,6 +5599,7 @@ END FUNCTION
 'Note this is stricter than getnpcref: invalid npc refs are not alright!
 'References to Hidden/Disabled NPCs are alright.
 FUNCTION get_valid_npc (byval seekid as NPCScriptref, byval errlvl as scriptErrEnum = serrBadOp, byval pool as integer=0) as NPCIndex
+ 'TODO: recognise when seekid has the wrong type, e.g. slice handle
  IF seekid < 0 THEN
   DIM npcidx as NPCIndex = (seekid + 1) * -1
   IF npcidx > UBOUND(npc) THEN
