@@ -11,7 +11,7 @@ typedef void (*FnCopyCtor)(void *, const void *);
 typedef void (*FnDtor)(const void *);       // Destruct. You can destruct const objects, as in C++.
 typedef void *(*FnCopy)(const void *);      // Allocate and initialise a copy
 typedef void (*FnDelete)(const void *);     // Destruct and delete. You can delete const objects, as in C++.
-typedef int (*FnCompare)(const void *, const void *);
+typedef int (*FnCompare)(void *, void *);
 typedef unsigned int (*FnHash)(const void *);
 typedef struct FBSTRING *(*FnStr)(const void *);
 
