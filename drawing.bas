@@ -43,7 +43,7 @@ DECLARE SUB writeundoblock (state as TileEditState)
 DECLARE SUB readundoblock (state as TileEditState)
 DECLARE SUB fliptile (ts as TileEditState)
 DECLARE SUB scrolltile (ts as TileEditState, byval shiftx as integer, byval shifty as integer)
-DECLARE SUB clicktile (ts as TileEditState, byval newkeypress as integer, byref clone as TileCloneBuffer)
+DECLARE SUB clicktile (ts as TileEditState, newkeypress as integer, toolinfo() as ToolInfoType, byref clone as TileCloneBuffer)
 DECLARE SUB tilecopy (cutnpaste() as integer, ts as TileEditState)
 DECLARE SUB tilepaste (cutnpaste() as integer, ts as TileEditState)
 DECLARE SUB tiletranspaste (cutnpaste() as integer, ts as TileEditState)
@@ -1801,7 +1801,7 @@ DO
   readundoblock ts
   ts.didscroll = NO  'save a new undo block upon scrolling
  END IF
- IF keyval(scSpace) > 0 THEN clicktile ts, keyval(scSpace) AND 4, clone
+ IF keyval(scSpace) > 0 THEN clicktile ts, keyval(scSpace) AND 4, toolinfo(), clone
  IF keyval(scAnyEnter) > 1 ORELSE keyval(scG) > 1 THEN
   ts.curcolor = readpixel(ts.tilex * 20 + ts.x, ts.tiley * 20 + ts.y, 3)
   'If the tool is a non-drawing tool, switch back to draw
@@ -1815,7 +1815,16 @@ DO
   'Drawing area
   ts.x = zox \ 8
   ts.y = zoy \ 8
-  IF ts.tool = clone_tool THEN
+  DIM usetool as bool = (mouse.buttons AND mouseLeft) <> 0
+  DIM newkeypress as bool = (mouse.clicks AND mouseLeft) <> 0
+  IF ts.tool = mark_tool THEN
+   'For mark tool, right click to cut instead of copy
+   IF mouse.buttons AND mouseRight THEN
+    ts.alternate_mode = YES
+    usetool = YES
+    newkeypress OR= (mouse.clicks AND mouseRight) <> 0
+   END IF
+  ELSEIF ts.tool = clone_tool THEN
    ' For clone brush tool, enter/right-click moves the handle point
    IF ts.readjust THEN
     IF keyval(scEnter) = 0 AND mouse.buttons = 0 THEN ' click or key release
@@ -1846,7 +1855,7 @@ DO
     IF ts.tool = scroll_tool THEN tileedit_set_tool ts, toolinfo(), draw_tool
    END IF
   END IF
-  IF mouse.buttons AND mouseLeft THEN clicktile ts, (mouse.clicks AND mouseLeft), clone
+  IF usetool THEN clicktile ts, newkeypress, toolinfo(), clone
  CASE 2
   'Colour selector
   IF mouse.buttons AND mouseLeft THEN
@@ -2107,11 +2116,12 @@ END SUB
 SUB tileedit_set_tool (ts as TileEditState, toolinfo() as ToolInfoType, byval toolnum as integer)
  IF ts.tool <> toolnum AND toolnum = scroll_tool THEN ts.didscroll = NO
  ts.tool = toolnum
+ ts.alternate_mode = NO
  ts.hold = NO
  ts.drawcursor = toolinfo(ts.tool).cursor + 1
 END SUB
 
-SUB clicktile (ts as TileEditState, byval newkeypress as integer, byref clone as TileCloneBuffer)
+SUB clicktile (ts as TileEditState, newkeypress as integer, toolinfo() as ToolInfoType, byref clone as TileCloneBuffer)
 DIM spot as XYPair
 
 IF ts.delay > 0 THEN EXIT SUB
@@ -2220,13 +2230,18 @@ SELECT CASE ts.tool
  CASE mark_tool
   IF newkeypress THEN
    IF ts.hold = YES THEN
+    'alternate means cut instead of copy
+    IF (keyval(scShift) OR keyval(scCtrl)) > 0 THEN ts.alternate_mode = YES
+    IF ts.alternate_mode THEN writeundoblock ts
     DIM select_rect as RectType
     corners_to_rect_inclusive Type(ts.x, ts.y), ts.holdpos, select_rect
     clone.size.x = select_rect.wide
     clone.size.y = select_rect.high
     FOR i as integer = 0 TO clone.size.y - 1
      FOR j as integer = 0 TO clone.size.x - 1
-      clone.buf(j, i) = readpixel(ts.tilex * 20 + select_rect.x + j, ts.tiley * 20 + select_rect.y + i, 3)
+      DIM pos as XYPair = XY(ts.tilex, ts.tiley) * 20 + select_rect.xy + XY(j, i)
+      clone.buf(j, i) = readpixel(pos.x, pos.y, 3)
+      IF ts.alternate_mode THEN putpixel(pos.x, pos.y, 0, 3)
      NEXT j
     NEXT i
     clone.offset.x = clone.size.x \ 2
@@ -2236,8 +2251,8 @@ SELECT CASE ts.tool
     ts.adjustpos.y = 0
     clone.exists = YES
     refreshtileedit ts
-    ts.hold = NO
-    ts.tool = clone_tool ' auto-select the clone tool after marking
+    ' auto-select the clone tool after marking
+    tileedit_set_tool ts, toolinfo(), clone_tool
    ELSE
     ts.hold = YES
     ts.holdpos.x = ts.x
@@ -2261,10 +2276,11 @@ SELECT CASE ts.tool
     refreshtileedit ts
    ELSE
     'if no clone buffer, switch to mark tool
-    ts.tool = mark_tool
+    tileedit_set_tool ts, toolinfo(), mark_tool
     ts.hold = YES
     ts.holdpos.x = ts.x
     ts.holdpos.y = ts.y
+    IF readmouse.buttons AND mouseRight THEN ts.alternate_mode = YES
    END IF
   END IF
 END SELECT
@@ -2649,6 +2665,24 @@ END SUB
 SUB spriteedit_draw_sprite_area(ss as SpriteEditState, sprite as Frame ptr, pal as Palette16 ptr, page as integer)
  drawbox ss.area(0).x - 1, ss.area(0).y - 1, ss.area(0).w + 2, ss.area(0).h + 2, uilook(uiText), 1, page
  frame_draw sprite, pal, 4, 1, NO, page, DrawOptions(ss.zoom)
+ IF ss.onion_enabled ANDALSO ss.onionnum >= 0 ANDALSO ss.onionnum < v_len(ss.spriteset) THEN
+  '-- Draw the onion layer in two steps because we can't scale and draw transparently at once
+  DIM onion_overlay as Frame Ptr
+  DIM onion_opts as DrawOptions
+  WITH onion_opts
+   .scale = ss.zoom
+  END WITH
+  onion_overlay = frame_new(sprite->w * ss.zoom, sprite->h * ss.zoom, , YES)
+  frame_draw ss.spriteset[ss.onionnum], pal, 0, 0, YES, onion_overlay, onion_opts
+  WITH onion_opts
+   .scale = 1
+   .with_blending = YES
+   .blend_mode = blendModeAdd
+   .opacity = 0.5
+  END WITH
+  frame_draw onion_overlay, , 4, 1, YES, page, onion_opts
+  frame_unload @onion_overlay
+ END IF
  drawbox ss.previewpos.x - 1, ss.previewpos.y - 1, ss.wide + 2, ss.high + 2, uilook(uiText), 1, page
  frame_draw sprite, pal, ss.previewpos.x, ss.previewpos.y, NO, page
 END SUB
@@ -2752,7 +2786,15 @@ SUB spriteedit_display(ss as SpriteEditState)
  textcolor uilook(uiMenuItem), 0
  printstr strprintf("x=%2d y=%2d", ss.x, ss.y), 0, 190, dpage
  printstr "Tool:" & ss.toolinfo(ss.tool).name, 0, 182, dpage
- printstr ss.framename, 0, 174, dpage
+ DIM caption_line as string = ss.framename
+ IF ss.onion_enabled THEN
+  DIM onionid as integer = ss.spriteset[ss.onionnum]->frameid
+  caption_line &= " (Onionskin:" & onionid
+  DIM onionname as string = frame_name(ss.fileset, onionid)
+  IF LEN(onionname) > 0 THEN caption_line &= " " & onionname
+  caption_line &= ")"
+ END IF
+ printstr caption_line , 0, 174, dpage
  FOR i = 0 TO UBOUND(ss.toolinfo)
   spriteedit_draw_icon ss, ss.toolinfo(i).icon, ss.toolinfo(i).areanum, (ss.tool = i)
  NEXT i
@@ -3047,12 +3089,13 @@ SUB spriteedit_import16_loadimage(srcfile as string, byref impsprite as Frame pt
 END SUB
 
 'Returns a new Frame (NULL if cancelled). Delete the input one if didn't cancel.
-'TODO: This function needs a major update/rewrite to handle variable-framecount and -size spritesets.
-FUNCTION spriteedit_import16_cut_custom_frames(byref ss as SpriteEditState, impsprite as Frame ptr, pal16 as Palette16 ptr) as Frame ptr
+'numframes is the number of frames of the existing spriteset we're replacing (in future: will be used only as a default).
+FUNCTION spriteedit_import16_cut_custom_frames(byref ss as SpriteEditState, impsprite as Frame ptr, pal16 as Palette16 ptr, numframes as integer) as Frame ptr
  DIM image_pos as XYPair = (1, 1)  'Screen position at which to draw impsprite
 
  'This staticness is a bit hacky
- STATIC last_fileset as integer = -1
+ 'Used to reset to the default frame size if the fileset differed from last time
+ 'The when-to-reset logic is not good.
  STATIC frame_size as XYPair
  STATIC first_offset as XYPair     'Position of first frame
  STATIC direction_offset as XYPair 'Offset between direction groups
@@ -3061,18 +3104,36 @@ FUNCTION spriteedit_import16_cut_custom_frames(byref ss as SpriteEditState, imps
  DIM flattened_set as Frame ptr
 
  WITH sprite_sizes(ss.fileset)
-  DIM frames_per_dir as integer = .frames \ .directions
+  DIM frames_per_dir as integer
 
-  IF last_fileset <> ss.fileset THEN
-   frame_size = .size
-   first_offset = XY(0, 0)
-   frame_offset = XY(.size.w, 0)
-   direction_offset = XY(.size.w * frames_per_dir, 0)
+  'Note that sprTypeHero has .directions = 4
+  'TODO: Would like to allow changing frames_per_dir
+
+  IF .fixed_framecount ANDALSO numframes <> .frames THEN
+   showerror "The existing number of frames should be " & .frames & " but is " & numframes & ". Unless this is a future .rpg, this is a bug"
   END IF
-  last_fileset = ss.fileset
+  'IF .fixed_framecount THEN numframes = .frames
+
+  frames_per_dir = large(1, numframes \ .directions)
+
+  IF frames_per_dir * .directions <> numframes THEN
+   notification "The existing number of frames, " & numframes & ", doesn't divide evenly into " & .directions & _
+                " directions, and this importer doesn't support changing the frame count. Change the number " _
+                "of frames (with correct frameids) in the existing spriteset to a multiple of " & .directions
+   RETURN NULL
+  END IF
+
+  DIM old_frame_size as XYPair = ss.sprite->size
+  old_frame_size.x \= ss.true_numframes
+  IF frame_size <> old_frame_size THEN
+   frame_size = old_frame_size
+   first_offset = XY(0, 0)
+   frame_offset = XY(frame_size.wide, 0)
+   direction_offset = XY(frame_size.wide * frames_per_dir, 0)
+  END IF
 
   DIM tog as integer
-  DIM menu(7) as string
+  DIM menu(8) as string
   DIM st as MenuState
   DIM menuopts as MenuOptions
   menuopts.edged = YES
@@ -3115,6 +3176,7 @@ FUNCTION spriteedit_import16_cut_custom_frames(byref ss as SpriteEditState, imps
     CASE 5: intgrabber frame_offset.y, -impsprite->h, impsprite->h
     CASE 6: intgrabber frame_size.w, 0, .size.w
     CASE 7: intgrabber frame_size.h, 0, .size.h
+    'CASE 8: intgrabber frames_per_dir, 1, 99
    END SELECT
 
    menu(0) = "First frame x: " & first_offset.x
@@ -3129,6 +3191,7 @@ FUNCTION spriteedit_import16_cut_custom_frames(byref ss as SpriteEditState, imps
    menu(temp + 1) = "Each-frame offset y: " & frame_offset.y
    menu(temp + 2) = "Frame width: " & frame_size.w
    menu(temp + 3) = "Frame height: " & frame_size.h
+   'menu(temp + 4) = "Frames per direction: " & frames_per_dir
 
    '--Draw screen
    clearpage dpage
@@ -3156,7 +3219,9 @@ FUNCTION spriteedit_import16_cut_custom_frames(byref ss as SpriteEditState, imps
   LOOP
 
   ' Cut out the frames and place in a new one
-  flattened_set = frame_new(ss.wide, ss.high)
+  ' FIXME: this allows changing the size of box borders, althhough that's meant to be disallowed (but not
+  ' atually harmful)
+  flattened_set = frame_new(frame_size.w * frames_per_dir * .directions, frame_size.h)
   frame_clear flattened_set, 0
 
   DIM framenum as integer = 0
@@ -3166,7 +3231,7 @@ FUNCTION spriteedit_import16_cut_custom_frames(byref ss as SpriteEditState, imps
     x = first_offset.x + direction * direction_offset.x + dirframe * frame_offset.x
     y = first_offset.y + direction * direction_offset.y + dirframe * frame_offset.y
     DIM impview as Frame ptr = frame_new_view(impsprite, x, y, frame_size.w, frame_size.h)
-    frame_draw impview, , (.size.w - frame_size.w) \ 2 + framenum * .size.w, .size.h - frame_size.h, NO, flattened_set
+    frame_draw impview, , framenum * frame_size.w, 0, NO, flattened_set
     frame_unload @impview
     framenum += 1
    NEXT
@@ -3409,14 +3474,17 @@ FUNCTION spriteedit_import16_remap_menu(byref ss as SpriteEditState, byref impsp
  RETURN ret
 END FUNCTION
 
-'Input is an imported image (single Frame array) and output is a spriteset as a basic spritesheet
-'(ie all frames concatenated into one).
-'Frees (decrements refcount of) impsprite and passes back ownership of a Frame (which might be the same Frame),
+'Used to import a full spriteset. Called from the editor in fullset mode.
+'TODO: Therefore it's not currently possible for sprite import to change the number of frames.
+'Input is an imported image (a single Frame) and output is a spriteset as a basic spritesheet
+'(ie all frames concatenated into one Frame -- but after cutting up and putting back together).
+'The result might be a different size.
+'Unloads (decrements refcount of) impsprite. Passes back ownership of a Frame (which might be the same Frame),
 'or returns NULL if cancelled.
 FUNCTION spriteedit_import16_split_spriteset(ss as SpriteEditState, impsprite as Frame ptr, pal as Palette16 ptr) as Frame ptr
  'Note that XY(ss.wide, ss.high) == ss.sprite->size
  IF impsprite->size <> ss.sprite->size THEN
-  DIM numframes as integer = sprite_sizes(ss.fileset).frames
+  DIM numframes as integer = ss.true_numframes
   DIM size0 as XYPair = XY(large(1, impsprite->w \ numframes), impsprite->h)
   DIM choices(...) as string = { _
     strprintf("Import as %d frames of %dx%d", numframes, size0.w, size0.h), _
@@ -3426,7 +3494,9 @@ FUNCTION spriteedit_import16_split_spriteset(ss as SpriteEditState, impsprite as
   DIM choice as integer
   DO
    choice = multichoice(strprintf("This image is %dx%d pixels, different from the %dx%d export image " _
-                        "size of the current spriteset.", impsprite->w, impsprite->h, ss.sprite->w, ss.sprite->h), choices())
+                        "size of the current spriteset. (If you want to change the number of frames, you " _
+                        "need to do so before import.)", _
+                        impsprite->w, impsprite->h, ss.sprite->w, ss.sprite->h), choices())
    IF choice = -1 THEN
     frame_unload @impsprite
     RETURN NULL
@@ -3434,7 +3504,9 @@ FUNCTION spriteedit_import16_split_spriteset(ss as SpriteEditState, impsprite as
     DIM resized as Frame ptr
     'The following looks like a noop, but what it accomplishes is rounding up/down
     'the frame size if numframes doesn't divide evenly into impsprite->w
-    resized = spriteset_from_basic_spritesheet(impsprite, ss.fileset, numframes)
+    'resized = spriteset_from_basic_spritesheet(impsprite, ss.fileset, sprite_sizes(ss.fileset).frames)
+    resized = split_spritesheet(impsprite, size0, numframes)
+    'copy_spriteset_frameids resized, ...   'Pointless, frameids won't be used
     frame_assign @impsprite, spriteset_to_basic_spritesheet(resized)
     frame_unload @resized
    ELSEIF choice = 1 THEN
@@ -3442,7 +3514,7 @@ FUNCTION spriteedit_import16_split_spriteset(ss as SpriteEditState, impsprite as
     frame_assign @impsprite, frame_resized(impsprite, ss.sprite->w, ss.sprite->h)
    ELSEIF choice = 2 THEN
     DIM adjusted as Frame ptr
-    adjusted = spriteedit_import16_cut_custom_frames(ss, impsprite, pal)
+    adjusted = spriteedit_import16_cut_custom_frames(ss, impsprite, pal, numframes)
     IF adjusted = NULL THEN CONTINUE DO  'Cancelled, go back to the menu
     frame_assign @impsprite, adjusted
    END IF
@@ -3586,6 +3658,7 @@ SUB sprite_editor_initialise(byref ss as SpriteEditState)
   .mist = ss_save.mist
   .palindex = ss_save.palindex
   .hidemouse = ss_save.hidemouse
+  .onionnum = -1
 
   REDIM .undo(v_len(.spriteset) - 1)
   FOR i as integer = 0 TO UBOUND(.undo)
@@ -3832,6 +3905,17 @@ SUB spriteedit_sprctrl(byref ss as SpriteEditState)
  END IF
  ss.palette->col(ss.palindex) = ss.curcolor
 
+ ' Transparent onionskin
+ IF keyval(scT) > 1 THEN
+  IF keyval(scShift) > 0 ORELSE keyval(scCtrl) > 0 THEN
+   ss.onion_enabled = YES
+   ss.onionnum = ss.framenum
+  ELSE
+   IF ss.onionnum = -1 THEN ss.onionnum = ss.framenum
+   ss.onion_enabled = NOT ss.onion_enabled
+  END IF
+ END IF
+
  IF keyval(scCtrl) > 0 THEN
   DIM as integer lastframe = v_len(ss.spriteset) - 1, framenum = ss.framenum, change_id = 0
   'slowkey to animate the frame at the typical speed if you hold it down
@@ -3964,7 +4048,20 @@ SUB spriteedit_sprctrl(byref ss as SpriteEditState)
   ss.y = ss.zone.y
  END IF
 
- IF ((ss.zonenum = 1 OR ss.zonenum = 14) ANDALSO (ss.mouse.buttons AND mouseLeft)) OR keyval(scSpace) > 0 THEN
+ DIM usetool as bool
+ DIM alternate as bool = (keyval(scShift) OR keyval(scCtrl)) > 0
+ IF keyval(scSpace) > 0 THEN usetool = YES
+ ' Mouse over canvas or thumbnail
+ IF ss.zonenum = 1 OR ss.zonenum = 14 THEN
+  IF ss.mouse.buttons AND mouseLeft THEN usetool = YES
+  IF ss.tool = mark_tool ANDALSO (ss.mouse.buttons AND mouseRight) THEN
+   'Right click to cut
+   usetool = YES
+   alternate = YES
+  END IF
+ END IF
+
+ IF usetool THEN
   SELECT CASE ss.tool
    CASE draw_tool
     spriteedit_put_dot(ss)
@@ -4015,10 +4112,18 @@ SUB spriteedit_sprctrl(byref ss as SpriteEditState)
    CASE airbrush_tool
     spriteedit_spray_spot(ss)
    CASE mark_tool
+    'alternate means cut
     IF ss.mouse.clicks > 0 OR keyval(scSpace) > 1 THEN
      IF ss.hold THEN
       ss.hold = NO
-      frame_assign @ss_save.clone_brush, frame_resized(ss.sprite, ABS(ss.x - ss.holdpos.x) + 1, ABS(ss.y - ss.holdpos.y) + 1, -small(ss.x, ss.holdpos.x), -small(ss.y, ss.holdpos.y))
+      DIM rect as RectType
+      rect.xy = XY(small(ss.x, ss.holdpos.x), small(ss.y, ss.holdpos.y))
+      rect.wh = XY(ABS(ss.x - ss.holdpos.x) + 1, ABS(ss.y - ss.holdpos.y) + 1)
+      frame_assign @ss_save.clone_brush, frame_resized(ss.sprite, rect.w, rect.h, -rect.x, -rect.y)
+      IF alternate THEN
+       writeundospr ss
+       rectangle ss.sprite, rect, 0
+      END IF
       ss_save.clonepos.x = ss_save.clone_brush->w \ 2
       ss_save.clonepos.y = ss_save.clone_brush->h \ 2
       ss.tool = clone_tool ' auto-select the clone tool after marking
@@ -4075,7 +4180,10 @@ SUB spriteedit_sprctrl(byref ss as SpriteEditState)
   END IF
  END IF
  DIM normal_enter_rclick as bool = YES
- IF ss.tool = clone_tool THEN
+ IF ss.tool = mark_tool THEN
+  ' For mark tool, right click to cut. Handled above
+  normal_enter_rclick = NO
+ ELSEIF ss.tool = clone_tool THEN
   ' For clone brush tool, enter/right-click moves the handle point
   normal_enter_rclick = NO
   IF ss.readjust THEN
@@ -4125,7 +4233,7 @@ SUB spriteedit_sprctrl(byref ss as SpriteEditState)
    spriteedit_scroll ss, ss.x - ss.lastcpos.x, ss.y - ss.lastcpos.y
   END IF
  END IF
- IF ss.tool = scroll_tool AND keyval(scAlt) = 0 THEN
+ IF ss.tool = scroll_tool AND keyval(scAlt) = 0 AND keyval(scCtrl) = 0 THEN
   DIM scrolloff as XYPair
   DIM stepsize as integer = IIF(keyval(scShift) > 0, ss.fastmovestep, 1)
   IF slowkey(ccUp, 100)    THEN scrolloff.y -= stepsize
@@ -4944,6 +5052,7 @@ SUB SpriteSetBrowser.setup_editstate(edstate as SpriteEditState, setnum as integ
       .spriteset = frame_array_to_vector(editing_spriteset)
       .framenum = framenum
     END IF
+    .true_numframes = editing_spriteset->arraylen
     .fileset = sprtype
     .fullset = fullset
     ' sprite_editor uses the callback to save the edited sprite.
@@ -5425,9 +5534,11 @@ SUB SpriteSetBrowser.run()
       END IF
     END IF
 
-    '+: Add new frame or frame group
+    '+: Add new frame or frame group, or even a new spriteset
     IF keyval(scPlus) > 1 ORELSE keyval(scNumpadPlus) > 1 ORELSE keyval(scInsert) > 1 THEN
-      IF sprite_sizes(sprtype).fixed_framecount THEN
+      IF cur_setnum = -1 THEN  'Add new
+       add_spriteset()
+      ELSEIF sprite_sizes(sprtype).fixed_framecount THEN
        notification sprite_sizes(sprtype).name & " sprites currently don't support adding or removing frames."
       ELSEIF cur_framenum = -1 THEN  'Whole spriteset
         'New group in first empty slot

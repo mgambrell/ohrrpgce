@@ -120,6 +120,7 @@ TYPE SliceEditState
  expand_extra as bool
  expand_sort as bool
  expand_meta as bool
+ expand_context as bool
 
  tool as SliceTool = SliceTool.pick
  focus as SliceEditorFocus        'What gets keyboard input. focusMenu or focusPicker only.
@@ -191,6 +192,7 @@ END ENUM
 
 TYPE EditRule
   dataptr as any ptr  'It scares the heck out of me that I think this is the best solution
+  datakey as string   'Currently for slgrATTRIBUTE only. When dataptr isn't enough
   mode as EditRuleMode
   lower as integer    'Interpreted as percent for percent_grabber
   upper as integer    'Interpreted as percent for percent_grabber
@@ -253,6 +255,8 @@ CONST slgrEXTRA = 32768
 CONST slgrVELOCITY = 1 shl 16
 CONST slgrTARGET = 1 shl 17
 '--This system won't be able to expand forever ... :(
+CONST slgrCONTEXTVAR = 1 shl 26
+CONST slgrADDCONTEXTVAR = 1 shl 27
 CONST slgrPREVIEWANIMATIONS = 1 shl 28
 CONST slgrEDITANIMATIONS = 1 shl 29
 CONST slgrPICKANIMATION = 1 shl 30
@@ -316,6 +320,7 @@ DECLARE SUB slice_editor_save_settings(byref ses as SliceEditState)
 DECLARE SUB slice_editor_load_settings(byref ses as SliceEditState)
 DECLARE FUNCTION collection_context(edslice as Slice ptr, expect_exists as bool = NO) as SliceCollectionContext ptr
 DECLARE SUB slice_editor_preview_animations(byref ses as SliceEditState, slice_to_animate as Slice ptr = NULL)
+DECLARE FUNCTION slice_editor_add_context_var_menu(sl as Slice ptr) as bool
 
 DECLARE SUB edkit_slice_detail_menu (sl as Slice ptr, ses_draw_root as Slice ptr)
 
@@ -1913,7 +1918,7 @@ SUB slice_edit_detail (byref ses as SliceEditState, edslice as Slice ptr, sl as 
     DIM expand as bool
     expand = .expand_dimensions OR .expand_visible OR .expand_alignment OR _
              .expand_special OR .expand_padding OR .expand_movement OR .expand_sort OR _
-             .expand_animation OR .expand_meta OR .expand_extra
+             .expand_animation OR .expand_meta OR .expand_extra OR .expand_context
     expand XOR= YES
     .expand_dimensions = expand
     .expand_visible = expand
@@ -1925,6 +1930,7 @@ SUB slice_edit_detail (byref ses as SliceEditState, edslice as Slice ptr, sl as 
     .expand_animation = expand
     .expand_meta = expand
     .expand_extra = expand
+    .expand_context = expand
    END WITH
    state.need_update = YES
   END IF
@@ -1968,6 +1974,7 @@ SUB slice_edit_detail (byref ses as SliceEditState, edslice as Slice ptr, sl as 
 
   draw_background vpages(dpage), bgChequer
 
+  UpdateSliceDynamicProps ses.draw_root
   RefreshSliceScreenPos sl  'Invisible slices won't otherwise be updated by DrawSlice
   IF ses.hide_mode <> hideSlices THEN
    DrawSlice ses.draw_root, dpage
@@ -2371,6 +2378,17 @@ SUB slice_edit_detail_keys (byref ses as SliceEditState, edslice as Slice ptr, b
    slice_editor_preview_animations ses, IIF(keyval(scShift) > 0, NULL, sl)
   END IF
  END IF
+ IF rule.group AND slgrCONTEXTVAR THEN
+  IF keyval(scDelete) > 1 THEN
+   RemoveContext sl, rule.datakey
+   state.need_update = YES
+  END IF
+ END IF
+ IF rule.group AND slgrADDCONTEXTVAR THEN
+  IF enter_space_click(state) THEN
+   state.need_update OR= slice_editor_add_context_var_menu(sl)
+  END IF
+ END IF
  IF rule.group AND slgrFRAMEID THEN
   'dataptr is only a temp var
   sl->SpriteData->set_frameid(sl, *CAST(integer ptr, rule.dataptr))
@@ -2416,6 +2434,7 @@ SUB slice_editor_preview_animations(byref ses as SliceEditState, slice_to_animat
   setkeys
   IF keyval(scP) > 1 THEN paused XOR= YES
   IF keyval(ccCancel) > 1 ORELSE readmouse.release ORELSE enter_or_space() THEN EXIT DO
+  UpdateSliceDynamicProps slice_to_animate
   IF NOT paused THEN AdvanceSlice slice_to_animate
   draw_background vpages(vpage), bgChequer
   DrawSlice newroot, vpage
@@ -2483,9 +2502,11 @@ SUB sliceed_rule (rules() as EditRule, helpkey as zstring ptr, mode as EditRuleM
  REDIM PRESERVE rules(index) as EditRule
  WITH rules(index)
   .dataptr = dataptr
+  .datakey = ""
   .mode = mode
   .lower = lower
   .upper = upper
+  .default = 0
   .group = group
   .helpkey = helpkey
  END WITH
@@ -2493,8 +2514,12 @@ END SUB
 
 'Set default value when pressing Delete. Must be called after one of the other sliceedit_rule_* subs
 'Not supported by strings, bools/toggles, or floats.
-SUB sliceed_rule_set_default (rules() as EditRule, default as integer=0)
+SUB sliceed_rule_set_default (rules() as EditRule, default as integer)
  rules(UBOUND(rules)).default = default
+END SUB
+
+SUB sliceed_rule_set_datakey (rules() as EditRule, key as string)
+ rules(UBOUND(rules)).datakey = key
 END SUB
 
 /' Not currently needed because all Slice pseudo-enums are ubytes
@@ -2633,8 +2658,12 @@ SUB SliceDetailMenu.refresh(byref ses as SliceEditState, byref state as MenuStat
   sliceed_rule_none rules(), "scripthandle"
  #ENDIF
  IF .Context THEN
-  a_append menu(), "Info: " &  .Context->description()
-  sliceed_rule_none rules(), "metadata"
+  'The context might have no description if it's just a container for variables
+  DIM description as string = .Context->description()
+  IF LEN(description) THEN
+   a_append menu(), "Info: " & description
+   sliceed_rule_none rules(), "metadata"
+  END IF
  END IF
  IF ses.privileged THEN
   a_append menu(), "Protected: " & yesorno(.Protect)
@@ -2644,7 +2673,7 @@ SUB SliceDetailMenu.refresh(byref ses as SliceEditState, byref state as MenuStat
   sliceed_rule_none rules(), "protect"
  END IF
 
- sliceed_header menu(), rules(), "[Dimensions]", @ses.expand_dimensions
+ sliceed_header menu(), rules(), "[Position/Size]", @ses.expand_dimensions
  IF ses.expand_dimensions THEN
   IF .FillHoriz = NO THEN
    a_append menu(), " X: " & .X
@@ -3064,6 +3093,27 @@ SUB SliceDetailMenu.refresh(byref ses as SliceEditState, byref state as MenuStat
   sliceed_rule_none rules(), "draw_time"
  END IF
 
+ sliceed_header menu(), rules(), "[Context Data]", @ses.expand_context
+ IF ses.expand_context THEN
+  IF .Context THEN
+   FOR idx as integer = 0 TO v_len(.Context->context_vars) - 1
+    WITH .Context->context_vars[idx]
+     a_append menu(), " " & .name & ": " & .asString()
+     IF .dtype = cttyBool THEN
+      sliceed_rule_tog rules(), "context_var", @.int_value, slgrCONTEXTVAR
+     ELSEIF .dtype = cttyInt THEN
+      sliceed_rule rules(), "context_var", erIntgrabber, @.int_value, INT_MIN, INT_MAX, slgrCONTEXTVAR
+     ELSEIF .dtype = cttyStr THEN
+      sliceed_rule_str rules(), "context_var", erStrgrabber, @.str_value, 128000, slgrCONTEXTVAR  'Arbitrary limit
+     END IF
+     sliceed_rule_set_datakey rules(), .name
+    END WITH
+   NEXT
+  END IF
+  a_append menu(), " Add new variable..."
+  sliceed_rule_none rules(), "add_context_var", slgrADDCONTEXTVAR
+ END IF
+
  sliceed_header menu(), rules(), "[Extra Data]", @ses.expand_extra
  IF ses.expand_extra THEN
   DIM length as integer = IIF(.ExtraVec, v_len(.ExtraVec), 3)
@@ -3142,7 +3192,7 @@ FUNCTION slice_caption (byref ses as SliceEditState, edslice as Slice ptr, sl as
   IF .Context THEN
    'Hide the Context of the root slice of a collection because it duplicates collection name, ID
    IF sl <> edslice ORELSE (*.Context IS SliceCollectionContext) = NO THEN
-    s &= .Context->description()
+    s &= .Context->description()  'may be zero length
    END IF
   END IF
   IF sl->Template THEN
@@ -3492,7 +3542,6 @@ FUNCTION edit_slice_lookup_codes(byref ses as SliceEditState, byval sl as Slice 
   append_simplemenu_item menu, "editor_ssed_tooltip_text", , , -411
   append_simplemenu_item menu, "editor_ssed_caption_text", , , -412
   append_simplemenu_item menu, "editor_ssed_frame_separator_templ", , , -413
-  append_simplemenu_item menu, "editor_enemy_sprite", , , -500
   append_simplemenu_item menu, "root", , , -100000
   append_simplemenu_item menu, "textbox_text", , , -100001
   append_simplemenu_item menu, "textbox_portrait", , , -100002
@@ -3512,8 +3561,8 @@ FUNCTION edit_slice_lookup_codes(byref ses as SliceEditState, byval sl as Slice 
   append_simplemenu_item menu, "walkabout_layer", , , -100010
   append_simplemenu_item menu, "hero_layer", , , -100011
   append_simplemenu_item menu, "npc_layer", , , -100012
-  append_simplemenu_item menu, "walkabout_sprite", , , -100013
-  append_simplemenu_item menu, "walkabout_shadow", , , -100014
+  append_simplemenu_item menu, "sprite", , , -100013
+  append_simplemenu_item menu, "shadow", , , -100014
   append_simplemenu_item menu, "backdrop", , , -100015
   append_simplemenu_item menu, "map_layer0", , , -101000
   append_simplemenu_item menu, "map_layer1", , , -101001
@@ -3692,6 +3741,27 @@ FUNCTION slice_color_caption(byval n as integer, ifzero as string="0") as string
  END IF
  'Invalid values still print, but !?
  RETURN n & "(!?)"
+END FUNCTION
+
+'Prompt for adding a new context variable to a slice. Overwrites any existing of the same name.
+'Returns true if one added (or modified).
+FUNCTION slice_editor_add_context_var_menu(sl as Slice ptr) as bool
+ DIM name as string
+ IF prompt_for_string(name, "Context variable name?") = NO THEN RETURN NO
+ IF LEN(name) = 0 THEN RETURN NO
+ name = LCASE(sanitize_script_identifier(name, NO, NO))  'allow_whitespace=NO, allow_leading_number=NO
+ IF LEN(name) = 0 THEN
+  show_overlay_message "Not a valid script identifier"
+  RETURN NO
+ END IF
+ DIM ty as SliceContextVarTypes
+ DIM types(2) as string = {"Bool", "Integer", "String"}
+ ty = multichoice("Variable type?", types())
+ IF ty < 0 THEN RETURN NO
+ IF ty = cttyBool THEN SetContextBool sl, name, NO
+ IF ty = cttyInt  THEN SetContext sl, name, 0
+ IF ty = cttyStr  THEN SetContext sl, name, ""
+ RETURN YES
 END FUNCTION
 
 'Editor for slice extra data or other integer vectors (used not just by the slice editor).

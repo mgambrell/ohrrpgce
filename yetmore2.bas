@@ -255,7 +255,7 @@ END FUNCTION
 'Note that this is called both from reset_game_final_cleanup(), in which case lots of stuff
 'has already been deallocated, or from exit_gracefully(), in which case no cleanup has been done!
 SUB exitprogram(byval need_fade_out as bool = NO, byval errorout as integer = 0)
-debuginfo "Cleaning up and terminating " & errorout
+debuginfo "Cleaning up and terminating exitcode=" & errorout
 
 gam.ingame = NO
 
@@ -1935,12 +1935,10 @@ SUB try_reload_lumps_anywhere ()
   'them to happen while live previewing
   ELSEIF modified_lumps[i] = "binsize.bin" THEN                           'BINSIZE.BIN
    clear_binsize_cache
-   showbug "Received binsize.bin modification, should not happen!"
    handled = YES
 
   ELSEIF modified_lumps[i] = "fixbits.bin" THEN                           'FIXBITS.BIN
    clear_fixbits_cache
-   showbug "Received fixbits.bin modification, should not happen!"
    handled = YES
 
   ELSEIF modified_lumps[i] = "palettes.bin" THEN                          'PALETTES.BIN

@@ -1,4 +1,4 @@
-'OHRRPGCE - music_blackbox audio backend 
+'OHRRPGCE - music_blackbox audio backend
 '(C) Copyright 1997-2025 James Paige, Ralph Versteegen, and the OHRRPGCE Developers
 'Dual licensed under the GNU GPL v2+ and MIT Licenses. Read LICENSE.txt for terms and disclaimer of liability.
 
@@ -20,6 +20,10 @@ Declare Function blackbox_sound_supported_formats() As Integer
 Declare Function blackbox_music_play(songname As const zstring ptr, fmt As Integer) As Any ptr
 Declare Sub blackbox_music_stop()
 Declare Sub blackbox_music_setvolume(vol As Single)
+'Declare Function blackbox_music_seekable(handle As any ptr) As Boolean
+Declare Function blackbox_music_get_time(handle As any ptr) As Double
+Declare Function blackbox_music_set_time(handle As any ptr, pos_s As Double) As Boolean
+Declare Function blackbox_music_get_length(handle As any ptr) As Double
 
 ' commands to manage sfx life cycles
 Declare Function blackbox_sound_load(filename As const zstring ptr) As any ptr
@@ -60,19 +64,16 @@ Sub music_init()
 	' defaults copied from music_sdl
 	music_vol = 0.5
 	music_running = True
-
 End Sub
 
 Sub music_close()
-
-	'We don't expect this to get used... 
+	'We don't expect this to get used...
 	'Even though it makes no sense to turn off audio on blackbox, we need to clean the state properly (volumes and channels ETC)
 
 	'do nothing if not running
 	If Not music_running Then Exit Sub
 
 	music_stop()
-
 End Sub
 
 Function music_get_info() As String
@@ -89,7 +90,7 @@ function sound_supported_formats() as Integer
 End Function
 
 Function music_settings_menu() As bool
-	' todo: did this return things to make the in-game sfx/mus vol menus appear
+	'There is no settings menu
 	Return NO
 End Function
 
@@ -107,11 +108,11 @@ Sub music_play(songname As String, ByVal fmt As MusicFormatEnum)
 End Sub
 
 Sub music_pause()
-	'reportedly these don't work, so don't do anything
+	'Not implemented
 End Sub
 
 Sub music_resume()
-	'reportedly these don't work, so don't do anything
+	'Not implemented
 End Sub
 
 Sub music_stop()
@@ -125,6 +126,28 @@ End Sub
 
 Function music_getvolume() as Single
 	Return music_vol
+End Function
+
+'TODO: the following are stubbed out until music seek/tell/length functions are added
+
+Function music_seekable() As bool
+	'return YES   'I presume so
+	return NO
+End Function
+
+Function music_gettime() As Double
+	'return blackbox_music_get_time(music_song)
+	return -1.0
+End Function
+
+Function music_settime(byval pos_s As Double) As bool
+	'return blackbox_music_set_time(music_song, pos_s)
+	return NO
+End Function
+
+Function music_getlength() As Double
+	'Return blackbox_music_get_length(music_song)
+	return -1.0
 End Function
 
 Sub sound_init()

@@ -81,7 +81,7 @@ Case 1: Full command definition
   <altcommand>* - This defines an alias to the command which is documented
                   together with it, but which appears separately in command
 		  indexes (if it contains a <canon>) and can be linked to
-		  separately. Must have an id="" attribute and <shortname>
+		  separately. Must have an id="..." attribute and <shortname>
 		  subelement, and usually has one or more <canon>s. If there's no
 		  canon then <shortname> is used for links but no 'canon' line
 		  appears in the command definition.
@@ -191,7 +191,7 @@ same level.)
 	~ Monorail guy, Simpsons
 
 -->
-<plotscript version="wip" datecode="2025-03-20">
+<plotscript version="wip" datecode="2025-08-21">
 	<title>
 		Dictionary of Plotscripting Commands
 	</title>
@@ -237,30 +237,32 @@ same level.)
 				</note>
 			</description>
 			<example># example of a simple script
-plotscript,my first script,begin
+plotscript, my first script, begin
 	# commands go here
 end</example>
-			<example># example of a script with arguments
-# (It can called with between 1 and 3 arguments.)
-plotscript,my fancy script,fe,fi=0,fo=0,begin
-	# commands go here,
-	# and they can use the aruments fe, fi, and fo
-	# that where passed to the script
+			<example># Example of a plotscript with arguments.
+# Attach this to an NPC script to run when the player activates the NPC
+plotscript, walk npc north, npc, scriptarg, begin
+	# Commands go here, and they can use the arguments npc (an NPC
+	# reference) and scriptarg (set in the NPC editor).
+
+	# E.g. walk north by "scriptarg" tiles.
+	walk npc (npc, north, scriptarg)
 end</example>
 		</command>
 		<command id="script">
-			<canon>script, name, argumentnames (statements)</canon>
+			<canon>script, name, arguments (statements)</canon>
 			<shortname>script</shortname>
 			<description>The script command contains a list of commands. Script starts with the keyword script, a comma, and then the name of the script. If there are any arguments to the script, you list their names separated by commas after the name of the script with optional default values. Then comes the text of the script. It is enclosed in <ref>begin</ref> and <ref>end</ref> statements. Scripts that are defined as script cannot be called directly from events in your game. They can only be called by name within other scripts. To make a script that can be run directly from your game, use <ref>plotscript</ref>.</description>
 			<example># example of a simple script
-script,my first script,begin
+script, my first script, begin
 	# commands go here
 end</example>
-			<example># Example of a script with arguments
-# (It can called with between 1 and 3 arguments.)
-script,my fancy script,fe,fi=0,fo=0,begin
+			<example># Example of a script with arguments: one required and two with defaults.
+# It can called with 1, 2, or 3 arguments (just fe, fe and fi, or all three).
+script, my fancy script, fe, fi=0, fo=0, begin
 	# Commands go here,
-	# and they can use the aruments fe, fi, and fo
+	# and they can use the arguments fe, fi, and fo
 	# that where passed to the script.
 end</example>
 		</command>
@@ -307,9 +309,16 @@ global variable(1,mini game score)</example>
 		<command id="variable">
 			<canon>variable (name)</canon>
 			<shortname>variable</shortname>
-			<description>Creates a local variable that can only be used inside the script where it was created. The value of this variable is lost when the script ends. If you need a variable who&apos;s value persists between calls to a script, or that is automatically saved when the player saves their game, you will need to use a <ref>globalvariable</ref> instead.</description>
-			<example>variable(points) # make a new variable
-variable+=1 # add one to it</example>
+			<description>
+				Creates a local variable that can only be used inside the script where it was created (and any <ref>subscript</ref>s).
+				The value of this variable is lost when the script ends.
+				If you need a variable whose value persists between calls to a script,
+				or that is automatically saved when the player saves their game,
+				you will need to use a <ref>globalvariable</ref> instead.
+			</description>
+			<example>variable(points) # Make a new variable
+points := 10  # Set its starting value
+points += 1   # Add one to it</example>
 		</command>
 		<command id="defineconstant">
 			<canon>define constant (number,name)</canon>
@@ -1161,7 +1170,11 @@ resume NPCs</example>
 				where <tt>menu handle</tt> might for example be <ref>topmenu</ref>.)
 			</description>
 			<example>suspend player
-# do stuff
+# Script a small cutscene...
+walk hero (me, right, 10)
+wait for hero (me)
+wait (20)
+set hero direction (me, left)
 resume player</example>
 		</command>
 		<command id="resumeplayer">
@@ -1432,7 +1445,7 @@ resume random enemies # back to normal</example>
 				Note that the player can still move the cursor in choiceboxes while this
 				is active, use <ref>suspendtextboxcontrols</ref> to disable that.
 				<warn>
-					<ref>waitfortextbox</ref> does't wait while <tt>suspend box advance</tt> is active!
+					<ref>waitfortextbox</ref> does't wait while <ref>suspendboxadvance</ref> is active!
 				</warn>
 			</description>
 
@@ -3314,6 +3327,11 @@ if (slot > 0) then (load from slot (slot))</example>
 			<shortname>room in active party</shortname>
 			<description>A function that returns the number of available spaces in your active party. It will return zero or <ref>false</ref> if there is no room.</description>
 		</command>
+		<command id="experiencereward">
+			<canon>experience reward</canon>
+			<shortname>experience reward</shortname>
+			<description>Returns the amount of experience given to each hero by enemies as reward in the most recent battle (or 0 if no battles have been fought so far).</description>
+		</command>
 		</section>		<!-- Inspecting the Party-->
 
 		<section title="Changing the Party">
@@ -3326,11 +3344,25 @@ if (slot > 0) then (load from slot (slot))</example>
 			<canon>delete hero (who)</canon>
 			<shortname>delete hero</shortname>
 			<description>
-				Removes the named hero from your party. If you have more
+				Permanently deletes the named hero from your party. If you have more
 				than one copy of the hero in your party, only the first
-				one will be deleted. Use the constants defined in your
-				HSI file. They are in the form of hero:name
-				</description>
+				one will be deleted.
+				<lb/>
+				<p>who</p> is a hero ID: use a constant of form <tt>hero:name</tt>.
+				<note>
+					Deleting a hero causes the "Remove hero" global script to immediately be called, if it's set.
+					<lb/>
+					Any equipment held by the hero is lost, so use <ref>unequip</ref> first
+					if you want to keep it.
+					<lb/>
+					However, for backcompat reasons, for now, some script commands can continue
+					to be used on a party slot that contained a deleted hero and will still
+					read the old data.  It's strongly recommended you don't rely on this. You
+					should instead use <ref>swapouthero</ref> and <ref>lockhero</ref> to remove
+					a hero from the active party and hide them from the player
+					(and make sure "Swapped out and locked heroes" receive no experience from battles, in Battle Settings).
+				</note>
+			</description>
 			<seealso>
 				<ref>deleteherobyslot</ref>
 			</seealso>
@@ -3339,34 +3371,116 @@ if (slot > 0) then (load from slot (slot))</example>
 			<canon>delete hero by slot (slot)</canon>
 			<shortname>delete hero by slot</shortname>
 			<description>
-				Removes a hero from the given slot in your party.
-				Returns -1 if no hero was removed because the slot was
+				Permanently deletes the hero in the given slot in your party.
+				Returns 0 if a hero was removed, or -1 if no hero was removed because the slot was
 				already empty.
+				See <ref>deletehero</ref> for some notes about what happens.
 			</description>
 			<seealso>
 				<ref>deletehero</ref>
 			</seealso>
 		</command>
+
 		<command id="swapinhero">
 			<canon>swap in hero (who)</canon>
 			<shortname>swap in hero</shortname>
-			<description>Moves the named hero in your from your reserves to your active party. If there is no room in your active party, the hero will not be moved. Use the constants defined in your HSI file. They are in the form of hero:name</description>
+			<description>
+				Moves the named hero in your from your reserves to your active party.
+				If there is no room in your active party, the hero will not be moved.
+				This command works even if the hero is locked (see <ref>lockhero</ref>).
+				<lb/>
+				The return value is the new party slot, or -1 on failure.
+				<lb/>
+				<p>who</p> is a hero ID: use a constant of form <tt>hero:name</tt>.
+			</description>
+			<seealso>
+				<ref>swapinherobyslot</ref>
+			</seealso>
 		</command>
 		<command id="swapouthero">
 			<canon>swap out hero (who)</canon>
 			<shortname>swap out hero</shortname>
-			<description>Moves the named hero from your active party into your reserve. Use the constants defined in your HSI file. They are in the form of hero:name</description>
+			<description>
+				Moves the named hero from your active party into your reserve. Use the constants defined in your HSI file. They are in the form of <tt>hero:name</tt>.
+				If there is more than one copy of the hero in the party, then the first
+				<lb/>
+				This command works even if the hero is locked (see <ref>lockhero</ref>).
+				<lb/>
+				The return value is the new party slot, or -1 on failure.
+				<danger>
+					If the active party contains no heroes after swapping out the hero,
+					then some hero will be swapped back into the active party, possibly
+					the same one, and they might go into a different slot than they were!
+					You should really avoid doing that.
+				</danger>
+			</description>
+			<seealso>
+				<ref>swapoutherobyslot</ref>
+			</seealso>
 		</command>
+		<command id="swapinherobyslot">
+			<canon>swap in hero by slot (slot)</canon>
+			<shortname>swap in hero by slot</shortname>
+			<description>
+				Identical to <ref>swapinhero</ref> except it takes a hero by their party <p>slot</p> instead their ID.
+			</description>
+		</command>
+		<command id="swapoutherobyslot">
+			<canon>swap out hero by slot (slot)</canon>
+			<shortname>swap out hero by slot</shortname>
+			<description>
+				Identical to <ref>swapouthero</ref> except it takes a hero by their party <p>slot</p> instead their ID.
+			</description>
+		</command>
+
 		<command id="lockhero">
 			<canon>lock hero (who)</canon>
 			<shortname>lock hero</shortname>
-			<description>Locking a hero prevents the player from moving the hero on the party menu. Locked heroes in the active party cannot be moved into the reserve, and locked heroes in the reserve are completely hidden. Also prevents a hero from being moved by <ref>swapinhero</ref> or <ref>swapouthero</ref>. Use the constants defined in your HSI file. They are in the form of hero:name</description>
+			<description>
+				Locking a hero prevents the player from moving the hero to a different slot in the party ("Team"/"Order") menu.
+				Locked heroes in the active party cannot be moved into the reserve,
+				and locked heroes in the reserve are hidden in the Team menu.
+				<lb/>
+				<p>who</p> is a hero ID: use a constant of form <tt>hero:name</tt>.
+				<note>
+					Does NOT prevent a hero from being moved by <ref>swapinhero</ref> or <ref>swapouthero</ref>.
+					(Previously it was incorrectly documented that <tt>lock hero</tt> did prevent scripted swapping.)
+				</note>
+			</description>
 		</command>
 		<command id="unlockhero">
 			<canon>unlock hero (who)</canon>
 			<shortname>unlock hero</shortname>
-			<description>Reverses <ref>lockhero</ref>, and makes it possible to move a hero in and out of the active party again. Use the constants defined in your HSI file. They are in the form of hero:name</description>
+			<description>
+				Undoes <ref>lockhero</ref>, and makes it possible to move a hero in and out of the active party again or change their slot.
+				<lb/>
+				<p>who</p> is a hero ID: use a constant of form <tt>hero:name</tt>.
+			</description>
 		</command>
+		<command id="lockherobyslot">
+			<canon>lock hero by slot (slot)</canon>
+			<shortname>lock hero by slot</shortname>
+			<description>
+				Identical to <ref>lockhero</ref> except it takes a hero by their party <p>slot</p> instead their ID.
+			</description>
+		</command>
+		<command id="unlockherobyslot">
+			<canon>unlock hero by slot (slot)</canon>
+			<shortname>unlock hero by slot</shortname>
+			<description>
+				Identical to <ref>unlockhero</ref> except it takes a hero by their party <p>slot</p> instead their ID.
+			</description>
+		</command>
+		<command id="heroislocked">
+			<canon>hero is locked (who)</canon>
+			<shortname>hero is locked</shortname>
+			<description>
+				Returns <tt>true</tt> if the hero is locked out of the active party (see <ref>lockhero</ref>).
+				<lb/>
+				<p>who</p> is a hero ID: use a constant of form <tt>hero:name</tt>.
+			</description>
+		</command>
+
 		<command id="swapbyname">
 			<canon>swap by name (name,name)</canon>
 			<shortname>swap by name</shortname>
@@ -3375,8 +3489,14 @@ if (slot > 0) then (load from slot (slot))</example>
 		<command id="swapbyposition">
 			<canon>swap by position (slot1, slot2)</canon>
 			<shortname>swap by position</shortname>
+			<altcommand id="swapbyslot">
+				<canon>swap by slot (slot1, slot2)</canon>
+				<shortname>swap by slot</shortname>
+			</altcommand>
 			<description>
-				Swaps two heroes in your party by their positions in the party (ie, by party slot).
+				Swaps the heroes in two slots in your party by their positions (ie, by party slot).
+				You can also swap slots which don't contain a hero, for example
+				to swap a hero in or out of the active party.
 			</description>
 		</command>
 
@@ -3417,6 +3537,11 @@ end, else, begin
 	wait for text box
 end</example>
 		</command>
+		<command id = "moneyreward">
+			<canon>money reward</canon>
+			<shortname>money reward</shortname>
+			<description>Returns how much money the party gained in the most recent battle (0 if there have been no battles so far).</description>
+		</command>
 	</section>
 
 	<section title="Items">
@@ -3451,13 +3576,155 @@ end</example>
 			</seealso>
 		</command>
 		<reference ref="equipwhere" />
+		<command id="equippableinslot">
+			<canon>equippable in slot (item, slot)</canon>
+			<shortname>equippable in slot</shortname>
+			<description>
+				Returns true if the item can be equipped in the specified slot
+				(a constant of the form <tt>slot:weapon</tt>, etc, in your .hsi file),
+				or false if it can't be equipped in that slot.
+				If you need to know if the item is equippable by a specific hero, see <ref>equipwhere</ref> instead.
+				<lb/>
+				The <p>item</p> argument is the item to check the equipability of.
+				You can use the item's ID number or a constant of the form <tt>item:name</tt>.
+			</description>
+			<seealso>
+				<ref>checkequipment</ref>
+				<ref>equipwhere</ref>
+			</seealso>
+		</command>
+		<command id="getitemvalue">
+			<canon>get item value (item)</canon>
+			<shortname>get item value</shortname>
+			<description>
+				Returns the value of an item. This is the default price for shops that don't override it.
+				<lb/>
+				The <p>item</p> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <tt>item:name</tt>.
+			</description>
+		</command>
+		<command id="getitemteachspell">
+			<canon>get item teach spell (item)</canon>
+			<shortname>get item teach spell</shortname>
+			<description>
+				If this item teaches a spell, return the attack ID+1 or <tt>none</tt> (0) if it does not.
+				<lb/>
+				The <p>item</p> argument is an item ID; you can refer to the item by number,
+				or you can use the constants in the form of <tt>item:name</tt>.
+			</description>
+			<seealso>
+				<ref>teachspell</ref>
+			</seealso>
+		</command>
+		<command id="getitemattackoutsidebattle">
+			<canon>get item attack outside battle (item)</canon>
+			<shortname>get item attack outside battle</shortname>
+			<description>
+				If this item does an attack when used outside of battle, return the attack ID + 1 or <tt>none</tt> (0) if it does not.
+				<lb/>
+				The <p>item</p> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <tt>item:name</tt>.
+			</description>
+			<seealso>
+				<ref>mapcure</ref>
+				<ref>useitem</ref>
+				<ref>getitemattackinbattle</ref>
+				<ref>getitemattackasweapon</ref>
+			</seealso>
+		</command>
+		<command id="getitemattackinbattle">
+			<canon>get item attack in battle (item)</canon>
+			<shortname>get item attack in battle</shortname>
+			<description>
+				If this item does an attack when used from the item menu in battle, return the attack ID + 1 or <tt>none</tt> (0) if it does not.
+				<lb/>
+				The <p>item</p> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <tt>item:name</tt>.
+			</description>
+			<seealso>
+				<ref>getitemattackoutsidebattle</ref>
+				<ref>getitemattackasweapon</ref>
+			</seealso>
+		</command>
+		<command id="getitemattackasweapon">
+			<canon>get item attack as weapon (item)</canon>
+			<shortname>get item attack as weapon</shortname>
+			<description>
+				Returns the attack ID+1 of the attack that this item will do if it is equipped as a weapon.
+				For non-weapons it will return 1 meaning attack ID 0.
+				If you wish to check whether or not an item is equippable as a wepon,
+				use <ref>equippableinslot</ref> instead.
+				<lb/>
+				The <p>item</p> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <tt>item:name</tt>.
+			</description>
+			<seealso>
+				<ref>getitemattackoutsidebattle</ref>
+				<ref>getitemattackinbattle</ref>
+				<ref>equippableinslot</ref>
+			</seealso>
+		</command>
+		<command id="getitemtextbox">
+			<canon>get item text box (item)</canon>
+			<shortname>get item text box</shortname>
+			<description>
+				If this item shows a text box, return the text box ID or -1 if it does not.
+				<lb/>
+				The <p>item</p> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <tt>item:name</tt>.
+			</description>
+			<seealso>
+				<ref>showtextbox</ref>
+			</seealso>
+		</command>
+		<command id="getitemequipstatbonus">
+			<canon>get item equip stat bonus (item, stat)</canon>
+			<shortname>get item equip stat bonus</shortname>
+			<description>
+				Return the stat bonus that you would get if you equipped this item.
+				<lb/>
+				The <p>item</p> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <tt>item:name</tt>.
+				<lb/>
+				The <p>stat</p> argument is the stat name constant in the form <tt>stat:name</tt>
+				(for example, <tt>stat:hp</tt> or <tt>stat:attack</tt>).
+			</description>
+			<seealso>
+				<ref>equipwhere</ref>
+				<ref>equippableinslot</ref>
+			</seealso>
+		</command>
+		<command id="getitemweaponpic">
+			<canon>get item weapon pic (item)</canon>
+			<shortname>get item weapon pic</shortname>
+			<description>
+				Returns the sprite id of the weapon picture used for this sprite.
+				If you wish to check whether or not an item is equippable as a wepon,
+				use <ref>equippableinslot</ref> instead.
+				<lb/>
+				The <p>item</p> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <tt>item:name</tt>.
+			</description>
+			<seealso>
+				<ref>getitemweaponpal</ref>
+				<ref>equippableinslot</ref>
+			</seealso>
+		</command>
+		<command id="getitemweaponpal">
+			<canon>get item weapon pal (item)</canon>
+			<shortname>get item weapon pal</shortname>
+			<description>
+				Returns the palette id of the weapon picture used for this sprite. If the weapon sprite uses the default palette, returns -1.
+				If you wish to check whether or not an item is equippable as a wepon,
+				use <ref>equippableinslot</ref> instead.
+				<lb/>
+				The <p>item</p> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <tt>item:name</tt>.
+			</description>
+			<seealso>
+				<ref>getitemweaponpic</ref>
+				<ref>equippableinslot</ref>
+			</seealso>
+		</command>
 
 
 		<section title="Inventory">
 		<command id="getitem">
 			<canon>get item (item, number)</canon>
 			<shortname>get item</shortname>
-			<description>Adds the specified number of the specified item to your inventory. If you do not specify a number, only one will be added. You can refer to the item by number, or you can use the constants defined in your HSI file, which are in the form of item:name. This command normally returns true, but it will return false if there was not room in the inventory to hold at least one of the items you werte trying to add.</description>
+			<description>Adds the specified number of the specified item to your inventory. If you do not specify a number, only one will be added. You can refer to the item by number, or you can use the constants defined in your HSI file, which are in the form of item:name. This command returns the number of items actually added, which could be different from the number requested if the inventory is full.</description>
 		</command>
 		<command id="deleteitem">
 			<canon>delete item (item, number)</canon>
@@ -3542,6 +3809,56 @@ end</example>
 				<ref>getinventorysize</ref>
 			</seealso>
 		</command>
+		<command id="sortinventory">
+			<canon>sort inventory</canon>
+			<shortname>sort inventory</shortname>
+			<description>
+				Sorts all inventory items, like the SORT menu item in the Inventory menu.
+				Moves all items to the top of the inventory and reorders them according to the
+				"Inventory autosort" setting in General Game Settings.
+			</description>
+		</command>
+		<command id="itemsreward">
+			<canon>items reward (number)</canon>
+			<shortname>items reward</shortname>
+			<description>
+				Returns the id numbers of the items dropped by enemies in the last battle
+				(-1 if item reward <p>number</p> is not present).
+				<p>number</p> counts from 0 up, where <tt>items reward(0)</tt> is the ID of
+				the first gained item, etc.
+				If the argument is <ref>getcount</ref>, then it returns the number of distinct
+				items acquired at the end of the battle.
+				You can use it in a loop in order to display all item rewards (for example, in
+				an after battle script), usually in tandem with <ref>itemsquantityreward</ref>.
+				<example>plotscript, print items gained, begin
+  # assume text box 123 contains text "Got ${S0} x ${S1}."
+  variable (idx)
+  for (idx, 0, items reward (get count) -- 1) do (
+    clear string (0)
+    append number (0, items quantity reward (idx))
+    get item name (1, items reward (idx))
+    show text box (123) # this should display e.g. "Got 2 x Herb."
+    wait for text box
+  )
+end</example>
+
+			</description>
+			<seealso>
+				<ref>itemsquantityreward</ref>
+			</seealso>
+		</command>
+		<command id="itemsquantityreward">
+			<canon>items quantity reward (number)</canon>
+			<shortname>items quantity reward</shortname>
+			<description>
+				Similar to <ref>itemsreward</ref>, except it returns the quantities of corresponding
+				items acquired in the last battle.
+			</description>
+			<seealso>
+				<ref>itemsreward</ref>
+			</seealso>
+		</command>
+
 		</section>		<!--Inventory-->
 
 		<section title="Equipment">
@@ -3614,7 +3931,7 @@ gain hero stat(who, stat:mp, 0)</example>
 				The second argument is the item to check the equipability of.
 				You can use the item's number or the item:name constants from your .hsi file.
 				<lb/>
-				If the item can be equipped in more than one different slot, this command only returns the first valid slot.
+				If the item can be equipped in more than one different slot, this command only returns the first valid slot. Use the <ref>equippableinslot</ref> command if you need to check multiple slots.
 				<note>
 					When a hero's equipment changes, their current HP and MP stats aren't updated.
 					See the Note at <ref>unequip</ref> for more information.
@@ -3623,6 +3940,7 @@ gain hero stat(who, stat:mp, 0)</example>
 			<seealso>
 				<ref>unequip</ref>
 				<ref>checkequipment</ref>
+				<ref>equippableinslot</ref>
 			</seealso>
 		</command>
 		<command id="checkequipment">
@@ -5852,6 +6170,25 @@ show string(0)</example>
 			</altcommand>
 			<description>Returns true if the two strings #<p>ID1</p> and #<p>ID2</p> are identical, case sensitive.</description>
 		</command>
+		<command id="insensitivestringequal">
+			<canon>insensitive string equal (ID1, ID2)</canon>
+			<shortname>insensitive string equal</shortname>
+			<altcommand id="insensitivestringcompare">
+				<canon>insensitive string compare (ID1, ID2)</canon>
+				<shortname>insensitive string compare</shortname>
+			</altcommand>
+			<description>Returns true if the two strings #<p>ID1</p> and #<p>ID2</p> are identical, case insensitive.</description>
+		</command>
+		<command id="stringtolower">
+			<canon>string to lower (ID)</canon>
+			<shortname>string to lower</shortname>
+			<description>Converts the string at <p>ID</p> to lower-case. Returns the same string <p>ID</p>.</description>
+		</command>
+		<command id="stringtoupper">
+			<canon>string to upper (ID)</canon>
+			<shortname>string to upper</shortname>
+			<description>Converts the string at <p>ID</p> to upper-case. Returns the same string <p>ID</p>.</description>
+		</command>
 		<command id="searchstring">
 			<canon>search string (ID1, ID2, start)</canon>
 			<shortname>search string</shortname>
@@ -7581,10 +7918,12 @@ lookup slice(sl:map overlay)
 lookup slice(sl:walkabout layer)
 lookup slice(sl:hero layer)
 lookup slice(sl:npc layer)
-lookup slice(sl:walkabout sprite)
-lookup slice(sl:walkabout sprite component)  # Same as lookup slice(sl:walkabout sprite)
-lookup slice(sl:walkabout shadow)
-lookup slice(sl:walkabout shadow component)  # Same as lookup slice(sl:walkabout shadow)
+lookup slice(sl:sprite)
+lookup slice(sl:walkabout sprite)  # Same as lookup slice(sl:sprite)
+lookup slice(sl:walkabout sprite component)  # Same as lookup slice(sl:sprite)
+lookup slice(sl:shadow)
+lookup slice(sl:walkabout shadow)  # Same as lookup slice(sl:shadow)
+lookup slice(sl:walkabout shadow component)  # Same as lookup slice(sl:shadow)
 lookup slice(sl:backdrop)
 lookup slice(sl:map layer0)
 lookup slice(sl:map layer1)
@@ -13164,7 +13503,13 @@ assert (check tag (tag:initialised) == OFF)  # something ought to be true at thi
 		<command id="getcallingscriptid">
 			<canon>get calling script id (depth)</canon>
 			<shortname>get calling script id</shortname>
-			<description>Returns the ID number of the script which called this one. The optional <p>depth</p> argument, which defaults to 1, allows returning the ID of a deeper ancestor script instead: 1 is the parent, 2 is the grandparent, etc. If there is no calling script (the script was triggered instead), then the return value is 0. You can get the ID number of a script by writing <tt>@scriptname</tt>.</description>
+			<description>
+				Returns the ID number of the script which called this one, or some other scriptin the call stack.
+				The optional <p>depth</p> argument, which defaults to 1, allows returning the ID of a
+				deeper ancestor script instead: 0 is the current script, 1 is the parent, 2 is the grandparent, etc.
+				If there is no calling script (the script was triggered instead), then the return value is 0.
+				You can get the ID number of a script by writing <tt>@scriptname</tt>.
+			</description>
 			<seealso>
 				<ref>getscriptname</ref>
 			</seealso>

@@ -9,6 +9,7 @@
 'so as to prevent them from cluttering up the global udts.bi file
 
 #include "slices.bi"
+#include "game_udts.bi"
 
 UNION BattleStatsSingle
   'See also Stats '-- the two of these can probably be unified eventually
@@ -241,7 +242,6 @@ END ENUM
 'This type stores the visual state of the victory display
 TYPE VictoryState
  state as VictoryStateEnum
- box as integer   'NO when not displaying a box, YES when displaying a box
  showlearn as integer 'NO when not showing spell learning, YES when already showing a learned spell
  learnwho as integer 'battle slot of hero currently displaying learned spells
  learnlist as integer 'spell list of hero currently displaying learned spells
@@ -280,21 +280,6 @@ ENUM BattleMenuItemType
  batmenu_ITEMS
  batmenu_SKIPTURN
 END ENUM
-
-'This type is just used by RewardState
-TYPE RewardsStateItem
- id as integer    'Not offset
- num as integer   'num = 0 indcates slot not used
-END TYPE
-
-'The rewards gathered in the current battle
-TYPE RewardsState
- plunder as integer
- exper as integer
- found(16) as RewardsStateItem
-
- DECLARE SUB add_item(itemid as integer, count as integer = 1)
-END TYPE
 
 'These handle the state of the currently displaying spell menu
 TYPE SpellMenuItem

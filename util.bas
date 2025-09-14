@@ -6,8 +6,6 @@
 ' any FreeBasic program. Nothing in here can depend on Allmodex, nor on any
 ' gfx or music backend, nor on any other part of the OHR
 
-CONST STACK_SIZE_INC = 512 ' in integers
-
 #include "config.bi"
 #include "datetime.bi" 'FB header
 #include "string.bi"  'FB header
@@ -96,8 +94,9 @@ SUB setup_fb_error_handler()
   DIM as zstring ptr func_name = ERFN, mod_name = ERMN
   DIM as zstring ptr message = ANY
   message = format_FB_error_message(err_num, err_line, mod_name, func_name)
-  DIM interrupt_signal as bool = (err_num = fberrSIGINT) OR (err_num = fberrSIGQUIT) OR (err_num = fberrSIGTERM)
-  fb_error_hook message, interrupt_signal
+  DIM terminate_signal as bool = (err_num = fberrSIGINT) OR (err_num = fberrSIGTERM)
+  DIM interrupt_signal as bool = (err_num = fberrSIGQUIT)
+  fb_error_hook message, terminate_signal, interrupt_signal
  #ENDIF
 END SUB
 
@@ -111,11 +110,19 @@ END SUB
 'one of two different ways by calling hook_fb_End or setup_fb_error_handler (not
 'both!) Called on ASSERT failure only if fb_End hooked.
 EXTERN "C"
-SUB fb_error_hook(message as const zstring ptr, interrupt_signal as boolint)
-  'Yes, this function is redundant, but it makes the control flow clearer.
-  IF interrupt_signal THEN
-   fatalerror message
+SUB fb_error_hook(message as const zstring ptr, terminate_signal as boolint, interrupt_signal as boolint)
+  IF terminate_signal THEN
+   'SIGINT, SIGTERM: Try to quit cleanly
+   print *message
+   debuginfo *message
+   post_terminate_signal
+  ELSEIF interrupt_signal THEN
+   'SIGQUIT: Print stack and exit quickly (still does some cleanup)
+   print *message
+   debug *message
+   fatal_error_shutdown
   ELSE
+   'Tries to show a graphical error and invoke crash reporter
    fatalbug message
   END IF
 END SUB
@@ -1019,8 +1026,8 @@ END FUNCTION
 
 SUB createstack (st as Stack)
   WITH st
-    .size = STACK_SIZE_INC - 4
-    .bottom = allocate(STACK_SIZE_INC * sizeof(integer))
+    .size = 1000
+    .bottom = allocate(.size * sizeof(integer))
     IF .bottom = 0 THEN
       'oh dear
       'debug "Not enough memory for stack"
@@ -1037,13 +1044,12 @@ SUB destroystack (st as Stack)
   END IF
 END SUB
 
+'Ensure can push at least 'amount' integers without overflow.
 SUB checkoverflow (st as Stack, byval amount as integer = 1)
   WITH st
     IF .pos - .bottom + amount >= .size THEN
-      .size += STACK_SIZE_INC
-      IF .size > STACK_SIZE_INC * 4 THEN .size += STACK_SIZE_INC
+      .size += .size \ 2 + amount
       'debug "new stack size = " & .size & " * 4  pos = " & (.pos - .bottom) & " amount = " & amount
-      'debug "nowscript = " & nowscript & " " & scrat(nowscript).id & " " & scriptname(scrat(nowscript).id) 
 
       DIM newptr as integer ptr
       newptr = reallocate(.bottom, .size * sizeof(integer))
@@ -1388,14 +1394,15 @@ END FUNCTION
 
 'Format a duration as a string with given precision, like '2m23.1s' or '0.4s'.
 'decimal_places = 1 means 0.1s precision, = 0 means 1s precision, etc
-FUNCTION format_duration(length as double, decimal_places as integer = 1) as string
+'See also seconds2str for actual format strings.
+FUNCTION format_duration(total_seconds as double, decimal_places as integer = 1) as string
  DIM subseconds as string
  IF decimal_places > 0 THEN subseconds = "." & STRING(decimal_places, "0")
 
- DIM seconds as double = fmod(length, 60)
- DIM minutes as integer = INT(length) \ 60
+ DIM seconds as double = fmod(total_seconds, 60)
+ DIM minutes as integer = INT(total_seconds) \ 60
  IF seconds > 60 - 0.5 * 0.1 ^ decimal_places THEN
-  'Avoid e.g. printing 1m60.0s for length 119.99
+  'Avoid e.g. printing 1m60.0s for total_seconds 119.99
   seconds = 0.
   minutes += 1
  END IF
@@ -1414,12 +1421,16 @@ FUNCTION format_duration(length as double, decimal_places as integer = 1) as str
  RETURN msg
 END FUNCTION
 
-' Argument is a timeserial
+' Argument is a timeserial (measured in days, e.g. NOW, FILEDATETIME)
 FUNCTION format_date(timeser as double) as string
  IF timeser = 0 THEN RETURN "0"
  RETURN FORMAT(timeser, "yyyy mmm dd hh:mm:ss")
 END FUNCTION
 
+' Format seconds according to a format string containing %s/%S, %m/%M, %h/%H.
+' The largest time interval should be lower-case, others uppercase,
+' e.g. "%h:%M:%S" or "%m:%S".
+' Use format_duration instead for less rigid formatting.
 FUNCTION seconds2str(sec as integer, f as string = " %m: %S") as string
   DIM ret as string
   DIM as integer s, m, h
@@ -3736,7 +3747,7 @@ function HashTable.constructed() as bool
 end function
 
 'Look for a key in a bucket vector, return NULL on failure
-local function hash_search_bucket(this as HashTable, bucket as HashBucketItem vector, hash as integer, key as any ptr = NULL) as HashBucketItem ptr
+local function hash_search_bucket(this as HashTable, bucket as HashBucketItem vector, hash as integer, key as const any ptr = NULL) as HashBucketItem ptr
   for bucketidx as integer = 0 to v_len(bucket) - 1
     dim it as HashBucketItem ptr = @bucket[bucketidx]
     if it->hash = hash then
@@ -3756,7 +3767,7 @@ local function hash_search_bucket(this as HashTable, bucket as HashBucketItem ve
   return NULL
 end function
 
-function HashTable.hash_key(key as any ptr) as integer
+function HashTable.hash_key(key as const any ptr) as integer
   if this.key_is_opaque_ptr then
     return cintptr32(key)
   elseif this.key_hash then
@@ -3768,7 +3779,7 @@ function HashTable.hash_key(key as any ptr) as integer
   return 0
 end function
 
-sub HashTable.add(hash as integer, value as any ptr, _key as any ptr = NULL)
+sub HashTable.add(hash as integer, value as any ptr, _key as const any ptr = NULL)
   BUG_IF(this.table = NULL, "construct() not called")
   dim byref bucket as HashBucketItem vector = this.table[cuint(hash) mod this.tablesize]
   dim item as HashBucketItem ptr = any
@@ -3788,15 +3799,15 @@ sub HashTable.add(hash as integer, value as integer)
   this.add(hash, canyptr(value), NULL)
 end sub
 
-sub HashTable.add(key as any ptr, value as any ptr)
+sub HashTable.add(key as const any ptr, value as any ptr)
   this.add(this.hash_key(key), value, key)
 end sub
 
-sub HashTable.add(key as any ptr, value as integer)
+sub HashTable.add(key as const any ptr, value as integer)
   this.add(this.hash_key(key), canyptr(value), key)
 end sub
 
-sub HashTable.set(hash as integer, value as any ptr, _key as any ptr = NULL)
+sub HashTable.set(hash as integer, value as any ptr, _key as const any ptr = NULL)
   BUG_IF(this.table = NULL, "construct() not called")
   dim bucket as HashBucketItem vector = this.table[cuint(hash) mod this.tablesize]
   dim it as HashBucketItem ptr = hash_search_bucket(this, bucket, hash, _key)
@@ -3812,15 +3823,15 @@ sub HashTable.set(hash as integer, value as integer)
   this.set(hash, canyptr(value), NULL)
 end sub
 
-sub HashTable.set(key as any ptr, value as any ptr)
+sub HashTable.set(key as const any ptr, value as any ptr)
   this.set(this.hash_key(key), value, key)
 end sub
 
-sub HashTable.set(key as any ptr, value as integer)
+sub HashTable.set(key as const any ptr, value as integer)
   this.set(this.hash_key(key), canyptr(value), key)
 end sub
 
-function HashTable.get(hash as integer, default as any ptr = NULL, _key as any ptr = NULL) as any ptr
+function HashTable.get(hash as integer, default as any ptr = NULL, _key as const any ptr = NULL) as any ptr
   BUG_IF(this.table = NULL, "construct() not called", NULL)
   dim bucket as HashBucketItem vector = this.table[cuint(hash) mod this.tablesize]
   dim it as HashBucketItem ptr = hash_search_bucket(this, bucket, hash, _key)
@@ -3828,7 +3839,7 @@ function HashTable.get(hash as integer, default as any ptr = NULL, _key as any p
   return it->value
 end function
 
-function HashTable.get(key as any ptr, default as any ptr = 0) as any ptr
+function HashTable.get(key as const any ptr, default as any ptr = 0) as any ptr
   return this.get(this.hash_key(key), default, key)
 end function
 
@@ -3836,11 +3847,11 @@ function HashTable.get_int(hash as integer, default as integer = 0) as integer
   return cintptr32(this.get(hash, canyptr(default), NULL))
 end function
 
-function HashTable.get_int(key as any ptr, default as integer = 0) as integer
+function HashTable.get_int(key as const any ptr, default as integer = 0) as integer
   return cintptr32(this.get(this.hash_key(key), canyptr(default), key))
 end function
 
-function HashTable.get_str(hash as integer, default as zstring ptr = @"", _key as any ptr = NULL) as string
+function HashTable.get_str(hash as integer, default as zstring ptr = @"", _key as const any ptr = NULL) as string
   'return *cast(string ptr, this.get(hash, @default, _key))
   'Avoiding initialising a new string from default if not needed, but want to still allow NULL as a value
   dim ret as any ptr = this.get(hash, canyptr(-1234), _key)
@@ -3854,12 +3865,12 @@ function HashTable.get_str(hash as integer, default as zstring ptr = @"", _key a
   end if
 end function
 
-function HashTable.get_str(key as any ptr, default as zstring ptr = @"") as string
+function HashTable.get_str(key as const any ptr, default as zstring ptr = @"") as string
   return this.get_str(this.hash_key(key), default, key)
   'if ret = canyptr(-1) then return *default else return *ret
 end function
 
-function HashTable.remove(hash as integer, _key as any ptr = NULL) as bool
+function HashTable.remove(hash as integer, _key as const any ptr = NULL) as bool
   dim byref bucket as HashBucketItem vector = this.table[cuint(hash) mod this.tablesize]
   dim it as HashBucketItem ptr = hash_search_bucket(this, bucket, hash, _key)
   if it = NULL then return NO
@@ -3871,7 +3882,7 @@ function HashTable.remove(hash as integer, _key as any ptr = NULL) as bool
   return YES
 end function
 
-function HashTable.remove(key as any ptr) as bool
+function HashTable.remove(key as const any ptr) as bool
   return this.remove(this.hash_key(key), key)
 end function
 
@@ -3889,7 +3900,7 @@ sub HashTable.clear()
   this.numitems = 0
 end sub
 
-function HashTable.iter(byref state as uinteger, prev_value as any ptr, byref key as any ptr = NULL) as any ptr
+function HashTable.iter(byref state as uinteger, prev_value as any ptr, byref key as const any ptr = NULL) as any ptr
   if state = &hFFFFFFFF then
     key = NULL
     return NULL

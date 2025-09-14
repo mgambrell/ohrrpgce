@@ -87,6 +87,8 @@ TYPE SpriteEditState
   high as integer
   spriteset as Frame ptr vector 'Spriteset to which .sprite belongs, converted to a vector
                                 '(Used instead of a Frame array so can do easy frame replacement)
+                                'If fullset = YES, then v_len(.spriteset) = 1
+  true_numframes as integer     'Number of frames of the actual spriteset even in fullset mode
   framenum as integer   'Frame number of .sprite within .spriteset
   default_export_filename as string
   save_callback as FnSpriteSaver   'Called to save the sprite
@@ -114,6 +116,7 @@ TYPE SpriteEditState
   number_typing_deadline as double  'Deadline for typing more digits of a color idx
   drawcursor as integer 'Icon to use for the cursor, (character in the font)
   tool as integer
+  alternate_mode as bool 'When Marking, cut instead of copy
   pal_num as integer    'Palette used by current sprite
   curcolor as integer   'Index in master palette (equal to .palette->col(.palindex))
   palindex as integer   'Index in 16 color palette
@@ -121,7 +124,7 @@ TYPE SpriteEditState
   airsize as integer
   mist as integer
   hold as integer
-  tick as integer
+  tick as integer       'usually 0, 1 every 110ms
   tog as integer        '0/1
   holdpos as XYPair     'Opposite corner of a line/box, center of an ellipse, Clone brush offset
   radius as double
@@ -135,6 +138,8 @@ TYPE SpriteEditState
   readjust as bool
   adjustpos as XYPair
   showcolnum as integer 'Ticks remaining to show the number of selected master palette color
+  onion_enabled as bool
+  onionnum as integer
 
   'Fixed members
   previewpos as XYPair
@@ -162,6 +167,7 @@ TYPE TileEditState
   drawcursor as integer
   preview_content as integer   'tile preview mode (0=neighbours/1=tiled)
   tool as integer
+  alternate_mode as bool     'When Marking, cut instead of copy
   curcolor as integer
   hidemouse as bool
   radius as double

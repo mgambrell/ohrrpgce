@@ -213,7 +213,7 @@ function toggleContent(target) {
 <h1>
 		Dictionary of Plotscripting Commands
 	</h1>
-<h2>For the next WIP OHRRPGCE version (nightly build 2025-03-20)</h2>
+<h2>For the next WIP OHRRPGCE version (nightly build 2025-08-21)</h2>
 		This is the documentation for all <a href="https://rpg.hamsterrepublic.com/ohrrpgce/Plotscripting">plotscripting</a> commands.
 		In addition to reading this document, we also recommend you check out the
 		<a href="https://rpg.hamsterrepublic.com/ohrrpgce/Plotscripting_Tutorial">Plotscripting Tutorial</a>
@@ -811,12 +811,14 @@ function toggleContent(target) {
 		<a href="#about-enemyelementalresistasint" class="ref">enemy elemental resist as int (enemy, element)</a><br>
 		<a href="#about-equal" class="ref">number == number</a><br>
 		<a href="#about-equipmenu" class="ref">equip menu (who, allow switching)</a><br>
+		<a href="#about-equippableinslot" class="ref">equippable in slot (item, slot)</a><br>
 		<a href="#about-equipwhere" class="ref">equip where (hero, item)</a><br>
 		<a href="#about-exit" class="ref">exit</a><br>
 		<a href="#about-exitreturning" class="ref">exit returning(value)</a><br>
 		<a href="#about-exitscript" class="ref">exit script</a><br>
 		<a href="#about-expandstring" class="ref">expand string(ID, saveslot)</a><br>
 		<a href="#about-expandstringsinslices" class="ref">expand strings in slices(handle, saveslot)</a><br>
+		<a href="#about-experiencereward" class="ref">experience reward</a><br>
 		<a href="#about-experiencetolevel" class="ref">experience to level (level, hero slot)</a><br>
 		<a href="#about-experiencetonextlevel" class="ref">experience to next level (who)</a><br>
 		<a href="#about-exponent" class="ref">number ^ power</a><br>
@@ -933,9 +935,18 @@ function toggleContent(target) {
 		<a href="#about-getinsteadofbattlescript" class="ref">get instead of battle script</a><br>
 		<a href="#about-getinventorysize" class="ref">get inventory size</a><br>
 		<a href="#about-getitem" class="ref">get item (item, number)</a><br>
+		<a href="#about-getitemattackasweapon" class="ref">get item attack as weapon (item)</a><br>
+		<a href="#about-getitemattackinbattle" class="ref">get item attack in battle (item)</a><br>
+		<a href="#about-getitemattackoutsidebattle" class="ref">get item attack outside battle (item)</a><br>
 		<a href="#about-getitemdescription" class="ref">get item description (ID, item)</a><br>
+		<a href="#about-getitemequipstatbonus" class="ref">get item equip stat bonus (item, stat)</a><br>
 		<a href="#about-getitemmaximumstacksize" class="ref">get item maximum stack size (item)</a><br>
 		<a href="#about-getitemname" class="ref">get item name (ID, item)</a><br>
+		<a href="#about-getitemteachspell" class="ref">get item teach spell (item)</a><br>
+		<a href="#about-getitemtextbox" class="ref">get item text box (item)</a><br>
+		<a href="#about-getitemvalue" class="ref">get item value (item)</a><br>
+		<a href="#about-getitemweaponpal" class="ref">get item weapon pal (item)</a><br>
+		<a href="#about-getitemweaponpic" class="ref">get item weapon pic (item)</a><br>
 		<a href="#about-getleftpadding" class="ref">get left padding (handle)</a><br>
 		<a href="#about-getlevelcap" class="ref">get level cap</a><br>
 		<a href="#about-getlevelmp" class="ref">get level MP (who, mp level slot, type)</a><br>
@@ -1059,6 +1070,7 @@ function toggleContent(target) {
 		<a href="#about-herodirection" class="ref">hero direction (who)</a><br>
 		<a href="#about-heroframe" class="ref">hero frame (who)</a><br>
 		<a href="#about-heroischasing" class="ref">hero is chasing (who)</a><br>
+		<a href="#about-heroislocked" class="ref">hero is locked (who)</a><br>
 		<a href="#about-heroiswalking" class="ref">hero is walking (who)</a><br>
 		<a href="#about-herolevelled" class="ref">hero levelled (who)</a><br>
 		<a href="#about-heropixelx" class="ref">hero pixel X (who)</a><br>
@@ -1086,6 +1098,8 @@ function toggleContent(target) {
 		<a href="#about-inputstring" class="ref">input string (ID, maxlength, use current, center, position x, position y)</a><br>
 		<a href="#about-inputstringwithmousekeyboard" class="ref">input string with mouse keyboard (ID, maxlength)</a><br>
 		<a href="#about-inputstringwithvirtualkeyboard" class="ref">input string with virtual keyboard (ID, maxlength, onlyplayer)</a><br>
+		<a href="#about-insensitivestringcompare" class="ref">insensitive string compare (ID1, ID2)</a><br>
+		<a href="#about-insensitivestringequal" class="ref">insensitive string equal (ID1, ID2)</a><br>
 		<a href="#about-insertextra" class="ref">insert extra (handle, index, value)</a><br>
 		<a href="#about-insidebattle" class="ref">inside battle</a><br>
 		<a href="#about-inventory" class="ref">inventory (item)</a><br>
@@ -1095,6 +1109,8 @@ function toggleContent(target) {
 		<a href="#about-itemcountinslot" class="ref">item count in slot (slot)</a><br>
 		<a href="#about-iteminslot" class="ref">item in slot (slot)</a><br>
 		<a href="#about-itemsmenu" class="ref">items menu</a><br>
+		<a href="#about-itemsquantityreward" class="ref">items quantity reward (number)</a><br>
+		<a href="#about-itemsreward" class="ref">items reward (number)</a><br>
 		<a href="#about-joystickaxis" class="ref">joystick axis (axis, multiplier, player)</a><br>
 		<a href="#about-joystickbutton" class="ref">joystick button (button, player)</a><br>
 		<a href="#about-controlcodes" class="ref">Key Constants</a><br>
@@ -1135,6 +1151,7 @@ function toggleContent(target) {
 		<a href="#about-loadwalkaboutsprite" class="ref">load walkabout sprite (num, palette)</a><br>
 		<a href="#about-loadweaponsprite" class="ref">load weapon sprite (num, palette)</a><br>
 		<a href="#about-lockhero" class="ref">lock hero (who)</a><br>
+		<a href="#about-lockherobyslot" class="ref">lock hero by slot (slot)</a><br>
 		<a href="#about-logicaland" class="ref">value &amp;&amp; value</a><br>
 		<a href="#about-logicalor" class="ref">value || value</a><br>
 		<a href="#about-logicalxor" class="ref">value ^^ value</a><br>
@@ -1169,6 +1186,7 @@ function toggleContent(target) {
 		<a href="#about-milliseconds" class="ref">milliseconds</a><br>
 		<a href="#about-minutesofplay" class="ref">minutes of play</a><br>
 		<a href="#about-modulus" class="ref">number,mod,number</a><br>
+		<a href="#about-moneyreward" class="ref">money reward</a><br>
 		<a href="#about-mousebutton" class="ref">mouse button (which)</a><br>
 		<a href="#about-mouseclick" class="ref">mouse click (which)</a><br>
 		<a href="#about-mouseconstants" class="ref">Mouse Constants</a><br>
@@ -1360,7 +1378,7 @@ function toggleContent(target) {
 		<a href="#about-savescreenshot" class="ref">save screenshot</a><br>
 		<a href="#about-saveslotused" class="ref">save slot used (slot)</a><br>
 		<a href="#about-scancode" class="ref">Scancodes</a><br>
-		<a href="#about-script" class="ref">script, name, argumentnames (statements)</a><br>
+		<a href="#about-script" class="ref">script, name, arguments (statements)</a><br>
 		<a href="#about-scripterror" class="ref">script error (string id)</a><br>
 		<a href="#about-scriptid" class="ref">Script IDs</a><br>
 		<a href="#about-scriptlayer" class="ref">script layer</a><br>
@@ -1596,6 +1614,7 @@ function toggleContent(target) {
 		<a href="#about-song:sameasmap" class="ref">song: same as map</a><br>
 		<a href="#about-song:silence" class="ref">song: silence</a><br>
 		<a href="#about-sortchildren" class="ref">sort children (handle, wipe)</a><br>
+		<a href="#about-sortinventory" class="ref">sort inventory</a><br>
 		<a href="#about-soundisplaying" class="ref">sound is playing (num)</a><br>
 		<a href="#about-south" class="ref">south</a><br>
 		<a href="#about-southwall" class="ref">south wall</a><br>
@@ -1625,6 +1644,8 @@ function toggleContent(target) {
 		<a href="#about-stringsprintf" class="ref">string sprintf (dest string ID, format string ID, arguments...)</a><br>
 		<a href="#about-stringstyle" class="ref">string style (ID, style)</a><br>
 		<a href="#about-stringtoglobals" class="ref">string to globals (ID, starting global, length)</a><br>
+		<a href="#about-stringtolower" class="ref">string to lower (ID)</a><br>
+		<a href="#about-stringtoupper" class="ref">string to upper (ID)</a><br>
 		<a href="#about-stringx" class="ref">string X (ID)</a><br>
 		<a href="#about-stringy" class="ref">string Y (ID)</a><br>
 		<a href="#about-subscript" class="ref">subscript, name, argumentnames (statements)</a><br>
@@ -1648,9 +1669,12 @@ function toggleContent(target) {
 		<a href="#about-suspendwalkabouts" class="ref">suspend walkabouts</a><br>
 		<a href="#about-swapbyname" class="ref">swap by name (name,name)</a><br>
 		<a href="#about-swapbyposition" class="ref">swap by position (slot1, slot2)</a><br>
+		<a href="#about-swapbyslot" class="ref">swap by slot (slot1, slot2)</a><br>
 		<a href="#about-swapinhero" class="ref">swap in hero (who)</a><br>
+		<a href="#about-swapinherobyslot" class="ref">swap in hero by slot (slot)</a><br>
 		<a href="#about-swapmenuitems" class="ref">swap menu items(handle1, handle2)</a><br>
 		<a href="#about-swapouthero" class="ref">swap out hero (who)</a><br>
+		<a href="#about-swapoutherobyslot" class="ref">swap out hero by slot (slot)</a><br>
 		<a href="#about-switch" class="ref">switch(expression)</a><br>
 		<a href="#about-systemday" class="ref">system day</a><br>
 		<a href="#about-systemhour" class="ref">system hour</a><br>
@@ -1681,6 +1705,7 @@ function toggleContent(target) {
 		<a href="#about-unequip" class="ref">unequip (hero, slot)</a><br>
 		<a href="#about-unhidemousecursor" class="ref">unhide mouse cursor</a><br>
 		<a href="#about-unlockhero" class="ref">unlock hero (who)</a><br>
+		<a href="#about-unlockherobyslot" class="ref">unlock hero by slot (slot)</a><br>
 		<a href="#about-up" class="ref">up</a><br>
 		<a href="#about-updateleveluplearning" class="ref">update level up learning(who, allowforget)</a><br>
 		<a href="#about-updatepalette" class="ref">update palette</a><br>
@@ -1744,7 +1769,7 @@ function toggleContent(target) {
 <div class="select-content-shown" id="Declarations-index">
 <button onclick="toggleContent(this);"><span class="content-shown">Hide index</span><span class="content-hidden">Show index</span></button><ul><div class="content-shown">
 		<a href="#about-plotscript" class="ref">plotscript, name, argumentnames (statements)</a><br>
-		<a href="#about-script" class="ref">script, name, argumentnames (statements)</a><br>
+		<a href="#about-script" class="ref">script, name, arguments (statements)</a><br>
 		<a href="#about-subscript" class="ref">subscript, name, argumentnames (statements)</a><br>
 		<a href="#about-globalvariable" class="ref">global variable (id,name)</a><br>
 		<a href="#about-variable" class="ref">variable (name)</a><br>
@@ -1781,32 +1806,34 @@ function toggleContent(target) {
 			
 			
 			<pre># example of a simple script
-plotscript,my first script,begin
+plotscript, my first script, begin
 	# commands go here
-end</pre><pre># example of a script with arguments
-# (It can called with between 1 and 3 arguments.)
-plotscript,my fancy script,fe,fi=0,fo=0,begin
-	# commands go here,
-	# and they can use the aruments fe, fi, and fo
-	# that where passed to the script
+end</pre><pre># Example of a plotscript with arguments.
+# Attach this to an NPC script to run when the player activates the NPC
+plotscript, walk npc north, npc, scriptarg, begin
+	# Commands go here, and they can use the arguments npc (an NPC
+	# reference) and scriptarg (set in the NPC editor).
+
+	# E.g. walk north by "scriptarg" tiles.
+	walk npc (npc, north, scriptarg)
 end</pre>
 			
 		</p>
 </div>
 		<div class="command">
 			<a name="about-script"></a>
-				<h4>script, name, argumentnames (statements)</h4>
+				<h4>script, name, arguments (statements)</h4>
 <p>
 			The script command contains a list of commands. Script starts with the keyword script, a comma, and then the name of the script. If there are any arguments to the script, you list their names separated by commas after the name of the script with optional default values. Then comes the text of the script. It is enclosed in <a href="#about-begin" class="ref">begin</a> and <a href="#about-end" class="ref">end</a> statements. Scripts that are defined as script cannot be called directly from events in your game. They can only be called by name within other scripts. To make a script that can be run directly from your game, use <a href="#about-plotscript" class="ref">plotscript</a>.
 			
 			<pre># example of a simple script
-script,my first script,begin
+script, my first script, begin
 	# commands go here
-end</pre><pre># Example of a script with arguments
-# (It can called with between 1 and 3 arguments.)
-script,my fancy script,fe,fi=0,fo=0,begin
+end</pre><pre># Example of a script with arguments: one required and two with defaults.
+# It can called with 1, 2, or 3 arguments (just fe, fe and fi, or all three).
+script, my fancy script, fe, fi=0, fo=0, begin
 	# Commands go here,
-	# and they can use the aruments fe, fi, and fo
+	# and they can use the arguments fe, fi, and fo
 	# that where passed to the script.
 end</pre>
 			
@@ -1863,10 +1890,17 @@ global variable(1,mini game score)</pre>
 			<a name="about-variable"></a>
 				<h4>variable (name)</h4>
 <p>
-			Creates a local variable that can only be used inside the script where it was created. The value of this variable is lost when the script ends. If you need a variable who's value persists between calls to a script, or that is automatically saved when the player saves their game, you will need to use a <a href="#about-globalvariable" class="ref">global variable</a> instead.
 			
-			<pre>variable(points) # make a new variable
-variable+=1 # add one to it</pre>
+				Creates a local variable that can only be used inside the script where it was created (and any <a href="#about-subscript" class="ref">subscript</a>s).
+				The value of this variable is lost when the script ends.
+				If you need a variable whose value persists between calls to a script,
+				or that is automatically saved when the player saves their game,
+				you will need to use a <a href="#about-globalvariable" class="ref">global variable</a> instead.
+			
+			
+			<pre>variable(points) # Make a new variable
+points := 10  # Set its starting value
+points += 1   # Add one to it</pre>
 			
 		</p>
 </div>
@@ -3202,7 +3236,11 @@ resume NPCs</pre>
 			
 			
 			<pre>suspend player
-# do stuff
+# Script a small cutscene...
+walk hero (me, right, 10)
+wait for hero (me)
+wait (20)
+set hero direction (me, left)
 resume player</pre>
 			
 		</p>
@@ -3214,7 +3252,11 @@ resume player</pre>
 			Restores normal control after a <a href="#about-suspendplayer" class="ref">suspend player</a> command. This is very important. If you use <a href="#about-suspendplayer" class="ref">suspend player</a>, but forget resume player, the game will be stuck after the script ends.
 			
 			<pre>suspend player
-# do stuff
+# Script a small cutscene...
+walk hero (me, right, 10)
+wait for hero (me)
+wait (20)
+set hero direction (me, left)
 resume player</pre>
 			
 		</p>
@@ -3614,7 +3656,7 @@ resume random enemies # back to normal</pre>
 				is active, use <a href="#about-suspendtextboxcontrols" class="ref">suspend text box controls</a> to disable that.
 				<div class="notice warn">
 <img src="Plotwarn.png" alt="[Warning]" class="icon">
-					<a href="#about-waitfortextbox" class="ref">wait for text box</a> does't wait while <span class="code">suspend box advance</span> is active!
+					<a href="#about-waitfortextbox" class="ref">wait for text box</a> does't wait while <a href="#about-suspendboxadvance" class="ref">suspend box advance</a> is active!
 				</div>
 			
 			
@@ -6456,6 +6498,7 @@ if (slot &gt; 0) then (load from slot (slot))</pre>
 		<a href="#about-rankincaterpillar" class="ref">rank in caterpillar (who)</a><br>
 		<a href="#about-herobyrank" class="ref">hero by rank (where)</a><br>
 		<a href="#about-roominactiveparty" class="ref">room in active party</a><br>
+		<a href="#about-experiencereward" class="ref">experience reward</a><br>
 </ul>
 <ul></ul>
 </li>
@@ -6467,10 +6510,16 @@ if (slot &gt; 0) then (load from slot (slot))</pre>
 		<a href="#about-deleteherobyslot" class="ref">delete hero by slot (slot)</a><br>
 		<a href="#about-swapinhero" class="ref">swap in hero (who)</a><br>
 		<a href="#about-swapouthero" class="ref">swap out hero (who)</a><br>
+		<a href="#about-swapinherobyslot" class="ref">swap in hero by slot (slot)</a><br>
+		<a href="#about-swapoutherobyslot" class="ref">swap out hero by slot (slot)</a><br>
 		<a href="#about-lockhero" class="ref">lock hero (who)</a><br>
 		<a href="#about-unlockhero" class="ref">unlock hero (who)</a><br>
+		<a href="#about-lockherobyslot" class="ref">lock hero by slot (slot)</a><br>
+		<a href="#about-unlockherobyslot" class="ref">unlock hero by slot (slot)</a><br>
+		<a href="#about-heroislocked" class="ref">hero is locked (who)</a><br>
 		<a href="#about-swapbyname" class="ref">swap by name (name,name)</a><br>
 		<a href="#about-swapbyposition" class="ref">swap by position (slot1, slot2)</a><br>
+		<a href="#about-swapbyslot" class="ref">swap by slot (slot1, slot2)</a><br>
 </ul>
 <ul></ul>
 </li>
@@ -6547,6 +6596,16 @@ if (slot &gt; 0) then (load from slot (slot))</pre>
 			
 		</p>
 </div>
+		<div class="command">
+			<a name="about-experiencereward"></a>
+				<h4>experience reward</h4>
+<p>
+			Returns the amount of experience given to each hero by enemies as reward in the most recent battle (or 0 if no battles have been fought so far).
+			
+			
+			
+		</p>
+</div>
 		<hr>
 		</div>
 		<div class="subsection">
@@ -6571,11 +6630,26 @@ if (slot &gt; 0) then (load from slot (slot))</pre>
 				<h4>delete hero (who)</h4>
 <p>
 			
-				Removes the named hero from your party. If you have more
+				Permanently deletes the named hero from your party. If you have more
 				than one copy of the hero in your party, only the first
-				one will be deleted. Use the constants defined in your
-				HSI file. They are in the form of hero:name
-				
+				one will be deleted.
+				<br>
+				<span class="param">who</span> is a hero ID: use a constant of form <span class="code">hero:name</span>.
+				<div class="notice note">
+<img src="Plotnote.png" alt="[Notice]" class="icon">
+					Deleting a hero causes the "Remove hero" global script to immediately be called, if it's set.
+					<br>
+					Any equipment held by the hero is lost, so use <a href="#about-unequip" class="ref">unequip</a> first
+					if you want to keep it.
+					<br>
+					However, for backcompat reasons, for now, some script commands can continue
+					to be used on a party slot that contained a deleted hero and will still
+					read the old data.  It's strongly recommended you don't rely on this. You
+					should instead use <a href="#about-swapouthero" class="ref">swap out hero</a> and <a href="#about-lockhero" class="ref">lock hero</a> to remove
+					a hero from the active party and hide them from the player
+					(and make sure "Swapped out and locked heroes" receive no experience from battles, in Battle Settings).
+				</div>
+			
 			
 			
 			<div class="seealso">See also: <ul><li><a href="#about-deleteherobyslot" class="ref">delete hero by slot</a></li></ul>
@@ -6587,9 +6661,10 @@ if (slot &gt; 0) then (load from slot (slot))</pre>
 				<h4>delete hero by slot (slot)</h4>
 <p>
 			
-				Removes a hero from the given slot in your party.
-				Returns -1 if no hero was removed because the slot was
+				Permanently deletes the hero in the given slot in your party.
+				Returns 0 if a hero was removed, or -1 if no hero was removed because the slot was
 				already empty.
+				See <a href="#about-deletehero" class="ref">delete hero</a> for some notes about what happens.
 			
 			
 			
@@ -6601,17 +6676,65 @@ if (slot &gt; 0) then (load from slot (slot))</pre>
 			<a name="about-swapinhero"></a>
 				<h4>swap in hero (who)</h4>
 <p>
-			Moves the named hero in your from your reserves to your active party. If there is no room in your active party, the hero will not be moved. Use the constants defined in your HSI file. They are in the form of hero:name
+			
+				Moves the named hero in your from your reserves to your active party.
+				If there is no room in your active party, the hero will not be moved.
+				This command works even if the hero is locked (see <a href="#about-lockhero" class="ref">lock hero</a>).
+				<br>
+				The return value is the new party slot, or -1 on failure.
+				<br>
+				<span class="param">who</span> is a hero ID: use a constant of form <span class="code">hero:name</span>.
 			
 			
 			
+			<div class="seealso">See also: <ul><li><a href="#about-swapinherobyslot" class="ref">swap in hero by slot</a></li></ul>
+</div>
 		</p>
 </div>
 		<div class="command">
 			<a name="about-swapouthero"></a>
 				<h4>swap out hero (who)</h4>
 <p>
-			Moves the named hero from your active party into your reserve. Use the constants defined in your HSI file. They are in the form of hero:name
+			
+				Moves the named hero from your active party into your reserve. Use the constants defined in your HSI file. They are in the form of <span class="code">hero:name</span>.
+				If there is more than one copy of the hero in the party, then the first
+				<br>
+				This command works even if the hero is locked (see <a href="#about-lockhero" class="ref">lock hero</a>).
+				<br>
+				The return value is the new party slot, or -1 on failure.
+				<div class="notice danger" title="Danger">
+<img src="Plotdanger.png" alt="[Danger]" class="icon">
+					If the active party contains no heroes after swapping out the hero,
+					then some hero will be swapped back into the active party, possibly
+					the same one, and they might go into a different slot than they were!
+					You should really avoid doing that.
+				</div>
+			
+			
+			
+			<div class="seealso">See also: <ul><li><a href="#about-swapoutherobyslot" class="ref">swap out hero by slot</a></li></ul>
+</div>
+		</p>
+</div>
+		<div class="command">
+			<a name="about-swapinherobyslot"></a>
+				<h4>swap in hero by slot (slot)</h4>
+<p>
+			
+				Identical to <a href="#about-swapinhero" class="ref">swap in hero</a> except it takes a hero by their party <span class="param">slot</span> instead their ID.
+			
+			
+			
+			
+		</p>
+</div>
+		<div class="command">
+			<a name="about-swapoutherobyslot"></a>
+				<h4>swap out hero by slot (slot)</h4>
+<p>
+			
+				Identical to <a href="#about-swapouthero" class="ref">swap out hero</a> except it takes a hero by their party <span class="param">slot</span> instead their ID.
+			
 			
 			
 			
@@ -6621,7 +6744,18 @@ if (slot &gt; 0) then (load from slot (slot))</pre>
 			<a name="about-lockhero"></a>
 				<h4>lock hero (who)</h4>
 <p>
-			Locking a hero prevents the player from moving the hero on the party menu. Locked heroes in the active party cannot be moved into the reserve, and locked heroes in the reserve are completely hidden. Also prevents a hero from being moved by <a href="#about-swapinhero" class="ref">swap in hero</a> or <a href="#about-swapouthero" class="ref">swap out hero</a>. Use the constants defined in your HSI file. They are in the form of hero:name
+			
+				Locking a hero prevents the player from moving the hero to a different slot in the party ("Team"/"Order") menu.
+				Locked heroes in the active party cannot be moved into the reserve,
+				and locked heroes in the reserve are hidden in the Team menu.
+				<br>
+				<span class="param">who</span> is a hero ID: use a constant of form <span class="code">hero:name</span>.
+				<div class="notice note">
+<img src="Plotnote.png" alt="[Notice]" class="icon">
+					Does NOT prevent a hero from being moved by <a href="#about-swapinhero" class="ref">swap in hero</a> or <a href="#about-swapouthero" class="ref">swap out hero</a>.
+					(Previously it was incorrectly documented that <span class="code">lock hero</span> did prevent scripted swapping.)
+				</div>
+			
 			
 			
 			
@@ -6631,7 +6765,49 @@ if (slot &gt; 0) then (load from slot (slot))</pre>
 			<a name="about-unlockhero"></a>
 				<h4>unlock hero (who)</h4>
 <p>
-			Reverses <a href="#about-lockhero" class="ref">lock hero</a>, and makes it possible to move a hero in and out of the active party again. Use the constants defined in your HSI file. They are in the form of hero:name
+			
+				Undoes <a href="#about-lockhero" class="ref">lock hero</a>, and makes it possible to move a hero in and out of the active party again or change their slot.
+				<br>
+				<span class="param">who</span> is a hero ID: use a constant of form <span class="code">hero:name</span>.
+			
+			
+			
+			
+		</p>
+</div>
+		<div class="command">
+			<a name="about-lockherobyslot"></a>
+				<h4>lock hero by slot (slot)</h4>
+<p>
+			
+				Identical to <a href="#about-lockhero" class="ref">lock hero</a> except it takes a hero by their party <span class="param">slot</span> instead their ID.
+			
+			
+			
+			
+		</p>
+</div>
+		<div class="command">
+			<a name="about-unlockherobyslot"></a>
+				<h4>unlock hero by slot (slot)</h4>
+<p>
+			
+				Identical to <a href="#about-unlockhero" class="ref">unlock hero</a> except it takes a hero by their party <span class="param">slot</span> instead their ID.
+			
+			
+			
+			
+		</p>
+</div>
+		<div class="command">
+			<a name="about-heroislocked"></a>
+				<h4>hero is locked (who)</h4>
+<p>
+			
+				Returns <span class="code">true</span> if the hero is locked out of the active party (see <a href="#about-lockhero" class="ref">lock hero</a>).
+				<br>
+				<span class="param">who</span> is a hero ID: use a constant of form <span class="code">hero:name</span>.
+			
 			
 			
 			
@@ -6649,10 +6825,15 @@ if (slot &gt; 0) then (load from slot (slot))</pre>
 </div>
 		<div class="command">
 			<a name="about-swapbyposition"></a>
+			<a name="about-swapbyslot"></a>
 				<h4>swap by position (slot1, slot2)</h4>
+			<div class="notetext">Alias:</div>
+			<h4>swap by slot (slot1, slot2)</h4>
 <p>
 			
-				Swaps two heroes in your party by their positions in the party (ie, by party slot).
+				Swaps the heroes in two slots in your party by their positions (ie, by party slot).
+				You can also swap slots which don't contain a hero, for example
+				to swap a hero in or out of the active party.
 			
 			
 			
@@ -6677,6 +6858,7 @@ if (slot &gt; 0) then (load from slot (slot))</pre>
 		<a href="#about-losemoney" class="ref">lose money (amount)</a><br>
 		<a href="#about-setmoney" class="ref">set money (amount)</a><br>
 		<a href="#about-paymoney" class="ref">pay money (amount)</a><br>
+		<a href="#about-moneyreward" class="ref">money reward</a><br>
 </div></ul>
 </div>
 		<div class="command">
@@ -6734,6 +6916,16 @@ end</pre>
 			
 		</p>
 </div>
+		<div class="command">
+			<a name="about-moneyreward"></a>
+				<h4>money reward</h4>
+<p>
+			Returns how much money the party gained in the most recent battle (0 if there have been no battles so far).
+			
+			
+			
+		</p>
+</div>
 		<hr>
 		</div>
 		<div class="section">
@@ -6748,6 +6940,16 @@ end</pre>
 		<a href="#about-getitemname" class="ref">get item name (ID, item)</a><br>
 		<a href="#about-getitemdescription" class="ref">get item description (ID, item)</a><br>
 		<a href="#about-getitemmaximumstacksize" class="ref">get item maximum stack size (item)</a><br>
+		<a href="#about-equippableinslot" class="ref">equippable in slot (item, slot)</a><br>
+		<a href="#about-getitemvalue" class="ref">get item value (item)</a><br>
+		<a href="#about-getitemteachspell" class="ref">get item teach spell (item)</a><br>
+		<a href="#about-getitemattackoutsidebattle" class="ref">get item attack outside battle (item)</a><br>
+		<a href="#about-getitemattackinbattle" class="ref">get item attack in battle (item)</a><br>
+		<a href="#about-getitemattackasweapon" class="ref">get item attack as weapon (item)</a><br>
+		<a href="#about-getitemtextbox" class="ref">get item text box (item)</a><br>
+		<a href="#about-getitemequipstatbonus" class="ref">get item equip stat bonus (item, stat)</a><br>
+		<a href="#about-getitemweaponpic" class="ref">get item weapon pic (item)</a><br>
+		<a href="#about-getitemweaponpal" class="ref">get item weapon pal (item)</a><br>
 </div>
 		<li>
 <a href="#Inventory">Inventory</a><br>
@@ -6762,6 +6964,9 @@ end</pre>
 		<a href="#about-inventory" class="ref">inventory (item)</a><br>
 		<a href="#about-getinventorysize" class="ref">get inventory size</a><br>
 		<a href="#about-setinventorysize" class="ref">set inventory size (new size)</a><br>
+		<a href="#about-sortinventory" class="ref">sort inventory</a><br>
+		<a href="#about-itemsreward" class="ref">items reward (number)</a><br>
+		<a href="#about-itemsquantityreward" class="ref">items quantity reward (number)</a><br>
 </ul>
 <ul></ul>
 </li>
@@ -6831,6 +7036,204 @@ end</pre>
 		<h4>equip where (hero, item)</h4>
 		<p><a href="#about-equipwhere">Documented in the Equipment section.</a></p>
 		</div>
+		<div class="command">
+			<a name="about-equippableinslot"></a>
+				<h4>equippable in slot (item, slot)</h4>
+<p>
+			
+				Returns true if the item can be equipped in the specified slot
+				(a constant of the form <span class="code">slot:weapon</span>, etc, in your .hsi file),
+				or false if it can't be equipped in that slot.
+				If you need to know if the item is equippable by a specific hero, see <a href="#about-equipwhere" class="ref">equip where</a> instead.
+				<br>
+				The <span class="param">item</span> argument is the item to check the equipability of.
+				You can use the item's ID number or a constant of the form <span class="code">item:name</span>.
+			
+			
+			
+			<div class="seealso">See also: <ul>
+<li>
+<a href="#about-checkequipment" class="ref">check equipment</a>, </li>
+<li><a href="#about-equipwhere" class="ref">equip where</a></li>
+</ul>
+</div>
+		</p>
+</div>
+		<div class="command">
+			<a name="about-getitemvalue"></a>
+				<h4>get item value (item)</h4>
+<p>
+			
+				Returns the value of an item. This is the default price for shops that don't override it.
+				<br>
+				The <span class="param">item</span> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <span class="code">item:name</span>.
+			
+			
+			
+			
+		</p>
+</div>
+		<div class="command">
+			<a name="about-getitemteachspell"></a>
+				<h4>get item teach spell (item)</h4>
+<p>
+			
+				If this item teaches a spell, return the attack ID+1 or <span class="code">none</span> (0) if it does not.
+				<br>
+				The <span class="param">item</span> argument is an item ID; you can refer to the item by number,
+				or you can use the constants in the form of <span class="code">item:name</span>.
+			
+			
+			
+			<div class="seealso">See also: <ul><li><a href="#about-teachspell" class="ref">teach spell</a></li></ul>
+</div>
+		</p>
+</div>
+		<div class="command">
+			<a name="about-getitemattackoutsidebattle"></a>
+				<h4>get item attack outside battle (item)</h4>
+<p>
+			
+				If this item does an attack when used outside of battle, return the attack ID + 1 or <span class="code">none</span> (0) if it does not.
+				<br>
+				The <span class="param">item</span> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <span class="code">item:name</span>.
+			
+			
+			
+			<div class="seealso">See also: <ul>
+<li>
+<a href="#about-mapcure" class="ref">map cure</a>, </li>
+<li>
+<a href="#about-useitem" class="ref">use item</a>, </li>
+<li>
+<a href="#about-getitemattackinbattle" class="ref">get item attack in battle</a>, </li>
+<li><a href="#about-getitemattackasweapon" class="ref">get item attack as weapon</a></li>
+</ul>
+</div>
+		</p>
+</div>
+		<div class="command">
+			<a name="about-getitemattackinbattle"></a>
+				<h4>get item attack in battle (item)</h4>
+<p>
+			
+				If this item does an attack when used from the item menu in battle, return the attack ID + 1 or <span class="code">none</span> (0) if it does not.
+				<br>
+				The <span class="param">item</span> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <span class="code">item:name</span>.
+			
+			
+			
+			<div class="seealso">See also: <ul>
+<li>
+<a href="#about-getitemattackoutsidebattle" class="ref">get item attack outside battle</a>, </li>
+<li><a href="#about-getitemattackasweapon" class="ref">get item attack as weapon</a></li>
+</ul>
+</div>
+		</p>
+</div>
+		<div class="command">
+			<a name="about-getitemattackasweapon"></a>
+				<h4>get item attack as weapon (item)</h4>
+<p>
+			
+				Returns the attack ID+1 of the attack that this item will do if it is equipped as a weapon.
+				For non-weapons it will return 1 meaning attack ID 0.
+				If you wish to check whether or not an item is equippable as a wepon,
+				use <a href="#about-equippableinslot" class="ref">equippable in slot</a> instead.
+				<br>
+				The <span class="param">item</span> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <span class="code">item:name</span>.
+			
+			
+			
+			<div class="seealso">See also: <ul>
+<li>
+<a href="#about-getitemattackoutsidebattle" class="ref">get item attack outside battle</a>, </li>
+<li>
+<a href="#about-getitemattackinbattle" class="ref">get item attack in battle</a>, </li>
+<li><a href="#about-equippableinslot" class="ref">equippable in slot</a></li>
+</ul>
+</div>
+		</p>
+</div>
+		<div class="command">
+			<a name="about-getitemtextbox"></a>
+				<h4>get item text box (item)</h4>
+<p>
+			
+				If this item shows a text box, return the text box ID or -1 if it does not.
+				<br>
+				The <span class="param">item</span> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <span class="code">item:name</span>.
+			
+			
+			
+			<div class="seealso">See also: <ul><li><a href="#about-showtextbox" class="ref">show text box</a></li></ul>
+</div>
+		</p>
+</div>
+		<div class="command">
+			<a name="about-getitemequipstatbonus"></a>
+				<h4>get item equip stat bonus (item, stat)</h4>
+<p>
+			
+				Return the stat bonus that you would get if you equipped this item.
+				<br>
+				The <span class="param">item</span> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <span class="code">item:name</span>.
+				<br>
+				The <span class="param">stat</span> argument is the stat name constant in the form <span class="code">stat:name</span>
+				(for example, <span class="code">stat:hp</span> or <span class="code">stat:attack</span>).
+			
+			
+			
+			<div class="seealso">See also: <ul>
+<li>
+<a href="#about-equipwhere" class="ref">equip where</a>, </li>
+<li><a href="#about-equippableinslot" class="ref">equippable in slot</a></li>
+</ul>
+</div>
+		</p>
+</div>
+		<div class="command">
+			<a name="about-getitemweaponpic"></a>
+				<h4>get item weapon pic (item)</h4>
+<p>
+			
+				Returns the sprite id of the weapon picture used for this sprite.
+				If you wish to check whether or not an item is equippable as a wepon,
+				use <a href="#about-equippableinslot" class="ref">equippable in slot</a> instead.
+				<br>
+				The <span class="param">item</span> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <span class="code">item:name</span>.
+			
+			
+			
+			<div class="seealso">See also: <ul>
+<li>
+<a href="#about-getitemweaponpal" class="ref">get item weapon pal</a>, </li>
+<li><a href="#about-equippableinslot" class="ref">equippable in slot</a></li>
+</ul>
+</div>
+		</p>
+</div>
+		<div class="command">
+			<a name="about-getitemweaponpal"></a>
+				<h4>get item weapon pal (item)</h4>
+<p>
+			
+				Returns the palette id of the weapon picture used for this sprite. If the weapon sprite uses the default palette, returns -1.
+				If you wish to check whether or not an item is equippable as a wepon,
+				use <a href="#about-equippableinslot" class="ref">equippable in slot</a> instead.
+				<br>
+				The <span class="param">item</span> argument is an item ID; you can refer to the item by number, or you can use the constants in the form of <span class="code">item:name</span>.
+			
+			
+			
+			<div class="seealso">See also: <ul>
+<li>
+<a href="#about-getitemweaponpic" class="ref">get item weapon pic</a>, </li>
+<li><a href="#about-equippableinslot" class="ref">equippable in slot</a></li>
+</ul>
+</div>
+		</p>
+</div>
 		<hr>
 		</div>
 		<div class="subsection">
@@ -6844,7 +7247,7 @@ end</pre>
 			<a name="about-getitem"></a>
 				<h4>get item (item, number)</h4>
 <p>
-			Adds the specified number of the specified item to your inventory. If you do not specify a number, only one will be added. You can refer to the item by number, or you can use the constants defined in your HSI file, which are in the form of item:name. This command normally returns true, but it will return false if there was not room in the inventory to hold at least one of the items you werte trying to add.
+			Adds the specified number of the specified item to your inventory. If you do not specify a number, only one will be added. You can refer to the item by number, or you can use the constants defined in your HSI file, which are in the form of item:name. This command returns the number of items actually added, which could be different from the number requested if the inventory is full.
 			
 			
 			
@@ -6991,6 +7394,66 @@ end</pre>
 </div>
 		</p>
 </div>
+		<div class="command">
+			<a name="about-sortinventory"></a>
+				<h4>sort inventory</h4>
+<p>
+			
+				Sorts all inventory items, like the SORT menu item in the Inventory menu.
+				Moves all items to the top of the inventory and reorders them according to the
+				"Inventory autosort" setting in General Game Settings.
+			
+			
+			
+			
+		</p>
+</div>
+		<div class="command">
+			<a name="about-itemsreward"></a>
+				<h4>items reward (number)</h4>
+<p>
+			
+				Returns the id numbers of the items dropped by enemies in the last battle
+				(-1 if item reward <span class="param">number</span> is not present).
+				<span class="param">number</span> counts from 0 up, where <span class="code">items reward(0)</span> is the ID of
+				the first gained item, etc.
+				If the argument is <a href="#about-getcount" class="ref">get count</a>, then it returns the number of distinct
+				items acquired at the end of the battle.
+				You can use it in a loop in order to display all item rewards (for example, in
+				an after battle script), usually in tandem with <a href="#about-itemsquantityreward" class="ref">items quantity reward</a>.
+				<pre>plotscript, print items gained, begin
+  # assume text box 123 contains text "Got ${S0} x ${S1}."
+  variable (idx)
+  for (idx, 0, items reward (get count) -- 1) do (
+    clear string (0)
+    append number (0, items quantity reward (idx))
+    get item name (1, items reward (idx))
+    show text box (123) # this should display e.g. "Got 2 x Herb."
+    wait for text box
+  )
+end</pre>
+
+			
+			
+			
+			<div class="seealso">See also: <ul><li><a href="#about-itemsquantityreward" class="ref">items quantity reward</a></li></ul>
+</div>
+		</p>
+</div>
+		<div class="command">
+			<a name="about-itemsquantityreward"></a>
+				<h4>items quantity reward (number)</h4>
+<p>
+			
+				Similar to <a href="#about-itemsreward" class="ref">items reward</a>, except it returns the quantities of corresponding
+				items acquired in the last battle.
+			
+			
+			
+			<div class="seealso">See also: <ul><li><a href="#about-itemsreward" class="ref">items reward</a></li></ul>
+</div>
+		</p>
+</div>
 		<hr>
 		</div>
 		<div class="subsection">
@@ -7085,7 +7548,7 @@ gain hero stat(who, stat:mp, 0)</pre>
 				The second argument is the item to check the equipability of.
 				You can use the item's number or the item:name constants from your .hsi file.
 				<br>
-				If the item can be equipped in more than one different slot, this command only returns the first valid slot.
+				If the item can be equipped in more than one different slot, this command only returns the first valid slot. Use the <a href="#about-equippableinslot" class="ref">equippable in slot</a> command if you need to check multiple slots.
 				<div class="notice note">
 <img src="Plotnote.png" alt="[Notice]" class="icon">
 					When a hero's equipment changes, their current HP and MP stats aren't updated.
@@ -7097,7 +7560,9 @@ gain hero stat(who, stat:mp, 0)</pre>
 			<div class="seealso">See also: <ul>
 <li>
 <a href="#about-unequip" class="ref">unequip</a>, </li>
-<li><a href="#about-checkequipment" class="ref">check equipment</a></li>
+<li>
+<a href="#about-checkequipment" class="ref">check equipment</a>, </li>
+<li><a href="#about-equippableinslot" class="ref">equippable in slot</a></li>
 </ul>
 </div>
 		</p>
@@ -10386,6 +10851,10 @@ There is no limit on string length.<br>
 		<a href="#about-stringlength" class="ref">string length (ID)</a><br>
 		<a href="#about-stringequal" class="ref">string equal (ID1, ID2)</a><br>
 		<a href="#about-stringcompare" class="ref">string compare (ID1, ID2)</a><br>
+		<a href="#about-insensitivestringequal" class="ref">insensitive string equal (ID1, ID2)</a><br>
+		<a href="#about-insensitivestringcompare" class="ref">insensitive string compare (ID1, ID2)</a><br>
+		<a href="#about-stringtolower" class="ref">string to lower (ID)</a><br>
+		<a href="#about-stringtoupper" class="ref">string to upper (ID)</a><br>
 		<a href="#about-searchstring" class="ref">search string (ID1, ID2, start)</a><br>
 		<a href="#about-trimstring" class="ref">trim string (ID, start, length)</a><br>
 		<a href="#about-replacesubstring" class="ref">replace substring (in string, replace what, with what, max replacements, case insensitive)</a><br>
@@ -10656,6 +11125,39 @@ show string(0)</pre>
 			<h4>string compare (ID1, ID2)</h4>
 <p>
 			Returns true if the two strings #<span class="param">ID1</span> and #<span class="param">ID2</span> are identical, case sensitive.
+			
+			
+			
+		</p>
+</div>
+		<div class="command">
+			<a name="about-insensitivestringequal"></a>
+			<a name="about-insensitivestringcompare"></a>
+				<h4>insensitive string equal (ID1, ID2)</h4>
+			<div class="notetext">Alias:</div>
+			<h4>insensitive string compare (ID1, ID2)</h4>
+<p>
+			Returns true if the two strings #<span class="param">ID1</span> and #<span class="param">ID2</span> are identical, case insensitive.
+			
+			
+			
+		</p>
+</div>
+		<div class="command">
+			<a name="about-stringtolower"></a>
+				<h4>string to lower (ID)</h4>
+<p>
+			Converts the string at <span class="param">ID</span> to lower-case. Returns the same string <span class="param">ID</span>.
+			
+			
+			
+		</p>
+</div>
+		<div class="command">
+			<a name="about-stringtoupper"></a>
+				<h4>string to upper (ID)</h4>
+<p>
+			Converts the string at <span class="param">ID</span> to upper-case. Returns the same string <span class="param">ID</span>.
 			
 			
 			
@@ -13673,10 +14175,12 @@ lookup slice(sl:map overlay)
 lookup slice(sl:walkabout layer)
 lookup slice(sl:hero layer)
 lookup slice(sl:npc layer)
-lookup slice(sl:walkabout sprite)
-lookup slice(sl:walkabout sprite component)  # Same as lookup slice(sl:walkabout sprite)
-lookup slice(sl:walkabout shadow)
-lookup slice(sl:walkabout shadow component)  # Same as lookup slice(sl:walkabout shadow)
+lookup slice(sl:sprite)
+lookup slice(sl:walkabout sprite)  # Same as lookup slice(sl:sprite)
+lookup slice(sl:walkabout sprite component)  # Same as lookup slice(sl:sprite)
+lookup slice(sl:shadow)
+lookup slice(sl:walkabout shadow)  # Same as lookup slice(sl:shadow)
+lookup slice(sl:walkabout shadow component)  # Same as lookup slice(sl:shadow)
 lookup slice(sl:backdrop)
 lookup slice(sl:map layer0)
 lookup slice(sl:map layer1)
@@ -22073,7 +22577,13 @@ assert (check tag (tag:initialised) == OFF)  # something ought to be true at thi
 			<a name="about-getcallingscriptid"></a>
 				<h4>get calling script id (depth)</h4>
 <p>
-			Returns the ID number of the script which called this one. The optional <span class="param">depth</span> argument, which defaults to 1, allows returning the ID of a deeper ancestor script instead: 1 is the parent, 2 is the grandparent, etc. If there is no calling script (the script was triggered instead), then the return value is 0. You can get the ID number of a script by writing <span class="code">@scriptname</span>.
+			
+				Returns the ID number of the script which called this one, or some other scriptin the call stack.
+				The optional <span class="param">depth</span> argument, which defaults to 1, allows returning the ID of a
+				deeper ancestor script instead: 0 is the current script, 1 is the parent, 2 is the grandparent, etc.
+				If there is no calling script (the script was triggered instead), then the return value is 0.
+				You can get the ID number of a script by writing <span class="code">@scriptname</span>.
+			
 			
 			
 			<div class="seealso">See also: <ul><li><a href="#about-getscriptname" class="ref">get script name</a></li></ul>
@@ -23414,7 +23924,7 @@ run key            # Alias for 'flee key'
 </div>
 		<hr>
 		</div>
-<p>Stats: There are 971 commands (of which 15 are aliases), 27 constants and 19 definitions of types and other terms in this file.</p>
+<p>Stats: There are 994 commands (of which 15 are aliases), 27 constants and 19 definitions of types and other terms in this file.</p>
 <p>This file was generated from an XML file. The contents were painstakingly transcribed by Mike Caron from the original Plotscripting Dictionary, which was created by James Paige.</p>
 </body>
 </html>

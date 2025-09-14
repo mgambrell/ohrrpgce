@@ -1412,8 +1412,9 @@ DO
    END IF
 
    IF npc_cursor_dir = -1 THEN
-    'We don't loop through all the walkabout frames. Just loop through the 4 directions.
-    'Temporary. Could add a 'spin' animation and play that.
+    'We don't loop through all the walkabout frames. Just loop through first two frames of
+    'each of the 4 directions.
+    'Temporary kludge. Could add a 'spin' animation and play that.
     IF tog THEN
      IF st.npc_cursor_frameid MOD 100 = 1 THEN
       st.npc_cursor_frameid += 99
@@ -1445,29 +1446,27 @@ DO
 
    'Place or delete an NPC
    IF tool_actkeypress OR npc_d > -1 THEN
-    DIM npc_slot as integer = 0
+    DIM npci as NPCIndex = -1
     IF npc_d = -1 THEN
-     DIM npci as NPCIndex = mapedit_npc_at_spot(st, st.pos)
+     'Unless using Ctrl+dir, delete a NPC if any
+     npci = mapedit_npc_at_spot(st, st.pos)
      IF npci > -1 THEN
-      'Delete
-      WITH st.map.npc(npci)
-       .id = 0
-       .x = 0
-       .y = 0
-       .dir = dirUp
-       npc_slot = 1
-      END WITH
+      CleanNPCInst st.map.npc(npci)  'Delete
      END IF
+     npc_d = dirDown
     END IF
-    IF npc_d = -1 THEN npc_d = dirDown
-    IF npc_slot = 0 THEN
-     npc_slot = -1
-     FOR i as integer = UBOUND(st.map.npc) TO 0 STEP -1
-      IF st.map.npc(i).id = 0 THEN npc_slot = i
+
+    IF npci = -1 THEN
+     'Place NPC
+     FOR i as NPCIndex = 0 TO UBOUND(st.map.npc)
+      IF st.map.npc(i).id = 0 THEN
+       npci = i
+       EXIT FOR
+      END IF
      NEXT i
-     IF npc_slot >= 0 THEN
-      WITH st.map.npc(npc_slot)
-       .pos = st.pos * 20
+     IF npci > -1 THEN
+      WITH st.map.npc(npci)
+       .pos = st.pos * tilesize
        .id = st.cur_npc + 1
        .pool = st.cur_npc_pool
        .dir = npc_d
@@ -2772,7 +2771,7 @@ SUB mapedit_draw_npcs(st as MapEditState, drawing_whole_map as bool = NO, includ
  npclayer = NewSliceOfType(slContainer)
  FOR i as integer = 0 TO UBOUND(st.map.npc)
   WITH st.map.npc(i)
-   IF .id <= 0 THEN CONTINUE FOR
+   IF .id <= 0 THEN CONTINUE FOR  'Shouldn't ever be negative
    DIM movetype as integer
    DIM byref npcd as NPCType = npcdef_by_pool(st, .pool, .id - 1)
    IF including_conditional = NO ANDALSO (npcd.tag1 ORELSE npcd.tag2) THEN CONTINUE FOR
@@ -2789,8 +2788,12 @@ SUB mapedit_draw_npcs(st as MapEditState, drawing_whole_map as bool = NO, includ
     'Two ticks/frame for 18fps
     DIM numframes as integer = walkabout_walk_frames(fr, .dir)
     loopvar .wtog, 0, CINT(large(0, numframes * 2 - 1))
-    frameid = 100 * .dir + .wtog \ 2
+   ELSE
+    '(.wtog is junk; it's zeroed before saving in mapedit_savemap anyway. You can't set the frame.)
+    .wtog = 0
    END IF
+
+   frameid = 100 * .dir + .wtog \ 2
 
    mapedit_create_npc_slice st, npclayer, .id - 1, .pool, fr, frameid, .pos, drawing_whole_map
   END WITH
@@ -4338,7 +4341,7 @@ SUB mapedit_delete_menu(st as MapEditState)
  options(2) = "Erase tile data + doors + NPC instances"
  options(3) = "Erase NPC instances"
  options(4) = "Erase NPC instances + definitions"
- options(5) = "Erase doors"
+ options(5) = "Erase door positions"
  options(6) = "Erase doorlinks"
  IF st.map.id = gen(genMaxMap) AND st.map.id >= 1 THEN
   '--if this is the last map, then we can actually remove it entirely, rather than just blanking it
@@ -4358,6 +4361,7 @@ SUB mapedit_delete_menu(st as MapEditState)
    CleanZoneMap st.map.zmap, st.map.wide, st.map.high
    CleanNPCL st.map.npc()
    CleanDoors st.map.door()
+   CleanDoorlinks st.map.doorlink()
    st.map.gmap(31) = 1 'Walkabout layer above map layer 0
    mapedit_throw_away_history st
   ELSEIF choice = 3 THEN
@@ -6855,8 +6859,9 @@ DO
    '--An NPC
    printstr STR(i), x, y + 4, dpage
    WITH npc_img(i)
-    '--Down A frame
-    frame_draw .sprite + 4, .pal, x + 32, (i - state.top) * 25, , dpage
+    '--Draw first Down frame
+    DIM frame as integer = large(0, frameid_to_frame(.sprite, 100 * dirDown))
+    frame_draw .sprite + frame, .pal, x + 32, (i - state.top) * 25, , dpage
    END WITH
    textcol = uilook(uiMenuItem)
    textbg = uilook(uiHighlight)

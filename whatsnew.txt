@@ -1,13 +1,103 @@
 WHAT IS NEW?
 
-March ?? 2025 [Jocoserious+1]
+Nov ?? 2025 [Lexiphanic]
+
+  *** New Features
+   * New general battle system option to not display rewards at the end of a
+     battle. Useful if you create your own way of displaying rewards. [Dre]
+   * When buying stuff in shops, you can preview the difference in stat
+     bonuses compared to the heros' current equipment [James]
+   * New customizable UI colors for the shop "Buy" screen, for item
+     description, stat bonus up, and stat bonus down [James]
+   * New customizable UI colors for the equip screen, for slot
+     background colors [James]
+
+   * Plotscripting Features
+    * Commands to access rewards from the latest battle: "money reward",
+      "experience reward", "items reward", "items quantity reward". [Dre]
+
+  *** Changes
+
+  *** Bugfixes
+    * Game/Custom now quit cleanly on a SIGTERM or SIGINT (and abort on SIGQUIT)
+      instead of showing a FATAL error screen [Ralph]
+    * The shop menu is no longer visible underneath the "Buy" menu [James]
+    * Equip menu cursor background no longer flashes in an obnoxious
+      and inconsistent manner [James]
+
+  *** Stuff Only Developers Will Notice
+    * Item data is now stored in a new lump, items.reld [James]
+
+Aug 10 2025 [Kaleidophone+1]
+
+  *** Bugfixes
+    * Fix BUG message about binsize.bin every time you imported scripts while
+      using Test Game. Maybe I did not Test Game [Ralph]
+    * Bug #1284 possible crash when scripts double-trigger (seen only on Mac so
+      far) [James, Ralph]
+
+Aug 04 2025 [Kaleidophone]
+
+  *** New Features
+    * New pref bit "Allow wasting out-of-battle cures" defaults to on [James]
+    * New Item Editor
+    * While using the Mark tool in the Sprite and Tile Editors, Right click or
+      hold Shift or Ctrl to cut instead of copying, great for moving pieces of
+      the image [Ralph]
+
+   * Plotscripting Features
+    * "swap in hero by slot", "swap out hero by slot", "lock hero by slot",
+      "unlock hero by slot", "hero is locked", plus "swap by slot" alias to
+      "swap by position". And all the swap in/out commands now return the new
+      party slot. [Ralph]
+    * "sort inventory" [Ralph]
+    * Commands for reading item data "get item value", "get item teach spell",
+      "get item attack outside battle", "get item attack in battle",
+      "get item attack as weapon", "get item text box",
+      "get item equip stat bonus", "equippable in slot",
+      "get item weapon pic", "get item weapon pal" [James]
+    * "insensitive string equal" [James]
+    * "string to lower" and "string to upper" [James]
+    * "sl:sprite" alias to "sl:walkabout sprite" and "sl:shadow" for
+      "sl:walkabout shadow"
+    * Squeezed 25-30% more speed out of the script interpreter [Ralph]
+
+  *** Changes
+    * Changed "get item" to return the number of items added [James]
+
+  *** Bugfixes
+    * Bug #1186 Add hero hook script breaks "add hero" return value [Ralph]
+    * Bug #550 "Simulate Bug #430 wait skips" backcompat is finally auto-enabled
+      in ubersetzung and older games, which oft relied on it [Ralph]
+
+  *** Stuff Only Developers Will Notice
+    * The code for the new item editor is so much prettier! Yay EditorKit!
+
+
+July 4 2025 [Jocoserious+2]
+
+  *** New Features
+    * Press T in the sprite editor to toggle onionskin overlay. Press
+      Shift+T to change which frame. Use together with CTRL+Arrow keys [James]
+    * It's now possible to import spritesets with a non-default number of frames.
+      [Ralph]
+
+  *** Bugfixes
+    * Walkabout sets with 4 or fewer frames crashed the NPC editor [Ralph]
+    * NPCs set to Stand Still or speed 0 were drawn always facing Up in the
+      map editor [Ralph]
+    * Importing a spriteset "from custom layout" cut out frames using the
+      default frame size rather than the specified one [Ralph]
+
+
+March 29 2025 [Jocoserious+1]
 
   *** New Features
     * Ctrl+Left/Right/Up/Down in the sprite editor switches between frames
       (in the whole spriteset or frame group), without losing undo [Ralph]
     * The Spriteset browser actually shows frame groups [Ralph]
 
-  ** Plotscripting Features
+   * Plotscripting Features
     * "set hero frame" and "set npc frame" support more than 2 frames [Ralph]
     * "get sprite frameid", "set sprite frameid", "find sprite frameid",
       "sprite frame group size" [Ralph]
@@ -2602,6 +2692,8 @@ August 16 2008 [werewaffle]
     * Fixed Bug 626 Bitsets altered (memory corruption) after reaching
       maximum number of Menu Items [James]
     * Preferred target weak/strong stat setting now works [Ralph]
+    * Bug 430: When 2 scripts were triggered at once, wait commands would
+      break or an illegal wait substate error occurred [Ralph, Yuriy]
 
   * New Plotscripting Stuff
     * You can now have up to 4096 global variables (global ID numbers

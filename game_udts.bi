@@ -107,11 +107,26 @@ TYPE NPCSliceContext EXTENDS SliceContext
   npcindex as NPCIndex
 END TYPE
 
+'This type is just used by RewardState
+TYPE RewardsStateItem
+ id as integer    'Not offset
+ num as integer   'num = 0 indcates slot not used
+END TYPE
+
+'The rewards gathered in a battle
+TYPE RewardsState
+ plunder as integer
+ exper as integer
+ found(16) as RewardsStateItem
+
+ DECLARE SUB add_item(itemid as integer, count as integer = 1)
+END TYPE
+
 TYPE ScriptLoggingState
   enabled as bool
   filename as string
   tick as integer                    'Number of times interpret has been called
-  last_logged as integer             'scrat index
+  last_logged as ScriptInst ptr      'The script on the last output log line, or NULL if no longer running
   output_flag as bool                'Set to true after script_log_out called
   last_wait_msg as string
   wait_msg_repeats as integer        'Number of ticks in a row with identical last_wait_msg
@@ -256,6 +271,7 @@ TYPE GameState
   hero_pathing(3) as HeroPathing
   stillticks(3) as integer           'keeps track of how long a hero has been standing still
   pathing_click_start as double
+  rew as RewardsState                'keeps track of rewards gained in the most recent battle
 END TYPE
 
 'Note that .showing, .fully_shown, .sayer need to be always correct even if no box is up
@@ -340,6 +356,7 @@ TYPE ShopBuyState
   hero_box       as Slice Ptr
   party_box(3)    as Slice Ptr
   party_sl(3)    as Slice Ptr
+  preview_cursor as Slice ptr
   price_box      as Slice Ptr
   price_sl       as Slice Ptr
   alert_box      as Slice Ptr
@@ -353,6 +370,7 @@ TYPE ShopBuyState
   walk           as integer
   info           as MenuDef
   info_st        as MenuState
+  preview_hero_slot as integer
 END TYPE
 
 TYPE OrderTeamState

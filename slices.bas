@@ -1,5 +1,5 @@
 'OHRRPGCE - Slices
-'(C) Copyright 1997-2022 James Paige, Ralph Versteegen, and the OHRRPGCE Developers
+'(C) Copyright 1997-2025 James Paige, Ralph Versteegen, and the OHRRPGCE Developers
 'Dual licensed under the GNU GPL v2+ and MIT Licenses. Read LICENSE.txt for terms and disclaimer of liability.
 
 
@@ -46,6 +46,7 @@
 'So unrolling that, each slice `sl` is processed in this order:
 'Before DrawSlice called:
 ' -[NPC, hero, etc, slices] - positions & visibility updated based on in-game logic (done separately)
+' -UpdateSliceDynamicProps() - update dynamic properties
 ' -AdvanceSlice() - update position based on movement (done separately - in-game wandering on map only!)
 'Before parent is drawn:
 ' -If parent->CoverChildren sl->Size/sl->Pos are used to update the parent's size
@@ -195,9 +196,12 @@ END WITH
 
 DEFINE_VECTOR_OF_POD_TYPE(Slice ptr, Slice_ptr)
 DEFINE_VECTOR_OF_POD_TYPE(SliceContext ptr, SliceContext_ptr)
+DEFINE_VECTOR_OF_CLASS(SliceContextVar, SliceContextVar)
+DEFINE_VECTOR_OF_CLASS(SliceDynamicProp, SliceDynamicProp)
 
 'Built up while inside DrawSlice, otherwise NULL.
 'A stack of all the non-NULL .Context ptrs for all the ancestors of the current slice.
+'(TODO: this is just a premature optimisation, which very probably doesn't help and should be removed)
 Dim Shared context_stack as SliceContext ptr vector
 
 EXTERN "C"
@@ -462,7 +466,6 @@ FUNCTION SliceLookupCodename (byval code as integer, use_default as bool = YES) 
   CASE SL_EDITOR_SSED_TOOLTIP_TEXT: RETURN "editor ssed tooltip text"
   CASE SL_EDITOR_SSED_CAPTION_TEXT: RETURN "editor ssed caption text"
   CASE SL_EDITOR_SSED_FRAME_SEPARATOR_TEMPL: RETURN "editor ssed frame separator templ"
-  CASE SL_EDITOR_ENEMY_SPRITE: RETURN "editor enemy sprite"
   CASE SL_ROOT: RETURN "root"
   CASE SL_TEXTBOX_TEXT: RETURN "textbox text"
   CASE SL_TEXTBOX_PORTRAIT: RETURN "textbox portrait"
@@ -482,8 +485,8 @@ FUNCTION SliceLookupCodename (byval code as integer, use_default as bool = YES) 
   CASE SL_WALKABOUT_LAYER: RETURN "walkabout layer"
   CASE SL_HERO_LAYER: RETURN "hero layer"
   CASE SL_NPC_LAYER: RETURN "npc layer"
-  CASE SL_WALKABOUT_SPRITE: RETURN "walkabout sprite"
-  CASE SL_WALKABOUT_SHADOW: RETURN "walkabout shadow"
+  CASE SL_SPRITE: RETURN "sprite"
+  CASE SL_SHADOW: RETURN "shadow"
   CASE SL_BACKDROP: RETURN "backdrop"
   CASE SL_MAP_LAYER0: RETURN "map layer0"
   CASE SL_MAP_LAYER1: RETURN "map layer1"
@@ -730,6 +733,7 @@ Sub DeleteSlice(byval s as Slice ptr ptr, byval debugme as integer=0)
 
  delete sl->Context
  v_free sl->ExtraVec
+ v_free sl->DynamicProps
  delete sl->AnimState
  animset_unload @sl->Animations
  delete sl
@@ -1256,41 +1260,6 @@ End Property
 Property Slice.Extra(index as integer, newval as integer)
  set_extra(ExtraVec, index, newval)
 End Property
-
-'=============================================================================
-'                                Slice contexts
-
-End Extern
-
-Destructor SliceContext()
-End Destructor
-
-Sub SliceContext.save(node as Reload.Nodeptr)
-End Sub
-
-Sub SliceContext.load(node as Reload.Nodeptr)
-End Sub
-
-Sub SliceCollectionContext.load(node as Reload.Nodeptr)
- name = LoadPropStr(node, "collection_name")
-End Sub
-
-Sub SliceCollectionContext.save(node as Reload.Nodeptr)
- if dont_save then exit sub
- SaveProp node, "collection_name", name
- 'id not saved
-End Sub
-
-Function SliceCollectionContext.description() as string
- dim ret as string = "Collection"
- if id > -1 then ret &= " " & id
- if len(name) then ret &= " " & name
- 'Try to indicate that no link with the original collection remains
- if dont_save then ret = "From " & ret
- return ret
-End Function
-
-Extern "C"
 
 
 '=============================================================================
@@ -3835,6 +3804,9 @@ Sub ChangePanelSlice(byval sl as Slice ptr,_
 end sub
 
 
+' End of slice types
+'=============================================================================
+
 '=============================================================================
 '                      Slice alignment & position helpers
 
@@ -4028,8 +4000,9 @@ Function SlicePossiblyResizable(sl as Slice ptr) as bool
  end select
 end Function
 
+
 '=============================================================================
-'                                Slice Velocity
+'                           Slice Animation & Velocity
 
 'Slice has velocity. Note: returns true if it's paused.
 'Warning: inconsistently returns false if VelTicks>0 but Velocity=0, but true if TargTicks>0 but Targ=Pos.
@@ -4155,7 +4128,98 @@ end sub
 
 
 '=============================================================================
+'                                SliceContexts
 
+End Extern
+
+Destructor SliceContext()
+ v_free context_vars
+End Destructor
+
+Sub SliceContext.save(sl as Slice ptr, node as Reload.Nodeptr)
+ if v_len(context_vars) then
+  dim varsnode as Reload.Nodeptr = Reload.AppendChildNode(node, "context_vars")
+  for idx as integer = 0 to v_len(context_vars) - 1
+   with context_vars[idx]
+    dim varnode as Reload.Nodeptr = Reload.AppendChildNode(varsnode, "var", .name)
+    select case .dtype
+     case cttyBool
+      Reload.AppendChildNode(varnode, "bool", iif(.int_value, 1, 0))
+     case cttyInt
+      Reload.AppendChildNode(varnode, "int", .int_value)
+     case cttyStr
+      Reload.AppendChildNode(varnode, "str", .str_value)
+    end select
+    'In future if there are any other children they should be after the value one
+   end with
+  next
+ end if
+End Sub
+
+'Loads context variables.
+Sub SliceContext.load(sl as Slice ptr, node as Reload.Nodeptr)
+ dim varsnode as Reload.Nodeptr = Reload.GetChildByName(node, "context_vars")
+ if varsnode then
+  dim varnode as Reload.Nodeptr = Reload.FirstChild(varsnode, "var")
+  while varnode
+   dim ctxname as string = Reload.GetString(varnode)
+   'The first child must be the value (XML geeks would be appalled)
+   dim datnode as Reload.Nodeptr = Reload.FirstChild(varnode)
+   if datnode = NULL then
+    reporterr "Error loading slice: context variable node without child", errError
+    exit sub
+   end if
+   select case Reload.NodeName(datnode)
+    case "bool": SetContextBool(sl, ctxname, Reload.GetInteger(datnode))
+    case "int":  SetContext(sl, ctxname, Reload.GetInteger(datnode))
+    case "str":  SetContext(sl, ctxname, Reload.GetString(datnode))
+    case else:   reporterr "Error loading slice: unknown context variable data type", errError
+   end select
+
+   varnode = NextSibling(varnode, "var")
+  wend
+ end if
+End Sub
+
+'Clone context variables, but in general subclasses probably shouldn't override this.
+'(For example if you clone an NPC's slice, the clone is not an NPC)
+Function SliceContext.clone() as SliceContext ptr
+ dim ret as SliceContext ptr = NULL
+ if v_len(context_vars) then
+  ret = new SliceContext
+  v_copy ret->context_vars, context_vars
+ end if
+ return ret
+End Function
+
+Function SliceContext.description() as string
+ return ""
+end function
+
+Sub SliceCollectionContext.load(sl as Slice ptr, node as Reload.Nodeptr)
+ base.load(sl, node)
+ name = LoadPropStr(node, "collection_name")
+End Sub
+
+Sub SliceCollectionContext.save(sl as Slice ptr, node as Reload.Nodeptr)
+ base.save(sl, node)
+ if dont_save then exit sub
+ SaveProp node, "collection_name", name
+ 'id not saved
+End Sub
+
+Function SliceCollectionContext.description() as string
+ dim ret as string = "Collection"
+ if id > -1 then ret &= " " & id
+ if len(name) then ret &= " " & name
+ 'Try to indicate that no link with the original collection remains
+ if dont_save then ret = "From " & ret
+ return ret
+End Function
+
+
+'=============================================================================
+'                             Context Variables
 
 'The context_stack global is built up during a DrawSlice call.
 'Use this function to compute the stack if you need it outside of DrawSlice.
@@ -4171,6 +4235,224 @@ Function CalcContextStack(byval sl as Slice ptr) as SliceContext ptr vector
  return ret
 end function
 
+Function FindContext overload (context as SliceContext, ctxname as string) as SliceContextVar ptr
+ dim vec as SliceContextVar vector = context.context_vars
+ if vec = NULL then return NULL
+ 'Can't use v_find
+ for idx as integer = 0 to v_len(vec) - 1
+  if vec[idx].name = ctxname then return @vec[idx]
+ next
+ return NULL
+end function
+
+'Search the whole stack for a slice context variable
+Function FindContext overload (context_stack as SliceContext ptr vector, ctxname as string) as SliceContextVar ptr
+ for idx as integer = v_len(context_stack) - 1 to 0 step -1
+  dim ctx as SliceContextVar ptr
+  ctx = FindContext(*context_stack[idx], ctxname)
+  if ctx then return ctx
+ next
+ return NULL
+end function
+
+'Search a slice and its ancestors for a slice context variable
+Function FindContext overload (sl as Slice ptr, ctxname as string) as SliceContextVar ptr
+ while sl
+  if sl->Context then
+   dim ctx as SliceContextVar ptr
+   ctx = FindContext(*sl->Context, ctxname)
+   if ctx then return ctx
+  end if
+  sl = sl->Parent
+ wend
+ return NULL
+end function
+
+'Returns true and sets value if this context stack (belonging to a slice) has
+'the context variable set.
+'Context variables set on descendent slices (higher in the stack) override their ancestors
+Function GetContextInteger(context_stack as SliceContext ptr vector, ctxname as string, byref value as integer) as bool
+ dim ctx as SliceContextVar ptr
+ ctx = FindContext(context_stack, ctxname)
+ if ctx then
+  value = ctx->int_value
+  return YES
+ end if
+ return NO
+end function
+
+Function SliceContextVar.asString() as string
+ select case dtype
+   case cttyBool: return yesorno(int_value)
+   case cttyInt:  return str(int_value)
+   case cttyStr:  return str_value
+ end select
+end function
+
+'context_stack is optional. If it's not NULL, then it's updated too.
+Function GetOrAddContext (sl as Slice ptr, /'byref context_stack as SliceContext ptr vector = NULL,'/ ctxname as string) as SliceContextVar ptr
+ if sl->Context = NULL then
+  'We need to add a context, and push onto context_stack
+  sl->Context = new SliceContext
+  'if context_stack then v_append context_stack, sl->Context
+ end if
+
+ with *sl->Context
+  if .context_vars = NULL then
+   v_new .context_vars
+  end if
+
+  dim ret as SliceContextVar ptr
+  ret = FindContext(*sl->Context, ctxname)
+  if ret = NULL then
+   ret = v_expand(.context_vars)
+   ret->name = ctxname
+  end if
+  return ret
+ end with
+end function
+
+Sub SetContextBool (sl as Slice ptr, ctxname as string, value as bool)
+ with *GetOrAddContext(sl, ctxname)
+  .dtype = cttyBool
+  .int_value = value
+ end with
+end sub
+
+Sub SetContext overload (sl as Slice ptr, ctxname as string, value as integer)
+ with *GetOrAddContext(sl, ctxname)
+  .dtype = cttyInt
+  .int_value = value
+ end with
+end sub
+
+Sub SetContext overload (sl as Slice ptr, ctxname as string, value as string)
+ with *GetOrAddContext(sl, ctxname)
+  .dtype = cttyStr
+  .str_value = value
+ end with
+end sub
+
+'Only removes from sl itself, does not search ancestors. Not an error if not present
+Sub RemoveContext (sl as Slice ptr, ctxname as string)
+ if sl->Context = NULL then exit sub
+
+ with *sl->Context
+  if .context_vars = NULL then exit sub
+
+  for idx as integer = 0 to v_len(.context_vars) - 1
+   if .context_vars[idx].name = ctxname then
+    v_delete_slice .context_vars, idx, idx + 1
+    exit sub
+   end if
+  next
+ end with
+end sub
+
+Extern "C"
+
+
+'=============================================================================
+'                              Dynamic Properties
+
+dim shared temp_value_node as Reload.NodePtr
+
+'Lookup a context variable, return its value as a Node as used by set_slice_property,
+'returns a null Node if there is no such variable.
+Local Function GetContextAsNode(sl as Slice ptr, ctxname as string, propname as string) as Reload.NodePtr
+ if temp_value_node = NULL then
+  temp_value_node = CreateNode(get_anim_doc, "value")
+ end if
+
+ dim ctx as SliceContextVar ptr
+ ctx = FindContext(sl, ctxname)
+
+ if ctx then
+  select case ctx->dtype
+   case cttyBool
+    'Set to 0 or 1
+    if propname = "s" then
+     'Setting text slice text. Convert to a string "No"/"Yes"
+     'TODO: make customisable global text strings
+     '(RELOAD Nodes don't actually have a bool type, so the conversion has to be here rather
+     'than in set_slice_property.)
+     SetContent temp_value_node, iif(ctx->int_value, "Yes", "No")
+    else
+     SetContentBool temp_value_node, ctx->int_value
+     endif
+   case cttyInt
+    SetContent temp_value_node, ctx->int_value
+   case cttyStr
+    SetContent temp_value_node, ctx->str_value
+   case else
+    showbug("GetContextAsNode: bad dtype")
+  end select
+ else
+  'Default to NO/0/""
+  SetContent temp_value_node
+ end if
+
+ return temp_value_node
+end function
+
+'Update dynamic properties of a whole slice tree if recurse=YES
+Sub UpdateSliceDynamicProps(sl as Slice ptr, recurse as bool = YES)
+ if sl->DynamicProps then
+  for idx as integer = 0 to v_len(sl->DynamicProps) - 1
+   with sl->DynamicProps[idx]
+    set_slice_property sl, .propname, GetContextAsNode(sl, .ctxname, .propname)
+   end with
+  next
+ end if
+
+ if recurse = NO then exit sub
+
+ dim ch as Slice ptr = sl->FirstChild
+ do while ch
+  if ch->FirstChild orelse ch->DynamicProps then
+   if ShouldSkipSlice(ch) = NO then
+    UpdateSliceDynamicProps ch, YES
+   end if
+  end if
+  ch = ch->NextSibling
+ loop
+end sub
+
+'Returns index or -1
+Function FindSliceDynamicProp(sl as Slice ptr, propname as string) as integer
+ if sl->DynamicProps = NULL then return -1
+ for idx as integer = 0 to v_len(sl->DynamicProps) - 1
+  if sl->DynamicProps[idx].propname = propname then
+   return idx
+  end if
+ next
+ return -1
+end function
+
+'Makes a slice property (named by the set_slice_property key) dynamically set to a context variable.
+'Overwrites existing.
+Sub AddSliceDynamicProp(sl as Slice ptr, propname as string, ctxname as string)
+ if sl->DynamicProps then
+  dim idx as integer = FindSliceDynamicProp(sl, propname)
+  if idx > -1 then
+   'Replace
+   sl->DynamicProps[idx].ctxname = ctxname
+   exit sub
+  end if
+ else
+  v_new sl->DynamicProps
+ end if
+
+ with *v_expand(sl->DynamicProps)
+  .propname = propname
+  .ctxname = ctxname
+ end with
+end sub
+
+
+'=============================================================================
+'                                   Drawing
+
 'The central slice drawing function, called regardless of what slice-specific methods have been set.
 '(See comments at the top of this file for an overview of slice drawing.)
 'childindex is index of s among its siblings, ignoring templates (unless shown). Pass
@@ -4182,7 +4464,7 @@ Local Sub DrawSliceRecurse(byval s as Slice ptr, byval page as integer, childind
  'so don't need to check that here.
 
  'Refresh the slice: calc the size and screen X,Y and possibly visibility (select slices)
- 'or other attributes. Refreshing is skipped if the slice isn't visible.
+ 'or other properties. Refreshing is skipped if the slice isn't visible.
  '(Note: if ChildrenRefresh is set, it was already called from the parent's
  'ChildDraw, and ChildRefresh will do nothing.)
  DIM attach as Slice Ptr
@@ -4328,6 +4610,10 @@ Sub RefreshSliceTreeScreenPos(slc as Slice ptr)
  'Update descendents
  SliceRefreshRecurse slc
 end sub
+
+
+'=============================================================================
+'                                   Collision
 
 Function SliceCollide(byval sl1 as Slice Ptr, sl2 as Slice Ptr) as bool
  'Check for a screen-position collision between slice 1 and slice 2 (regardless of parentage)
@@ -4705,6 +4991,10 @@ Function CloneSliceTree(byval sl as Slice ptr, recurse as bool = YES, copy_speci
    .AnimState->sl = clone
   end if
  end with
+ if sl->Context then
+  '--Cloned context will generally contain context variables only, not other data
+  clone->Context = sl->Context->clone()
+ end if
  '--clone special properties for this slice type
  sl->Clone(sl, clone)
  if recurse = NO then return clone
@@ -4750,7 +5040,7 @@ End Extern
 
 Sub SavePropAlways(node as Reload.Nodeptr, propname as zstring ptr, byval value as integer)
  if node = 0 then debug "SaveProp null node ptr": Exit Sub
- Reload.SetChildNode(node, propname, CLNGINT(value))
+ Reload.AppendChildNode(node, propname, CLNGINT(value))
 End Sub
 
 'Doesn't save anything = 0
@@ -4761,7 +5051,7 @@ End Sub
 'This function only exists because of FB bug sf#826 "Weird overload resolution with booleans", fixed in FB 1.10
 Sub SavePropBoolAlways(node as Reload.Nodeptr, propname as zstring ptr, byval value as boolean)
  if node = 0 then debug "SaveProp null node ptr": Exit Sub
- Reload.SetChildNode(node, propname, CLNGINT(value))
+ Reload.AppendChildNode(node, propname, CLNGINT(value))
 END Sub
 
 'Ditto
@@ -4771,7 +5061,7 @@ End Sub
 
 Sub SavePropAlways(node as Reload.Nodeptr, propname as zstring ptr, byval value as double)
  if node = 0 then debug "SaveProp null node ptr": Exit Sub
- Reload.SetChildNode(node, propname, value)
+ Reload.AppendChildNode(node, propname, value)
 End Sub
 
 Sub SaveProp(node as Reload.Nodeptr, propname as zstring ptr, byval value as double)
@@ -4780,7 +5070,7 @@ End Sub
 
 Sub SavePropAlways(node as Reload.Nodeptr, propname as zstring ptr, s as string)
  if node = 0 then debug "SaveProp null node ptr": Exit Sub
- Reload.SetChildNode(node, propname, s)
+ Reload.AppendChildNode(node, propname, s)
 End Sub
 
 Sub SaveProp(node as Reload.Nodeptr, propname as zstring ptr, s as string)
@@ -4845,7 +5135,7 @@ Sub SliceSaveToNode(byval sl as Slice Ptr, node as Reload.Nodeptr, save_handles 
  '--Save properties specific to this slice type
  sl->Save(sl, node)
  '--Contexts may or may not be savable
- if sl->Context then sl->Context->save(node)
+ if sl->Context then sl->Context->save(sl, node)
  if sl->Animations andalso sl->Animations->slice_specific then
   'Empty AnimationSets will be created if entering the animation editor in the
   'slice editor. They don't need to be saved.
@@ -4914,6 +5204,23 @@ Function LoadPropFloat(node as Reload.Nodeptr, propname as zstring ptr, byval de
  if node = 0 then debug "LoadPropFloat null node ptr": return defaultval
  return Reload.GetChildNodeFloat(node, propname, defaultval)
 End function
+
+'Give a slice a Context if necessary and load it (from the slice's root node)
+Private Sub SliceTryLoadContext(sl as Slice ptr, node as Reload.Nodeptr)
+ 'We will create a SliceContext so it can load itself.
+ 'For now, SliceLoadFromFile gives the root slice a SliceCollectionContext.
+
+ 'Future logic here
+ 'dim contextstr as string = LoadPropStr(node, "context")
+ 'if contextstr = "..." then sl->Context = new ...
+
+ 'A plain SliceContext for variables.
+ if Reload.GetChildByName(node, "context_vars") then
+  if sl->Context = NULL then sl->Context = new SliceContext
+ end if
+
+ if sl->Context then sl->Context->load(sl, node)
+End Sub
 
 'Note that this mutates an existing slice, which should be a new slice with no children
 'Returns true on (apparent) success; when returning false may be partially
@@ -4985,11 +5292,9 @@ Function SliceLoadFromNode(byval sl as Slice Ptr, node as Reload.Nodeptr, load_h
    if tableslot then restore_saved_plotslice_handle(sl, tableslot)
   end if
  #ENDIF
- 'TODO: create a SliceContext so it can load itself. For now, SliceLoadFromFile gives
- 'the root slice a SliceCollectionContext.
- 'dim contextstr as string = LoadPropStr(node, "context")
- if sl->Context then sl->Context->load(node)
- 'now update the type
+ 'Create and load Context if we have one
+ SliceTryLoadContext sl, node
+ 'Now update the type
  dim typestr as string = LoadPropStr(node, "type")
  dim typenum as SliceTypes = SliceTypeByName(typestr)
  if typenum = slInvalid then

@@ -48,7 +48,8 @@ DECLARE FUNCTION copy_path_data_into_extra(extravec_ptr as integer vector ptr, b
 'plotslices(0) isn't used since Slice.TableSlot = 0 means the slice isn't in plotslices.
 'plotslices will grow as needed up to SLICE_HANDLE_SLOT_MASK (2.1 million)
 'The size of 64 is just so we won't have to reallocate for a little while
-REDIM plotslices(0 TO 64) as SliceHandleSlot
+DIM last_slice_table_slot as integer = 64  'Always equal to UBOUND(plotslices)
+REDIM plotslices(0 TO last_slice_table_slot) as SliceHandleSlot
 plotslicesp = @plotslices(0)
 
 'Next plotslices() slot to try assigning (if unused), linearly scanned upwards
@@ -429,10 +430,10 @@ SUB trigger_onkeypress_script ()
  'Because anykeypressed doesn't check it, and we don't want to break scripts looking for key:alt (== scUnfilteredAlt)
  IF keyval(scUnfilteredAlt) > 0 THEN doit = YES
 
- IF nowscript >= 0 THEN
-  IF scriptinsts(nowscript).waiting = waitingOnCmd AND scriptinsts(nowscript).curvalue = 9 THEN
-   '--never trigger a onkey script when the previous script
-   '--has a "wait for key" command active
+ IF hsvm.cur_scriptinst THEN
+  IF hsvm.cur_scriptinst->waiting = waitingOnCmd AND hsvm.cur_scriptinst->curvalue = 9 THEN
+   '--never trigger an onkey plotscript when there is an active plotscript
+   '--waiting on a "wait for key" command
    doit = NO
   END IF
  END IF
@@ -453,7 +454,7 @@ END SUB
 
 ' Implementations of 'wait' commands.
 SUB process_wait_conditions()
- WITH scriptinsts(nowscript)
+ WITH *hsvm.cur_scriptinst
 
    ' Evaluate wait conditions, even if the fibre is paused (unimplemented),
    ' as waiting for unpause first will just lead to bugs eg. due to map changes
@@ -554,7 +555,10 @@ SUB process_wait_conditions()
      IF gen(genCameraMode) <> pancam ANDALSO gen(genCameraMode) <> focuscam THEN script_stop_waiting()
 
     CASE 59'--wait for text box
-     IF txt.showing = NO OR readbit(gen(), genSuspendBits, suspendboxadvance) = 1 THEN
+     IF txt.showing = NO THEN
+      script_stop_waiting()
+     ELSEIF readbit(gen(), genSuspendBits, suspendboxadvance) = 1 THEN
+      scripterr "waitfortextbox skipped because suspendboxadvance was used", serrInfo
       script_stop_waiting()
      END IF
 
@@ -1049,7 +1053,7 @@ SUB script_commands(byval cmdid as integer)
    'Note: you can select hidden items!
    'After a tick, the selection should get moved to a valid item.
    IF mi->unselectable THEN
-    'scripterr "Can't select unselectable menu item", serrInfo
+    scripterr "Can't select unselectable menu item", serrInfo
    ELSE
     mstates(menuslot).pt = mislot
     mstates(menuslot).need_update = YES
@@ -1336,7 +1340,7 @@ SUB script_commands(byval cmdid as integer)
 'old scriptmisc
 
  CASE 0'--noop
-  scripterr "encountered clean noop", serrInfo
+  'scripterr "encountered clean noop", serrInfo
  CASE 1'--Wait (cycles)
   IF retvals(0) > 0 THEN
    script_start_waiting(retvals(0))
@@ -1416,9 +1420,11 @@ SUB script_commands(byval cmdid as integer)
  CASE 17'--get item
   IF valid_item(retvals(0)) THEN
    IF retvals(1) >= 1 THEN
-    IF getitem(retvals(0), retvals(1)) = YES THEN scriptret = 1
+    DIM old_count as integer = countitem(retvals(0))
+    getitem retvals(0), retvals(1)
     evalitemtags
     tag_updates
+    scriptret = countitem(retvals(0)) - old_count
    END IF
   END IF
  CASE 18'--delete item
@@ -1514,18 +1520,21 @@ SUB script_commands(byval cmdid as integer)
  CASE 59'--wait for text box
   IF readbit(gen(), genSuspendBits, suspendboxadvance) = 0 THEN
    script_start_waiting(retvals(0))
+  ELSE
+   scripterr "waitfortextbox skipped because suspendboxadvance is active", serrInfo
   END IF
  CASE 60'--equip where
   scriptret = 0
   IF valid_item(retvals(1)) THEN
    IF valid_hero_party(retvals(0)) THEN
-    loaditemdata buffer(), retvals(1)
+    DIM item as ItemDef
+    loaditemdata item, retvals(1)
     DIM hero_id as integer = gam.hero(retvals(0)).id
     IF hero_id >= 0 THEN
-     IF item_read_equipbit(buffer(), hero_id) THEN
+     IF item_read_equipbit(item, hero_id) THEN
       ' It's equippable; return slot+1 for the first equippable slot
       FOR i as integer = 0 to 4
-       IF item_is_equippable_in_slot(buffer(), i) THEN scriptret = i + 1
+       IF item.eqslots(i) THEN scriptret = i + 1
       NEXT i
      END IF
     END IF
@@ -1799,8 +1808,11 @@ SUB script_commands(byval cmdid as integer)
    erase_save_slot retvals(0) - 1
   END IF
  CASE 176'--run script by id
+  scriptret = -1
   DIM rsr as RunScriptResult
   DIM argc as integer = curcmd->argc  'Must store before calling runscript
+  'Note: if retvals(0) no error is shown or logged! Not sure what's best.
+  'On any other failure runscript shows an error.
   rsr = runscript(retvals(0), NO, NO, "runscriptbyid")
   IF rsr = rsSuccess THEN
    '--fill heap with arguments
@@ -1808,9 +1820,6 @@ SUB script_commands(byval cmdid as integer)
     setScriptArg i - 1, retvals(i)
    NEXT i
    'NOTE: scriptret is not set here when this command is successful. The return value of the called script will be returned.
-  ELSE
-   scripterr "run script by id failed loading " & retvals(0), serrMajor
-   scriptret = -1
   END IF
  CASE 180'--map width([map])
   'map width did not originally have an argument
@@ -2155,12 +2164,12 @@ SUB script_commands(byval cmdid as integer)
   IF retvals(0) >= 0 THEN gold = retvals(0)
  CASE 251'--set string from table
   IF bound_arg(retvals(0), 0, UBOUND(plotstr), "string ID", !"$# = \"...\"") THEN
-   plotstr(retvals(0)).s = script_string_constant(nowscript, retvals(1))
+   plotstr(retvals(0)).s = script_string_constant(hsvm.cur_script, retvals(1))
    scriptret = retvals(0)
   END IF
  CASE 252'--append string from table
   IF bound_arg(retvals(0), 0, UBOUND(plotstr), "string ID", !"$# + \"...\"") THEN
-   plotstr(retvals(0)).s += script_string_constant(nowscript, retvals(1))
+   plotstr(retvals(0)).s += script_string_constant(hsvm.cur_script, retvals(1))
    scriptret = retvals(0)
   END IF
  CASE 256'--suspend map music
@@ -3128,7 +3137,7 @@ SUB script_commands(byval cmdid as integer)
   FOR i as integer = 0 TO curcmd->argc - 1
    IF i MOD 2 = 0 THEN
     IF i <> 0 THEN result &= ", "
-    result &= script_string_constant(nowscript, retvals(i)) & " = "
+    result &= script_string_constant(hsvm.cur_script, retvals(i)) & " = "
    ELSE
     result &= retvals(i)
    END IF
@@ -3641,11 +3650,11 @@ SUB script_commands(byval cmdid as integer)
    END IF
   END IF
  CASE 568 '--get calling script id (depth)
-  IF retvals(0) < 1 THEN
-   scripterr "get calling script id: expected a depth of at least 1", serrBadOp
+  IF retvals(0) < 0 THEN
+   scripterr "get calling script id: can't have a negative depth", serrBadOp
   ELSE
    ' Returns 0 if non-existent
-   scriptret = ancestor_script_id(nowscript, retvals(0))
+   scriptret = ancestor_script_id(retvals(0))
   END IF
  CASE 595'--running on windows
   #IFDEF __FB_WIN32__
@@ -4145,25 +4154,12 @@ SUB script_commands(byval cmdid as integer)
   END IF
  CASE 68'--swap out hero
   DIM i as integer = findhero(retvals(0), , serrWarn)
-  IF i > -1 THEN
-   FOR o as integer = 40 TO 4 STEP -1
-    IF gam.hero(o).id = -1 THEN
-     doswap i, o
-     IF active_party_size() = 0 THEN forceparty
-     EXIT FOR
-    END IF
-   NEXT o
-  END IF
+  scriptret = -1
+  IF i > -1 THEN scriptret = swap_out_hero(i)
  CASE 69'--swap in hero
   DIM i as integer = findhero(retvals(0), -1, serrWarn)
-  IF i > -1 THEN
-   FOR o as integer = 0 TO 3
-    IF gam.hero(o).id = -1 THEN
-     doswap i, o
-     EXIT FOR
-    END IF
-   NEXT o
-  END IF
+  scriptret = -1
+  IF i > -1 THEN scriptret = swap_in_hero(i)
  CASE 83'--set hero stat (hero, stat, value, type)
   'TODO: this command can also set hero level (without updating stats)
   ' which sucks for when we want to add more stats. Need backcompat bit.
@@ -4726,7 +4722,7 @@ SUB script_commands(byval cmdid as integer)
  CASE 659 '--_asserteq(x, y, stringid, stringoffset)
   IF retvals(0) <> retvals(1) THEN
    IF bound_arg(retvals(2), 0, UBOUND(plotstr), "string ID", "assert expression string") THEN
-    plotstr(retvals(2)).s = script_string_constant(nowscript, retvals(3)) & _
+    plotstr(retvals(2)).s = script_string_constant(hsvm.cur_script, retvals(3)) & _
                             " [actual values were " & retvals(0) & " == " & retvals(1) & "]"
     scriptret = 1
    END IF
@@ -5155,7 +5151,7 @@ SUB script_commands(byval cmdid as integer)
   FOR i as integer = 0 TO curcmd->argc - 1
    IF i MOD 2 = 0 THEN
     IF i <> 0 THEN result &= ", "
-    result &= script_string_constant(nowscript, retvals(i)) & "="
+    result &= script_string_constant(hsvm.cur_script, retvals(i)) & "="
    ELSE
     result &= STR(retvals(i))
    END IF
@@ -5384,6 +5380,136 @@ SUB script_commands(byval cmdid as integer)
   IF sl THEN
    scriptret = sl->SpriteData->get_num_frames_in_group(sl, retvals(1))
   END IF
+ CASE 780 '--hero is locked
+  DIM hero_slot as integer = findhero(retvals(0), , serrWarn)
+  IF hero_slot > -1 THEN scriptret = IIF(gam.hero(hero_slot).locked, 1, 0)
+ CASE 781 '--sort inventory
+  inventory_autosort
+ CASE 782 '--get item value
+  IF valid_item(retvals(0)) THEN
+   DIM item as ItemDef
+   loaditemdata item, retvals(0)
+   scriptret = item.buy_price
+  END IF
+ CASE 783 '--get item teach spell
+  IF valid_item(retvals(0)) THEN
+   DIM item as ItemDef
+   loaditemdata item, retvals(0)
+   scriptret = item.teach_spell + 1
+  END IF
+ CASE 784 '--get item attack outside battle
+  IF valid_item(retvals(0)) THEN
+   DIM item as ItemDef
+   loaditemdata item, retvals(0)
+   scriptret = item.oob_attack + 1
+  END IF
+ CASE 785 '--get item text box
+  IF valid_item(retvals(0)) THEN
+   DIM item as ItemDef
+   loaditemdata item, retvals(0)
+   scriptret = item.text_box
+  END IF
+ CASE 786 '--get item equip stat bonus
+  IF valid_item(retvals(0)) THEN
+   IF valid_stat(retvals(1)) THEN
+    DIM item as ItemDef
+    loaditemdata item, retvals(0)
+    scriptret = item.stat_bonuses.sta(retvals(1))
+   END IF
+  END IF
+ CASE 787 '--equippable in slot
+  IF valid_item(retvals(0)) THEN
+   IF bound_arg(retvals(1), 1, 5, "Equipment slot") THEN
+    DIM item as ItemDef
+    loaditemdata item, retvals(0)
+    scriptret = IIF(item.eqslots(retvals(1) - 1), 1, 0)
+   END IF
+  END IF
+ CASE 788 '--get item attack in battle
+  IF valid_item(retvals(0)) THEN
+   DIM item as ItemDef
+   loaditemdata item, retvals(0)
+   scriptret = item.battle_items_menu_attack + 1
+  END IF
+ CASE 789 '--get item attack as weapon
+  IF valid_item(retvals(0)) THEN
+   DIM item as ItemDef
+   loaditemdata item, retvals(0)
+   scriptret = item.battle_weapon_attack + 1
+  END IF
+ CASE 790 '--insensitive string equal, aka insensitive string compare
+  IF valid_plotstr(retvals(0)) AND valid_plotstr(retvals(1)) THEN
+   scriptret = IIF(LCASE(plotstr(retvals(0)).s) = LCASE(plotstr(retvals(1)).s), 1, 0)
+  END IF
+ CASE 791 '--string to lower
+  IF valid_plotstr(retvals(0)) THEN
+   plotstr(retvals(0)).s = LCASE(plotstr(retvals(0)).s)
+   scriptret = retvals(0)
+  END IF
+ CASE 792 '--string to upper
+  IF valid_plotstr(retvals(0)) THEN
+   plotstr(retvals(0)).s = UCASE(plotstr(retvals(0)).s)
+   scriptret = retvals(0)
+  END IF
+ ' Not useful enough to bother?
+ ' CASE '--free slot in active party
+ '  scriptret = first_free_slot_in_active_party()
+ ' CASE '--free slot in reserve party
+ '  scriptret = first_free_slot_in_reserve_party()
+ CASE 793'--swap in hero by slot
+  scriptret = -1
+  IF really_valid_hero_party(retvals(0)) THEN
+   scriptret = swap_in_hero(retvals(0))
+  END IF
+ CASE 794'--swap out hero by slot
+  scriptret = -1
+  IF really_valid_hero_party(retvals(0)) THEN
+   scriptret = swap_out_hero(retvals(0))
+  END IF
+ CASE 795 '--lock hero by slot
+  IF really_valid_hero_party(retvals(0)) THEN
+   gam.hero(retvals(0)).locked = YES
+  END IF
+ CASE 796 '--unlock hero by slot
+  IF really_valid_hero_party(retvals(0)) THEN
+   gam.hero(retvals(0)).locked = NO
+  END IF
+ CASE 797 '--get weapon item pic
+  IF valid_item(retvals(0)) THEN
+   DIM item as ItemDef
+   loaditemdata item, retvals(0)
+   scriptret = item.wep_pic
+  END IF
+ CASE 798 '--get weapon item ppal
+  IF valid_item(retvals(0)) THEN
+   DIM item as ItemDef
+   loaditemdata item, retvals(0)
+   scriptret = item.wep_pal
+  END IF
+ CASE 799 '--money reward
+  scriptret = gam.rew.plunder
+ CASE 800 '--experience reward
+  scriptret = gam.rew.exper
+ CASE 801, /'--items reward idx'/ 802 /'--items quantity reward itx'/
+  DIM i as integer = retvals(0)
+  DIM j as integer = 0
+  WITH gam.rew
+   IF i = -1 THEN 'getcount
+    scriptret = 0
+    FOR j = 0 to UBOUND(.found)
+     IF .found(j).num > 0 THEN scriptret = j + 1
+    NEXT
+   ELSE
+    scriptret = IIF(cmdid = 801, -1, 0)
+    IF 0 <= i AND i <= UBOUND(.found) THEN
+     IF .found(i).num = 0 THEN
+      scriptret = IIF(cmdid = 801, -1, 0)
+     ELSE
+      scriptret = IIF(cmdid = 801, .found(i).id, .found(i).num)
+     END IF
+    END IF
+   END IF
+  END WITH
 
  CASE ELSE
   'We also check the HSP header at load time to check there aren't unsupported commands
@@ -5671,7 +5797,7 @@ FUNCTION slice_handle_is_freed(handle as integer) as bool
  '-it's not currently occupied but was occupied in the past (so its .handle has been set to something
  ' with correct )
  'We can mask off SLICE_HANDLE_CTR_MASK and check the rest matches to check the above.
- IF slot > 0 ANDALSO slot <= UBOUND(plotslices) ANDALSO _
+ IF slot > 0 ANDALSO slot <= last_slice_table_slot ANDALSO _
     (plotslices(slot).handle <> handle ORELSE plotslices(slot).sl = NULL) ANDALSO _
     (handle AND NOT SLICE_HANDLE_CTR_MASK) = (plotslices(slot).handle AND NOT SLICE_HANDLE_CTR_MASK) THEN
   RETURN YES
@@ -5684,7 +5810,7 @@ FUNCTION get_handle_slice(byval handle as integer, byval errlvl as scriptErrEnum
  'It's not necessary to explicitly check get_handle_type(handle) >= HandleType.Slice,
  'in fact we mustn't, to support obsolete handles in old saves which count up from 1.
  DIM slot as uinteger = handle AND SLICE_HANDLE_SLOT_MASK
- IF slot > UBOUND(plotslices) ORELSE plotslices(slot).handle <> handle ORELSE plotslices(slot).sl = NULL THEN
+ IF slot > last_slice_table_slot ORELSE plotslices(slot).handle <> handle ORELSE plotslices(slot).sl = NULL THEN
   IF errlvl > serrIgnore THEN
    IF slice_handle_is_freed(handle) THEN
     IF errlvl > serrWarn THEN
@@ -5800,13 +5926,13 @@ FUNCTION create_plotslice_handle(byval sl as Slice Ptr) as integer
  END IF
 
  DIM slot as integer
- FOR slot = next_slice_table_slot TO UBOUND(plotslices)
+ FOR slot = next_slice_table_slot TO last_slice_table_slot
   IF plotslices(slot).sl = 0 THEN EXIT FOR
  NEXT
  IF slot > UBOUND(plotslices) THEN
   'If no room is available, make the array bigger.
-  DIM numslots as integer = small(SLICE_HANDLE_SLOT_MASK, UBOUND(plotslices) * 1.5 + 32)
-  REDIM PRESERVE plotslices(0 TO numslots)
+  last_slice_table_slot = small(SLICE_HANDLE_SLOT_MASK, UBOUND(plotslices) * 1.5 + 32)
+  REDIM PRESERVE plotslices(0 TO last_slice_table_slot)
   plotslicesp = @plotslices(0)
  END IF
  IF slot > SLICE_HANDLE_SLOT_MASK THEN
@@ -5849,7 +5975,8 @@ SUB restore_saved_plotslice_handle(byval sl as Slice Ptr, handle as integer)
  DIM slot as uinteger = handle AND SLICE_HANDLE_SLOT_MASK
 
  IF slot > UBOUND(plotslices) THEN
-  REDIM PRESERVE plotslices(0 TO slot * 1.5 + 32)
+  last_slice_table_slot = slot * 1.5 + 32
+  REDIM PRESERVE plotslices(0 TO last_slice_table_slot)
   plotslicesp = @plotslices(0)
  END IF
 

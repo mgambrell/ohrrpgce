@@ -174,16 +174,24 @@ DECLARE FUNCTION spriteset_from_basic_spritesheet(sheet as Frame ptr, sprtype as
 DECLARE FUNCTION load_spriteset_from_file(file as string, framesize as XYPair, numframes as integer) as Frame ptr
 
 
-DECLARE SUB loaditemdata OVERLOAD (array() as integer, byval index as integer)
-DECLARE SUB loaditemdata OVERLOAD (item as ItemDef, index as integer)
-DECLARE SUB saveitemdata (array() as integer, byval index as integer)
+DECLARE SUB loaditemdata (item as ItemDef, index as integer)
+DECLARE SUB load_item_from_reload(item as ItemDef, byval node as NodePtr, byval id as integer = -1)
+DECLARE SUB loaditemdata_old_itm_format OVERLOAD (array() as integer, byval index as integer)
+DECLARE SUB loaditemdata_old_itm_format OVERLOAD (item as ItemDef, index as integer)
+DECLARE SUB saveitemdata (item as ItemDef, byval index as integer)
+DECLARE SUB save_item_as_reload(item as ItemDef, byval parent as NodePtr)
+DECLARE SUB saveitemdata_old_itm_format OVERLOAD (array() as integer, byval index as integer)
+DECLARE SUB saveitemdata_old_itm_format OVERLOAD (item as ItemDef, byval index as integer)
 DECLARE SUB item_tags_from_buf(tags as ItemDefTags, itembuf() as integer)
 DECLARE FUNCTION LoadOldItemElemental (itembuf() as integer, byval element as integer) as single
 DECLARE SUB LoadItemElementals (byval index as integer, itemresists() as single)
 DECLARE FUNCTION get_item_stack_size (byval item_id as integer) as integer
-DECLARE FUNCTION item_read_equipbit(itembuf() as integer, hero_id as integer) as bool
-DECLARE SUB item_write_equipbit(itembuf() as integer, hero_id as integer, value as bool)
-DECLARE FUNCTION item_is_equippable(itembuf() as integer) as bool
+DECLARE FUNCTION item_read_equipbit OVERLOAD (itembuf() as integer, hero_id as integer) as bool
+DECLARE FUNCTION item_read_equipbit OVERLOAD (item as ItemDef, hero_id as integer) as bool
+DECLARE SUB item_write_equipbit OVERLOAD (itembuf() as integer, hero_id as integer, value as bool)
+DECLARE SUB item_write_equipbit OVERLOAD (item as ItemDef, hero_id as integer, value as bool)
+DECLARE FUNCTION item_is_equippable OVERLOAD (itembuf() as integer) as bool
+DECLARE FUNCTION item_is_equippable OVERLOAD (item as ItemDef) as bool
 DECLARE FUNCTION item_is_equippable_in_slot(itembuf() as integer, byval slot as integer) as bool
 
 #IFDEF IS_GAME
@@ -219,6 +227,8 @@ DECLARE SUB save_hero_formation(byref hform as HeroFormation, byval form_num as 
 DECLARE SUB write_hero_formation(byval par as NodePtr, byref hform as HeroFormation)
 
 DECLARE SUB load_hsp_header(filename as string, header as HSHeader)
+DECLARE SUB load_lookup1_bin(triggers() as TriggerData)
+DECLARE SUB load_plotscr_lst(ids_names() as IntStrPair, filename as string)
 DECLARE SUB load_script_triggers_and_names()
 
 DECLARE SUB save_string_list(array() as string, filename as string)
@@ -259,8 +269,10 @@ DECLARE SUB save_distrib_state OVERLOAD (byref distinfo as DistribState, byval n
 DECLARE FUNCTION WriteXYPairNode (byval parent as NodePtr, nodename as string, pair as XYPair) as NodePtr
 DECLARE FUNCTION WritePicPalNode (byval parent as NodePtr, nodename as string, byval pic as integer, byval pal as integer=-1) as NodePtr
 DECLARE FUNCTION WriteStatsNode (byval parent as NodePtr, nodename as string, statobj as Stats) as NodePtr
+DECLARE FUNCTION WriteElementalFloatsNode(byval parent as NodePtr, nodename as string, elementals() as single) as NodePtr
 
 DECLARE SUB ReadStatsNode (byval stats as NodePtr, statobj as Stats)
+DECLARE SUB ReadElementalFloatsNode (byval elements_node as NodePtr, elementals() as single, debug_thing as string="")
 
 DECLARE FUNCTION get_general_reld() as NodePtr
 DECLARE SUB write_general_reld()

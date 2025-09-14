@@ -7,11 +7,10 @@
 
 #include "scrconst.bi"
 
-DECLARE SUB trigger_script (id as integer, numargs as integer, double_trigger_check as bool, scripttype as string, trigger_loc as string, byref fibregroup as ScriptFibre ptr vector, priority as integer = 0)
+DECLARE SUB trigger_script (id as integer, numargs as integer, double_trigger_check as bool, trigger_name as string, trigger_loc as string, byref fibregroup as ScriptFibre ptr vector, priority as integer = 0)
 
 DECLARE SUB trigger_script_arg (byval argno as integer, byval value as integer, byval argname as zstring ptr = NULL)
-DECLARE SUB dequeue_scripts ()
-DECLARE SUB run_queued_scripts ()
+DECLARE SUB run_queued_scripts (byref group as ScriptFibre ptr vector)
 
 DECLARE SUB start_script_trigger_log ()
 DECLARE SUB script_log_tick ()
@@ -31,6 +30,7 @@ DECLARE SUB script_call_timing ()
 DECLARE SUB script_return_timing ()
 DECLARE SUB timed_script_commands(byval cmdid as integer)
 
+DECLARE SUB delete_fibre (fibre as ScriptFibre ptr)
 DECLARE SUB killallscripts ()
 DECLARE SUB killscriptthread ()
 DECLARE SUB resetinterpreter ()
@@ -42,18 +42,19 @@ DECLARE SUB script_stop_waiting(returnval as integer = 0)
 ENUM 'RunScriptResult
   rsFail = 0
   rsSuccess = 1
-  rsQuietFail = 2
+  rsNoScript = 2    'Passed id = 0 to runscript, so it did nothing
+  rsIgnored = 3     'Didn't trigger because of double-trigger prevention
 END ENUM
 TYPE RunScriptResult as integer
 
-DECLARE FUNCTION runscript (id as integer, newcall as bool, double_trigger_check as bool, scripttype as zstring ptr) as RunScriptResult
+DECLARE FUNCTION runscript (id as integer, newcall as bool, double_trigger_check as bool, trigger_name as zstring ptr) as RunScriptResult
 DECLARE FUNCTION loadscript (id as integer, loaddata as bool = YES) as ScriptData ptr
 DECLARE SUB delete_ScriptData (byval scriptd as ScriptData ptr)
 DECLARE SUB deref_script (script as ScriptData ptr)
 DECLARE SUB reload_scripts (force_full_message as bool = YES)
 DECLARE SUB load_hsp ()
 
-DECLARE FUNCTION script_string_constant(scriptinsts_slot as integer, offset as integer) as string
+DECLARE FUNCTION script_string_constant(script as ScriptData ptr, offset as integer) as string
 
 DECLARE FUNCTION script_lookup_local_name (var_id as integer, scrdat as ScriptData) as string
 DECLARE FUNCTION localvariablename (var_id as integer, scrdat as ScriptData) as string
@@ -62,7 +63,7 @@ DECLARE FUNCTION commandname (byval id as integer) as string
 
 DECLARE SUB read_srcfiles_txt ()
 DECLARE FUNCTION decode_srcpos(posdata as ScriptTokenPos, srcpos as uinteger, script_offset as integer = 0) as bool
-DECLARE FUNCTION get_script_line_info(posdata as ScriptTokenPos, selectedscript as integer) as bool
+DECLARE FUNCTION get_script_line_info(posdata as ScriptTokenPos, which_scrat as OldScriptState ptr) as bool
 DECLARE FUNCTION highlighted_script_line(posdata as ScriptTokenPos, maxchars as integer, scrinst as ScriptInst ptr = NULL) as string
 DECLARE FUNCTION current_command_name() as string
 DECLARE FUNCTION interpreter_context_name() as string
@@ -74,13 +75,13 @@ DECLARE FUNCTION script_interrupt () as bool
 ' The following are in oldhsinterpreter.bas
 
 DECLARE FUNCTION oldscriptstate_init (index as integer, script as ScriptData ptr) as zstring ptr
-DECLARE SUB scriptinterpreter ()
+DECLARE FUNCTION scriptinterpreter () as bool
 DECLARE SUB breakpoint (byref mode as integer, byval callspot as integer)
 DECLARE SUB scriptwatcher (byref mode as integer, byval drawloop as bool = NO)
 DECLARE SUB scriptdump (header as string)
-DECLARE FUNCTION script_current_srcpos (selectedscript as integer) as uinteger
+DECLARE FUNCTION script_current_srcpos (which_scrat as OldScriptState ptr) as uinteger
 DECLARE SUB setScriptArg (byval arg as integer, byval value as integer)
-DECLARE FUNCTION ancestor_script_id(scriptslot as integer, depth as integer) as integer
+DECLARE FUNCTION ancestor_script_id(depth as integer) as integer
 
 ' Globals for profiling of builtin script commands
 EXTERN profiling_cmdid as integer

@@ -30,6 +30,19 @@ SUB SlicePropertiesEditor.caption_slice_color(ifzero as string = "0")
   set_caption slice_color_caption(value, ifzero)
 END SUB
 
+FUNCTION create_dynamic_prop_menu(sl as Slice ptr, propname as string) as bool
+  DIM ctxname as string
+  prompt_for_string(ctxname, !"  Creating dynamic property...\nContext variable to use as source?", 100)
+  IF LEN(ctxname) = 0 THEN RETURN NO
+  ctxname = LCASE(sanitize_script_identifier(ctxname, NO, NO))
+  IF LEN(ctxname) = 0 THEN
+    show_overlay_message "Not a valid script identifier"
+    RETURN NO
+  END IF
+  AddSliceDynamicProp sl, propname, ctxname
+  RETURN YES
+END FUNCTION
+
 ' prop is the Reload node name used (for SaveProp) to save this slice property to .slices files.
 ' It's very often equal to the help key.
 ' animkey is used in animations, if it differs from prop
@@ -37,6 +50,40 @@ SUB SlicePropertiesEditor.propkey(prop as zstring ptr, helpkey as zstring ptr = 
   set_helpkey "sliceedit_" & *IIF(helpkey, helpkey, prop)
   IF animkey = NULL THEN animkey = prop
   cur_animkey = *animkey
+
+  'Insert/F2 to convert to dynamic property
+  IF process ANDALSO selected THEN
+    IF keyval(scInsert) > 1 ORELSE keyval(scF2) > 1 THEN
+      IF create_dynamic_prop_menu(sl, *prop) THEN
+        'FIXME: this doesn't actually force the necessary update
+        state.need_update = YES
+      END IF
+    END IF
+  END IF
+
+  'Show dynamic properties in the caption
+  IF refresh ANDALSO sl->DynamicProps THEN
+    FOR idx as integer = 0 TO v_len(sl->DynamicProps) - 1
+      WITH sl->DynamicProps[idx]
+        IF .propname = *prop THEN
+          'Maybe should have an add_note method instead
+          set_caption "{" & .ctxname & "} = " & form_default_caption()
+        END IF
+      END WITH
+    NEXT
+  END IF
+
+  'If a property is dynamic, attempting to edit it... removes the dynamic.
+  'Or we could edit value of the context variable, or the name of the context variable to use,
+  'or ask the user what to do.
+  IF edited ANDALSO sl->DynamicProps THEN
+    DIM idx as integer = FindSliceDynamicProp(sl, *prop)
+    IF idx > -1 THEN
+      v_delete_slice sl->DynamicProps, idx, idx + 1
+      'FIXME: this doesn't actually force the necessary update
+      state.need_update = YES
+    END IF
+  END IF
 END SUB
 
 SUB SlicePropertiesEditor.set_default(value as integer)
@@ -52,6 +99,9 @@ CONSTRUCTOR SlicePropertiesEditor(sl as Slice ptr, ses_draw_root as Slice ptr = 
   IF UBOUND(slicelookup) < 1 THEN
     REDIM slicelookup(1) as string
   END IF
+  menuopts.edged = YES
+  menuopts.drawbg = YES
+  menuopts.highlight_selection = YES
 END CONSTRUCTOR
 
 'Collect a list of properties and section headers into_vector, used by the animation editor
@@ -90,6 +140,11 @@ SUB SlicePropertiesEditor.finish_defitem()
     IF cur_item.title = prev_menu_text THEN  'Previous Menu
       EXIT SUB
     END IF
+    IF cur_animkey = "" THEN
+      'Menu items without propkey are not animatable properties
+      EXIT SUB
+    END IF
+
     WITH *v_expand(*gather_items)
       .infotype = SlicePropInfoType.prop
       .sltype = cur_slicetype
@@ -135,6 +190,8 @@ SUB SlicePropertiesEditor.finish_defitem()
       '? "finishdef", .display, GetString(.value_node)
     END WITH
   END IF
+
+  cur_animkey = ""
 END SUB
 
 SUB SlicePropertiesEditor.define_items()
@@ -498,6 +555,35 @@ SUB SlicePropertiesEditor.define_items()
     defint "Target Y:", .Targ.Y, -999999, 999999
     propkey "ty", "target"
 
+    section "Context Data"
+    IF .Context THEN
+      'Each existing context variable. These don't have propkeys. Animations will have
+      'separate opcodes to modify context.
+      FOR idx as integer = 0 TO v_len(.Context->context_vars) - 1
+        WITH .Context->context_vars[idx]
+          defitem .name & ":"
+          SELECT CASE .dtype
+            CASE cttyBool
+              edit_bool .int_value
+            CASE cttyInt
+              edit_int .int_value, INT_MIN, INT_MAX
+            CASE cttyStr
+              edit_str .str_value
+          END SELECT
+          set_helpkey "sliceedit_context_var"
+          IF delete_action THEN
+            RemoveContext sl, .name
+            'FIXME: this doesn't actually force the necessary update
+            state.need_update = YES
+          END IF
+        END WITH
+      NEXT
+    END IF
+    IF defitem_act("Add new var...") THEN
+      state.need_update OR= slice_editor_add_context_var_menu(sl)
+    END IF
+    set_helpkey "sliceedit_add_context_var"
+
     'Animation, Extra Data, Metadata (except screen pos) omitted
 
   END WITH
@@ -531,6 +617,7 @@ END SUB
 
 SUB SlicePropertiesEditor.draw_underlays()
   draw_background vpages(vpage), bgChequer
+  UpdateSliceDynamicProps ses_draw_root
   RefreshSliceScreenPos sl  'Invisible slices won't otherwise be updated by DrawSlice
   DrawSlice ses_draw_root, vpage
 END SUB

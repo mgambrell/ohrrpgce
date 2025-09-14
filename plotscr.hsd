@@ -12,7 +12,7 @@ plotscr version, begin
           # Only very rarely necessary to increment (don't when
           # new commands are added; that's detected separately),
           # otherwise leave alone to allow forwards compatibility.
-  "3S "   # Minimum supported version of hspeak;
+  "3Wa"   # Minimum supported version of hspeak;
           # Custom/Game don't care about this.
 end
 
@@ -113,6 +113,7 @@ define function, begin
 87,setheroposition,3,0,0,0  # arbitrarily set x,y
 88,setNPCposition,3,0,0,0   # arbitrarily set x,y
 89,swapbyposition,2,0,0     # swap two hero slots
+89,swapbyslot,2,0,0         # Alias
 90,findhero,1,0             # locate hero slot by hero name
 91,checkequipment,2,0,1     # what is a hero equipped with? (who,where)
 #92,daysofplay,0             # returns the days, these opcodes remain for compatability
@@ -813,6 +814,30 @@ define function, begin
 777,setspriteframeid,3,0,0,0  # Set frame ID and return frame number, -1 on failure (handle, frameid, exact)
 778,findspriteframeid,2,0,0   # Search for frame ID, exact match. Returns frame number or -1 (handle, frameid)
 779,spriteframegroupsize,2,0,-1 # The number of frames in a frame group (default current frame) (handle, group)
+780,heroislocked,1,0          # Whether hero locked from being swapped out
+781,sortinventory,0           # Sort the inventory items like SORT in the Inventory
+782,getitemvalue,1,0          # Return the default value of an item
+783,getitemteachspell,1,0     # Return the attack id+1 this item teaches as a spell
+784,getitemattackoutsidebattle,1,0 # Return the attack id+1 this item does outside of battle
+785,getitemtextbox,1,0        # Return the text box id this attack shows outside of battle
+786,getitemequipstatbonus,2,0,0 # Return the stat bonus for equipping an item
+787,equippableinslot,2,0,0    # Check whether an item can be equipped in a slot
+788,getitemattackinbattle,1,0 # Return the attack id+1 of the attack when used as an item
+789,getitemattackasweapon,1,0 # Return the attack id+1 of the attack when equipped as a weapon
+790,insensitivestringequal,2,0,0  #returns whether two strings are case-insenstive equal (stringID1, stringID2)
+790,insensitivestringcompare,2,0,0  #returns whether two strings are case-insenstive equal (stringID1, stringID2)
+791,stringtolower,1,0         # Convert a string to lower-case
+792,stringtoupper,1,0         # Convert a string to lower-case
+793,swapinherobyslot,1,-1     # Return first free party slot in the active party, or -1 if none
+794,swapoutherobyslot,1,-1    # Return first free party slot in the reserve party, or -1 if none
+795,lockherobyslot,1,-1       # Prevent swapping of a hero (party slot)
+796,unlockherobyslot,1,-1     # Undo lockhero (party slot)
+797,getitemweaponpic,1,0      # get the weapon sprite number of an item
+798,getitemweaponpal,1,0      # get the weapon sprite palette number of an item or -1 for default
+799,moneyreward,0             # Return money gained from the last battle, or 0 if N/A
+800,experiencereward,0        # Return experience reward from the last battle, or 0 if N/A
+801,itemsreward,1,0           # Number ids of items gained as rewards in last battle (-1 for N/A)
+802,itemsquantityreward,1,0   # Number quantities of items gained as rewards in last battle (0 for N/A)
 
 # Don't forget to update maxScriptCmdID in const.bi when adding new commands
 end
@@ -1381,8 +1406,8 @@ script,cancel map name display,begin
   write gmap(4,0)
 end
 
-script,set map edge mode,mode=0,hsd:tile=0,begin
-  write gmap(5,mode)
+script,set map edge mode,hsd:mode=0,hsd:tile=0,begin
+  write gmap(5,hsd:mode)
   write gmap(6,hsd:tile)
 end
 
@@ -2051,9 +2076,9 @@ end
 
 
 #--------------------------------------------------------------------------
-# script triggers
+# script roles
 
-define trigger,begin
+define role,begin
 0, script
 1, plotscript
 end
@@ -2467,8 +2492,10 @@ define constant, begin
 -100010, sl:walkabout layer
 -100011, sl:hero layer
 -100012, sl:npc layer
+-100013, sl:sprite
 -100013, sl:walkabout sprite
 -100013, sl:walkabout sprite component
+-100014, sl:shadow
 -100014, sl:walkabout shadow
 -100014, sl:walkabout shadow component
 -100015, sl:backdrop

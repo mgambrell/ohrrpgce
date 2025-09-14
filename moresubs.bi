@@ -11,6 +11,8 @@
 DECLARE SUB addhero (who as integer, slot as integer, forcelevel as integer = -1, allow_rename as bool = YES, loading as bool = NO)
 DECLARE SUB deletehero (slot as integer, resetting_game as bool = NO)
 DECLARE SUB doswap (byval s as integer, byval d as integer)
+DECLARE FUNCTION swap_in_hero (slot as integer) as integer
+DECLARE FUNCTION swap_out_hero (slot as integer) as integer
 DECLARE SUB party_change_updates ()
 DECLARE SUB evalherotags ()
 DECLARE SUB evalitemtags ()
@@ -46,6 +48,7 @@ DECLARE SUB resetgame ()
 DECLARE SUB reset_levelmp (byref hero as HeroState)
 DECLARE SUB reset_game_state ()
 DECLARE SUB reset_map_state (map as MapModeState)
+DECLARE SUB reset_rewards_state (byref rew as RewardsState)
 
 DECLARE SUB shop (byval id as integer)
 DECLARE FUNCTION useinn (byval price as integer, byval holdscreen as integer) as bool

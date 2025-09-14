@@ -45,7 +45,7 @@ DECLARE SUB pick_npc_action(npci as NPCInst, npcdata as NPCType)
 DECLARE FUNCTION perform_npc_move(byval npcnum as NPCIndex, npci as NPCInst, npcdata as NPCType) as bool
 DECLARE SUB npchitwall (npci as NPCInst, npcdata as NPCType, collision_type as WalkaboutCollisionType)
 DECLARE FUNCTION find_useable_npc () as NPCIndex
-DECLARE SUB interpret_scripts ()
+DECLARE SUB interpret_scripts(byref fibregroup as ScriptFibre ptr vector)
 DECLARE SUB update_heroes(force_step_check as bool=NO)
 DECLARE SUB doloadgame(byval load_slot as integer, prefix as string="")
 DECLARE SUB reset_game_final_cleanup()
@@ -164,9 +164,11 @@ DIM topmenu as integer = -1  'Always equal to UBOUND(menus)
 REDIM remembered_menu_pts(0) as integer  'True slot number of the selected menu item when the menu was last closed
 
 'Script interpreter
+DIM hsvm as HSVMState
 DIM nowscript as integer = -1
+DIM nowscript_locals as integer ptr
 DIM scriptret as integer
-REDIM retvals(maxScriptArgs - 1) as integer
+DIM retvalsbase as integer ptr
 DIM scriptctr as uinteger
 DIM numloadedscr as integer    'Number of loaded script headers in script cache (some may not have data loaded)
 DIM totalscrmem as integer     'Total memory used by all loaded scripts, in int32s
@@ -183,20 +185,17 @@ DIM insideinterpreter as bool
 DIM timing_fibre as bool
 DIM scriptprofiling as bool
 DIM commandprofiling as bool
-DIM wantimmediate as integer  'Equal to 0, -1 or -2
 
 'incredibly frustratingly fbc doesn't export global array debugging symbols
 DIM globalp as integer ptr
 DIM heapp as integer ptr
 DIM scratp as OldScriptState ptr
 DIM scriptp as ScriptData ptr ptr
-DIM retvalsp as integer ptr
 DIM plotslicesp as SliceHandleSlot ptr
 globalp = @global(0)
 heapp = @heap(0)
 scratp = @scrat(0)
 scriptp = @script(0)
-retvalsp = @retvals(0)
 
 setup_global_reload_doc
 
@@ -285,6 +284,8 @@ unlock_resolution 320, 200   'Minimum window size
 #ENDIF
 
 setupmusic
+
+IF nogfx_mode THEN PRINT "Running headless"
 
 
 '==============================================================================
@@ -520,6 +521,9 @@ setvispage vpage, NO
 
 '==================================== Unlump ==================================
 
+
+IF nogfx_mode THEN PRINT "Loading " & sourcerpg
+
 ' Don't show "Loading..." (nor upgrade messages) on consoles, to give more control to the game
 IF running_on_console = NO THEN
  ' If coming from the browser, this is drawn on top of the file path at the top.
@@ -644,6 +648,8 @@ read_srcfiles_txt
 'Default to showing all errors. genErrorLevel is no longer used (but might be again in future)
 IF err_suppress_lvl = 0 THEN err_suppress_lvl = serrIgnore
 nowscript = -1
+hsvm.set_cur_script
+nowscript_locals = NULL
 numloadedscr = 0
 totalscrmem = 0
 resetinterpreter
@@ -804,7 +810,7 @@ DO
   IF running_under_Custom THEN try_to_reload_lumps_onmap
  #ENDIF
 
- 'DEBUG debug "increment play timers"
+ 'DEBUG debug "increment play time"
  IF gam.paused = NO THEN playtimer
 
  'DEBUG debug "read controls"
@@ -831,7 +837,7 @@ DO
 
  IF menus_allow_gameplay() THEN
  'DEBUG debug "enter script interpreter"
- interpret_scripts
+ interpret_scripts mainFibreGroup
 
  'DEBUG debug "increment script timers"
  dotimer(TIMER_NORMAL)
@@ -2530,54 +2536,65 @@ END FUNCTION
 '==========================================================================================
 
 
-SUB execute_script_fibres
- WHILE nowscript >= 0
-  WITH scriptinsts(nowscript)
+SUB execute_script_fibres(byref fibregroup as ScriptFibre ptr vector)
+ DIM wantimmediate_bug_emu as bool
+
+ WHILE hsvm.cur_scriptinst
+  WITH *hsvm.cur_scriptinst
    IF .waiting THEN
     process_wait_conditions
+    'Other scripts are blocked
+    IF .waiting THEN EXIT WHILE
    END IF
-   IF .waiting THEN
-    EXIT WHILE
-   END IF
-
-   '--interpret script
-   insideinterpreter = YES
-   wantimmediate = 0
-   'May set wantimmediate to -1 to indicate fibre finished, or -2 to indicate fibre
-   'finished in way that triggered bug 430
-   scriptinterpreter
-   insideinterpreter = NO
-
-   IF wantimmediate = -2 THEN
-    'IF nowscript < 0 THEN
-    ' debug "wantimmediate ended on nowscript = -1"
-    'ELSE
-    ' debug "wantimmediate would have skipped wait on command " & commandname(scrat(nowscript).curvalue) _
-    '       & " in " & scriptname(scrat(nowscript).id) & ", state = " & scrat(nowscript).state
-    'END IF
-    IF prefbit(33) THEN  '"Simulate Bug #430 script wait skips"
-     'Reenable bug 430 (see also bug 550), where if two scripts were triggered at once then
-     'when the top script ended it would cause the one below it to run for two ticks.
-     wantimmediate = -1
-    ELSE
-     wantimmediate = 0
-    END IF
-   END IF
-
-   IF wantimmediate = 0 THEN EXIT WHILE
   END WITH
+
+  '--interpret script
+  DIM finished_fibre as bool
+  finished_fibre = scriptinterpreter()
+  'scriptinterpreter returns whenever the topmost fibre finishes or starts
+  'waiting (it might be one newly triggered, not the one we started executing)
+  'hsvm.cur_script/fibre/etc now point to the new topmost fibre.
+
+  IF finished_fibre = NO THEN
+   BUG_IF(hsvm.cur_scriptinst = NULL ORELSE hsvm.cur_scriptinst->waiting = waitingOnNothing, "Fibre stopped but not waiting")
+
+   'Bug 430 emulation (see also bug 550), where whenever a fibre finishes and the script
+   'beneath it isn't waiting (which happened after two or more scripts were triggered at once),
+   'the wantimmediate flag got set so the next script on that tick that tried to wait would
+   'immediately run again, skipping one tick of waiting.
+   IF wantimmediate_bug_emu THEN
+    wantimmediate_bug_emu = NO
+    CONTINUE WHILE
+   END IF
+
+   'Other fibres are blocked
+   EXIT WHILE
+  END IF
+
+  'Loop only when resuming a suspended script, whose state could include
+  'ststart, stwait, streturn (called a command that triggered a script), or others.
+
+  'Check bug 430 trigger
+  IF hsvm.cur_scriptinst ANDALSO hsvm.cur_scriptinst->waiting = waitingOnNothing THEN
+   ' debug "WANTIMMEDIATE BUG"
+   ' debug scriptname(scrat(nowscript + 1).id) & " terminated, setting wantimmediate on " & scriptname(hsvm.cur_scrat->id)
+   IF prefbit(33) THEN  '"Simulate Bug #430 script wait skips"
+    wantimmediate_bug_emu = YES
+   END IF
+  END IF
+
  WEND
 END SUB
 
-SUB interpret_scripts()
+SUB interpret_scripts(byref fibregroup as ScriptFibre ptr vector)
  IF gam.debug_timings THEN main_timer.substart TimerIDs.Scripts
 
  'It seems like it would be good to call this immediately before scriptinterpreter so that
  'the return values of fightformation and waitforkey are correct, however doing so might
  'break something?
- run_queued_scripts
+ run_queued_scripts fibregroup
 
- execute_script_fibres
+ execute_script_fibres fibregroup
 
  script_log_tick
  gam.script_log.tick += 1
@@ -2595,7 +2612,8 @@ SUB interpret_scripts()
  'map autorun script (which might contain important initialisation). 
 
  'Also note that now if two fibres run two commands like fightformation and usedoor the order in which
- 'they occur is independent of the order in which they were called.
+ 'they occur is independent of the order in which they were called. In future anyway... currently, two
+ 'such commands can't be run by plotscripts on the same tick.
 
  'FIXME: 
  'Currently if a map changes (or even is a game is loaded) there is one tick on the new map
@@ -3827,27 +3845,12 @@ SUB add_rem_swap_lock_hero (byref box as TextBox)
  '---SWAP-IN---
  IF box.hero_swap > 0 THEN
   i = findhero(box.hero_swap - 1, -1, serrWarn)
-  IF i > -1 THEN
-   FOR o as integer = 0 TO 3
-    IF gam.hero(o).id = -1 THEN
-     doswap i, o
-     EXIT FOR
-    END IF
-   NEXT o
-  END IF
+  IF i > -1 THEN swap_in_hero i
  END IF '---end if > 0
  '---SWAP-OUT---
  IF box.hero_swap < 0 THEN
   i = findhero(-box.hero_swap - 1, , serrWarn)
-  IF i > -1 THEN
-   FOR o as integer = 40 TO 4 STEP -1
-    IF gam.hero(o).id = -1 THEN
-     doswap i, o
-     IF active_party_size() = 0 THEN forceparty
-     EXIT FOR
-    END IF
-   NEXT o
-  END IF
+  IF i > -1 THEN swap_out_hero i
  END IF '---end if < 0
  '---UNLOCK HERO---
  IF box.hero_lock > 0 THEN
@@ -4316,12 +4319,17 @@ END FUNCTION
 '                                      Party slots
 '==========================================================================================
 
-SUB forceparty ()
- '---MAKE SURE YOU HAVE AN ACTIVE PARTY---
+'Make sure you have an active party: swaps some hero back into the active party.
+'You must only call this if active_party_size() = 0!
+'If track_slot is the hero that gets swapped in, it's modified in-place.
+'FIXME: We should prefer to swap in an unlocked hero if there is one, so locked heroes remain
+'hidden. But that needs a backcompat bit. Which noone will ever bother to turn off...
+SUB forceparty (byref track_slot as integer = 0)
  DIM fpi as integer = first_used_slot_in_party()
  DIM fpo as integer = first_free_slot_in_active_party()
  IF fpi > -1 ANDALSO fpo > -1 THEN
   doswap fpi, fpo
+  IF fpi = track_slot THEN track_slot = fpo
  END IF
 END SUB
 
@@ -4370,6 +4378,17 @@ FUNCTION first_free_slot_in_reserve_party() as integer
  '--returns the first free slot, or -1 if all slots are full
  IF free_slots_in_party() > 0 THEN
   FOR i as integer = 4 TO 40
+   IF gam.hero(i).id = -1 THEN RETURN i
+  NEXT i
+ END IF
+ RETURN -1
+END FUNCTION
+
+FUNCTION last_free_slot_in_reserve_party() as integer
+ 'Returns the last free slot, or -1 if all slots are full;
+ 'used by "swap out hero" command and text box conditional for backcompat (ugh!)
+ IF free_slots_in_party() > 0 THEN
+  FOR i as integer = 40 TO 4 STEP -1
    IF gam.hero(i).id = -1 THEN RETURN i
   NEXT i
  END IF

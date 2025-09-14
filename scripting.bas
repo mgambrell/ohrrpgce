@@ -1,5 +1,5 @@
 'OHRRPGCE GAME
-'(C) Copyright 1997-2020 James Paige, Ralph Versteegen, and the OHRRPGCE Developers
+'(C) Copyright 1997-2025 James Paige, Ralph Versteegen, and the OHRRPGCE Developers
 'Dual licensed under the GNU GPL v2+ and MIT Licenses. Read LICENSE.txt for terms and disclaimer of liability.
 '
 ' This module contains routines to do with HamsterSpeak which are (mostly)
@@ -48,8 +48,8 @@ DIM command_profiles(maxScriptCmdID) as CommandProfile
 '--------- Module shared variables ---------
 
 'Used by trigger_script
-DIM SHARED trigger_script_failure as bool
-DIM SHARED last_queued_script as ScriptFibre ptr
+DIM SHARED trigger_script_result as RunScriptResult
+DIM SHARED last_triggered_fibre as ScriptFibre ptr   'Fibre created by the last trigger_script, NULL on failure or after dequeued
 
 
 '==========================================================================================
@@ -57,7 +57,7 @@ DIM SHARED last_queued_script as ScriptFibre ptr
 '==========================================================================================
 
 
-SUB trigger_script (id as integer, numargs as integer, double_trigger_check as bool, scripttype as string, trigger_loc as string, byref fibregroup as ScriptFibre ptr vector, priority as integer = 0)
+SUB trigger_script (id as integer, numargs as integer, double_trigger_check as bool, trigger_name as string, trigger_loc as string, byref fibregroup as ScriptFibre ptr vector, priority as integer = 0)
  'Add a script to one of the script queues, unless already inside the interpreter.
  'In that case, run immediately.
  'After calling this SUB, call trigger_script_arg zero or more times to set the arguments.
@@ -66,72 +66,105 @@ SUB trigger_script (id as integer, numargs as integer, double_trigger_check as b
  'id:           either a script ID or a trigger number
  'numargs:      the number of arguments that will be provided
  'double_trigger_check:  whether "no double-triggering" should take effect
- 'scripttype:   type of the script (used for debugging/tracing), eg "autorun"
+ 'trigger_name: identifies the trigger (used for debugging/tracing), eg "autorun"
  'trigger_loc:  specific script trigger cause, eg "map 5"
  'fibregroup:   a vector of ScriptFibre ptrs, usually mainFibreGroup
 
- STATIC dummy_queued_script as ScriptFibre
+ IF numargs > maxScriptArgs THEN
+  showbug "trigger_script: too many args: " & numargs
+  numargs = maxScriptArgs
+ END IF
+
+ DIM insertpos as integer
+ DIM prev_fibre as ScriptFibre ptr
 
  IF insideinterpreter THEN
-  DIM rsr as RunScriptResult
-  rsr = runscript(id, YES, double_trigger_check, scripttype)
-  trigger_script_failure = (rsr <> rsSuccess)
-  IF gam.script_log.enabled = NO THEN EXIT SUB
+  'Always becomes the topmost fibre, priority ignored (TODO: this will change)
+  insertpos = v_len(fibregroup)
 
-  'Can't call watched_script_triggered until after the trigger_script_args calls
-  scriptinsts(nowscript).watched = YES
-  scrat(nowscript).state = sttriggered
-  last_queued_script = @dummy_queued_script
+  prev_fibre = hsvm.cur_fibre
+  last_triggered_fibre = NEW ScriptFibre
+  hsvm.cur_fibre = last_triggered_fibre
+
+  trigger_script_result = runscript(id, YES, double_trigger_check, trigger_name)
+
+  IF trigger_script_result = rsSuccess THEN
+   hsvm.cur_fibre->root = hsvm.cur_scriptinst
+
+   IF gam.script_log.enabled THEN
+    'Can't call watched_script_triggered until after the trigger_script_args calls,
+    'so get interpretloop to call it.
+    hsvm.cur_scriptinst->watched = YES
+    hsvm.cur_scrat->state = sttriggered
+   END IF
+  END IF
+  'Else keep going just in case logging scripts
+
  ELSE
-  last_queued_script = NEW ScriptFibre
+  'Script log will be handled by run_queued_script
+
+  trigger_script_result = rsSuccess  'Can't fail until runscript actually called
+
+  last_triggered_fibre = NEW ScriptFibre
+
   'Insert into the queue according to priority
   'Note that the script at the top of the queue is the first to run,
   'so ties are broken by the last triggered being the first to run.
-  DIM insertpos as integer = -1
+  insertpos = -1
   FOR insertpos = v_len(fibregroup) - 1 TO 0 STEP -1
    IF fibregroup[insertpos]->priority <= priority THEN EXIT FOR
   NEXT
   insertpos += 1
-  v_insert fibregroup, insertpos, last_queued_script
  END IF
 
+ 'Note: we always add the new fibre to mainFibreGroup even if runscript failed.
+ 'If we didn't, then we shouldn't call delete_fibre.
+ '(delete_fibre expects it as a sanity check. It wouldn't otherwise be necessary.)
+
+ v_insert fibregroup, insertpos, last_triggered_fibre
+
  'Save information about this script, for use by trigger_script_arg()
- WITH *last_queued_script
+ WITH *last_triggered_fibre
   id = decodetrigger(id)
   'If the script was missing, id is now 0, but still queue the script so trigger_script_arg works.
   .id = id
-  .scripttype = scripttype
+  .trigger_name = trigger_name
   .log_line = scriptname(id) & "("
   .trigger_loc = trigger_loc
   .double_trigger_check = double_trigger_check
   .priority = priority
   .argc = numargs
-  IF numargs > maxScriptArgs THEN
-   showbug "trigger_script: too many args: " & numargs
-   numargs = maxScriptArgs
-  END IF
  END WITH
+
+ IF trigger_script_result <> rsSuccess THEN
+  'insideinterpreter = YES. Log failed trigger
+  IF gam.script_log.enabled THEN watched_script_triggered *last_triggered_fibre
+
+  delete_fibre hsvm.cur_fibre
+  hsvm.cur_fibre = prev_fibre
+  EXIT SUB
+ END IF
+
 END SUB
 
 SUB trigger_script_arg (byval argno as integer, byval value as integer, byval argname as zstring ptr = NULL)
  'Set one of the args for a script that was just triggered. They must be in the right order, and all provided.
  'Note that after calling trigger_script, script queuing can be in three states:
- 'inside interpreter, trigger_script_failure = NO
+ 'inside interpreter, trigger_script_result = rsSuccess, last_triggered_fibre valid
  '    triggered a script which started immediately
- 'inside interpreter, trigger_script_failure = YES
+ 'inside interpreter, trigger_script_result <> rsSuccess, last_triggered_fibre = NULL
  '    triggered a script which there was an error starting
- 'not inside interpreter:
+ 'not inside interpreter, trigger_script_result = rsSuccess, last_triggered_fibre valid
  '    queued a script, can now set the arguments
 
+ IF trigger_script_result <> rsSuccess ORELSE last_triggered_fibre = NULL THEN EXIT SUB
+
  IF insideinterpreter THEN
-  IF trigger_script_failure = NO THEN
-   setScriptArg argno, value
-  END IF
-  IF gam.script_log.enabled = NO THEN EXIT SUB
+  setScriptArg argno, value
  END IF
 
- WITH *last_queued_script
-  BUG_IF(argno >= .argc, .scripttype & " triggering is broken: bad arg num " & argno)
+ WITH *last_triggered_fibre
+  BUG_IF(argno >= .argc, .trigger_name & " triggering is broken: bad arg num " & argno)
   .args(argno) = value
   IF gam.script_log.enabled THEN
    IF argno <> 0 THEN .log_line += ", "
@@ -141,39 +174,49 @@ SUB trigger_script_arg (byval argno as integer, byval value as integer, byval ar
  END WITH
 END SUB
 
-LOCAL SUB run_queued_script (script as ScriptFibre)
+'If a script was triggered outside the interpreter, runscript hasn't been called yet. This does so.
+'Returns true on success, false to delete the fibre
+LOCAL FUNCTION run_queued_script (fibre as ScriptFibre) as bool
  'If the script is missing then .id = 0 and decodetrigger already showed an error
- IF script.id = 0 THEN EXIT SUB
+ IF fibre.id = 0 THEN RETURN NO
 
- DIM rsr as RunScriptResult
- rsr = runscript(script.id, YES, script.double_trigger_check, script.scripttype)
- IF rsr = rsSuccess THEN
-  FOR argno as integer = 0 TO script.argc - 1
-   setScriptArg argno, script.args(argno)
+ DIM prev_fibre as ScriptFibre ptr = hsvm.cur_fibre
+ hsvm.cur_fibre = @fibre
+
+ trigger_script_result = runscript(fibre.id, YES, fibre.double_trigger_check, fibre.trigger_name)
+ IF trigger_script_result = rsSuccess THEN
+  FOR argno as integer = 0 TO fibre.argc - 1
+   setScriptArg argno, fibre.args(argno)
   NEXT
+
+  fibre.root = hsvm.cur_scriptinst
+ ELSE
+  hsvm.cur_fibre = prev_fibre
  END IF
 
- IF gam.script_log.enabled THEN watched_script_triggered script
-END SUB
+ 'Log failed triggers too
+ IF gam.script_log.enabled THEN watched_script_triggered fibre
 
-SUB run_queued_scripts
- 'Load the queued scripts into the interpreter.
+ RETURN trigger_script_result = rsSuccess
+END FUNCTION
 
- FOR i as integer = 0 TO v_len(mainFibreGroup) - 1
-  run_queued_script(*mainFibreGroup[i])
- NEXT
+'Load queued script fibres into the interpreter (this is delayed so the order
+'can change by priority)
+SUB run_queued_scripts(byref fibregroup as ScriptFibre ptr vector)
+ last_triggered_fibre = NULL
 
- dequeue_scripts
-END SUB
-
-SUB dequeue_scripts
- 'Wipe the script queue
- last_queued_script = NULL
- IF mainFibreGroup = NULL THEN EXIT SUB  'During startup when not initialised yet
- FOR idx as integer = 0 TO v_len(mainFibreGroup) - 1
-  DELETE mainFibreGroup[idx]
- NEXT
- v_resize mainFibreGroup, 0
+ DIM idx as integer = 0
+ WHILE idx < v_len(fibregroup)  'Length changes during iteration
+  IF fibregroup[idx]->root = NULL THEN
+   'Not run yet
+   IF run_queued_script(*fibregroup[idx]) = NO THEN
+    'runscript failed
+    delete_fibre fibregroup[idx]
+    CONTINUE WHILE
+   END IF
+  END IF
+  idx += 1
+ WEND
 END SUB
 
 
@@ -183,7 +226,6 @@ END SUB
 
 
 SUB start_script_trigger_log
- gam.script_log.enabled = YES
  safekill gam.script_log.filename
  DIM fh as integer = FREEFILE
  IF OPEN(gam.script_log.filename FOR APPEND AS #fh) THEN
@@ -260,21 +302,34 @@ FUNCTION script_log_indent (byval upto as integer = -1, byval spaces as integer 
 END FUNCTION
 
 'Called after runscript when running a script which should be watched
-SUB watched_script_triggered(script as ScriptFibre)
- scriptinsts(nowscript).watched = YES
- IF gam.script_log.last_logged > -1 ANDALSO scriptinsts(gam.script_log.last_logged).started = NO THEN
+'(Currently always a new fibre, but in future would be nice to be able to watch other scripts)
+SUB watched_script_triggered(fibre as ScriptFibre)
+ IF gam.script_log.last_logged ANDALSO gam.script_log.last_logged->started = NO THEN
   script_log_out " (queued)"
+ END IF
+
+ IF trigger_script_result = rsSuccess THEN
+  hsvm.cur_scriptinst->watched = YES
+  gam.script_log.last_logged = hsvm.cur_scriptinst
+ ELSE
+  gam.script_log.last_logged = NULL
  END IF
 
  DIM logline as string
  logline = !"\n" & script_log_indent()
+
  IF insideinterpreter THEN
-  IF nowscript >= 1 ANDALSO scrat(nowscript - 1).state < 0 THEN
-   'The previous script was suspended, therefore this script was triggered as
-   'a side effect of something that script did, such as activate an NPC
+  'Being inside the interpreter means we weren't called from run_queued_scripts,
+  'therefore there was already a running script.
+  IF trigger_script_result <> rsSuccess THEN
+   'hsvm.cur_scriptinst is the previously running script
+   logline &= "!"
+  ELSEIF hsvm.cur_scriptinst->parent = NULL THEN
+   'This script was triggered as a side effect of something that the previous
+   'script did, such as advance a text box
    logline &= "!"
   ELSE
-   'Called normally
+   'Called normally (this currently never happens)
    logline &= "\"
   END IF
  ELSE
@@ -282,36 +337,39 @@ SUB watched_script_triggered(script as ScriptFibre)
   logline &= "+"
  END IF
 
- logline &= script.log_line & ") " & script.scripttype & " script"
- IF LEN(script.trigger_loc) THEN
-  logline &= ", " & script.trigger_loc
+ logline &= fibre.log_line & ") " & fibre.trigger_name & " script"
+ IF LEN(fibre.trigger_loc) THEN
+  logline &= ", " & fibre.trigger_loc
  END IF
+ IF trigger_script_result = rsIgnored THEN
+  logline &= " ...did not trigger: double trigger ignored"
+ ELSEIF trigger_script_result <> rsSuccess THEN
+  logline &= " ...ERROR: could not run! See g_debug.txt"
+ END IF
+
  script_log_out logline
-
- gam.script_log.last_logged = nowscript
-
 END SUB
 
 'nowscript has been started and resumed and has .watched = YES
 SUB watched_script_resumed
- IF gam.script_log.last_logged = nowscript THEN
+ IF gam.script_log.last_logged = hsvm.cur_scriptinst THEN
   'nothing
- ELSEIF scriptinsts(nowscript).started THEN
+ ELSEIF hsvm.cur_scriptinst->started THEN
   'also nothing
  ELSE
-  script_log_out !"\n" & script_log_indent() & "*" & scriptname(scriptinsts(nowscript).id) & " started"
-  gam.script_log.last_logged = nowscript
+  script_log_out !"\n" & script_log_indent() & "*" & scriptname(hsvm.cur_scriptinst->id) & " started"
+  gam.script_log.last_logged = hsvm.cur_scriptinst
  END IF
- scriptinsts(nowscript).started = YES
+ hsvm.cur_scriptinst->started = YES
 END SUB
 
-'Called right before the current script terminates and has .watched = YES
+'Called right before the current script terminates if it has .watched = YES
 SUB watched_script_finished
  DIM logline as string
- IF gam.script_log.last_logged = nowscript THEN
+ IF gam.script_log.last_logged = hsvm.cur_scriptinst THEN
   logline = " ... finished"
  ELSE
-  logline = !"\n" & script_log_indent() & "-" & scriptname(scriptinsts(nowscript).id) & " finished"
+  logline = !"\n" & script_log_indent() & "-" & scriptname(hsvm.cur_scriptinst->id) & " finished"
  END IF
  IF scriptprofiling THEN
   ' This global is set by script_return_timing()
@@ -319,7 +377,7 @@ SUB watched_script_finished
  END IF
  script_log_out logline
 
- gam.script_log.last_logged = -1
+ gam.script_log.last_logged = NULL
 END SUB
 
 'Call each tick if script logging is enabled
@@ -329,8 +387,8 @@ SUB script_log_tick
   IF .output_flag THEN doprint = YES
 
   DIM wait_msg as string = ""
-  IF nowscript > -1 THEN
-   WITH scriptinsts(nowscript)
+  IF hsvm.cur_scriptinst THEN
+   WITH *hsvm.cur_scriptinst
     IF .waiting = waitingOnCmd THEN
      wait_msg = "waiting on " & commandname(.curvalue) & " in " & scriptname(.id)
     ELSEIF .waiting = waitingOnTick THEN
@@ -354,7 +412,7 @@ SUB script_log_tick
    script_log_out logline
    .output_flag = NO
 
-   .last_logged = -1
+   .last_logged = NULL
   END IF
  END WITH
 END SUB
@@ -364,31 +422,60 @@ END SUB
 '                                   Fibre/Script Control
 '==========================================================================================
 
+'Must be called after nowscript changes
+SUB HSVMState.set_cur_script()
+ IF nowscript < 0 THEN
+  cur_scrat = NULL
+  cur_scriptinst = NULL
+  cur_script = NULL
+ ELSE
+  cur_scrat = @scrat(nowscript)
+  cur_scriptinst = @scriptinsts(nowscript)
+  cur_script = cur_scriptinst->scr
+  'Used to be the case that in-use scripts could be unloaded
+  BUG_IF(cur_script = NULL, "NULL ScriptData")
+ END IF
+ cur_slot = nowscript   'Temp
+END SUB
+
+'Delete a fibre that's been added to mainFibreGroup (or in future, any other global fibre group).
+'A fibre must be deleted after any ScriptInsts that point to it!
+'(Hence, this doesn't look for any ScriptInsts with a pointer to `fibre`.)
+SUB delete_fibre(fibre as ScriptFibre ptr)
+ '? " fibre ended " & scriptname(hsvm.cur_scriptinst->id)
+ 'Cleanup every global that might hold a reference
+ IF hsvm.cur_fibre = fibre THEN hsvm.cur_fibre = NULL
+ IF last_triggered_fibre = fibre THEN last_triggered_fibre = NULL
+ 'Even if runscript fails, we always add new fibres to mainFibreGroup
+ DIM idx as integer = v_remove(mainFibreGroup, fibre)
+ BUG_IF(idx = -1, "Missing from mainFibreGroup")
+ DELETE fibre
+END SUB
 
 'Kills the currently running script fibre
 SUB killscriptthread
- BUG_IF(insideinterpreter = NO ORELSE nowscript < 0, "Inappropriate call")
+ BUG_IF(insideinterpreter = NO ORELSE hsvm.cur_scrat = NULL, "Inappropriate call")
 
- debuginfo "Killing script fibre; last script = " & scriptname(scrat(nowscript).id)
+ debuginfo "Killing script fibre; last script = " & scriptname(hsvm.cur_scrat->id)
 
- 'Hack: we set the state of the old script so that the main loop sees it reads with a stale WITH pointer.
+ 'Hack: we set the state of the old script because the main loop has a stale WITH pointer.
  'Come to think of it, there's no good reason for the interpreter state to be stored in scrat instead
  'of being global.
- scrat(nowscript).state = stdone
+ hsvm.cur_scrat->state = stdone
 
  'Remove every script in this fibre, except for the bottommost one
- '(The script below it on the stack will be suspended, state < 0)
- WHILE nowscript > 0 ANDALSO scrat(nowscript - 1).state >= 0
-  WITH scrat(nowscript)
-   IF .scr <> NULL THEN deref_script(.scr)
-  END WITH
+ WHILE hsvm.cur_scriptinst->parent
+  deref_script hsvm.cur_script
   nowscript -= 1
+  hsvm.set_cur_script
  WEND
- gam.script_log.last_logged = -1
+ gam.script_log.last_logged = NULL
+ 'Won't be used, but better not to leave a stale ptr as we return to the interpreter
+ nowscript_locals = @heap(hsvm.cur_scrat->frames(0).heap)
 
- 'Let functiondone handle the fibre exit
- setstackposition(scrst, scrat(nowscript).stackbase)
- scrat(nowscript).state = stdone
+ 'Let functiondone handle the fibre exit, so that we do everything properly and exit interpretloop normally
+ setstackposition(scrst, hsvm.cur_scrat->stackbase)
+ hsvm.cur_scrat->state = stdone
 END SUB
 
 SUB killallscripts
@@ -399,17 +486,30 @@ SUB killallscripts
  stop_fibre_timing
 
  'Hack, see explanation in killscriptthread
- IF nowscript >= 0 THEN scrat(nowscript).state = stexit
+ IF hsvm.cur_scrat THEN hsvm.cur_scrat->state = stexit
 
- FOR i as integer = nowscript TO 0 STEP -1
-  IF scrat(i).scr <> NULL THEN deref_script(scrat(i).scr)
- NEXT
- nowscript = -1
- gam.script_log.last_logged = -1
+ WHILE hsvm.cur_script
+  IF hsvm.cur_scriptinst->parent = NULL THEN
+   'TODO: in future, delete the fibre after the last script in it
+   delete_fibre hsvm.cur_scriptinst->fibre
+  END IF
+  deref_script(hsvm.cur_script)
+  nowscript -= 1
+  hsvm.set_cur_script
+ WEND
+ nowscript_locals = NULL
+ gam.script_log.last_logged = NULL
 
  setstackposition(scrst, 0)
 
- dequeue_scripts
+ 'Delete the fibres... but there should be none left.
+ IF v_len(mainFibreGroup) THEN debugc errBug, "killallscripts: orphan fibres"
+ IF mainFibreGroup THEN  'During startup not initialised yet?
+  FOR idx as integer = v_len(mainFibreGroup) - 1 TO 0 STEP -1
+   delete_fibre mainFibreGroup[idx]
+  NEXT
+ END IF
+
 END SUB
 
 SUB resetinterpreter
@@ -431,14 +531,14 @@ END SUB
 ' When forcing a script to wait for an 'external' reason, use script_start_waiting_ticks instead
 SUB script_start_waiting(waitarg1 as integer = 0, waitarg2 as integer = 0)
  BUG_IF(insideinterpreter = NO, "called outside interpreter")
- WITH scriptinsts(nowscript)
-  'debug commandname(curcmd->value) & ": script_start_waiting(" & waitarg1 & ", " & waitarg2 & ") on scriptinsts(" & nowscript & ") which is " & scriptname(.id)
-  BUG_IF(scrat(nowscript).state <> streturn, "called outside command handler")
+ WITH *hsvm.cur_scriptinst
+  'debug commandname(curcmd->value) & ": script_start_waiting(" & waitarg1 & ", " & waitarg2 & ") on " & scriptname(.id)
+  BUG_IF(hsvm.cur_scrat->state <> streturn, "called outside command handler")
   .waiting = waitingOnCmd
   .waitarg = waitarg1
   .waitarg2 = waitarg2
  END WITH
- scrat(nowscript).state = stwait
+ hsvm.cur_scrat->state = stwait
 END SUB
 
 ' Cause a script fibre to start waiting for some number of ticks.
@@ -460,14 +560,14 @@ END SUB
 ' Current script allowed to continue.
 ' Can set the return value of a command if waitingOnCmd
 SUB script_stop_waiting(returnval as integer = 0)
- WITH scriptinsts(nowscript)
+ WITH *hsvm.cur_scriptinst
   BUG_IF(.waiting = waitingOnNothing, "script isn't waiting")
   IF .waiting = waitingOnTick AND returnval <> 0 THEN
    showbug "script_stop_waiting: can't set a return value"
   END IF
   IF .waiting = waitingOnCmd THEN
-   WITH scrat(nowscript)
-    'debug "script_stop_waiting(" & returnval & ") on scriptinsts(" & nowscript & ") which is " & scriptname(.id)
+   WITH *hsvm.cur_scrat
+    'debug "script_stop_waiting(" & returnval & ") on " & scriptname(.id)
     IF .state <> stwait THEN
      showbug "script_stop_waiting: unexpected scrat().state = " & .state
     ELSE
@@ -486,32 +586,37 @@ END SUB
 '==========================================================================================
 
 
-FUNCTION runscript (id as integer, newcall as bool, double_trigger_check as bool, scripttype as zstring ptr) as RunScriptResult
-'newcall: whether his script is triggered (start a new fibre) rather than called from a script
+FUNCTION runscript (id as integer, newcall as bool, double_trigger_check as bool, trigger_name as zstring ptr) as RunScriptResult
+'newcall: whether this script is triggered (start a new fibre) rather than called from a script as a call
 'double_trigger_check: whether "no double-triggering" should take effect
+'trigger_name: type of the script (used for debugging/tracing), eg "autorun".
+'     Never NULL. Is "called" or "runscriptbyid" for non-triggered scripts.
+
+'AFAICT this only happens when executing runscriptbyid(0)
+IF id = 0 THEN RETURN rsNoScript
 
 DIM n as integer = decodetrigger(id)
-IF n = 0 THEN RETURN rsQuietFail  '(though decodetrigger might have shown a scripterr)
+IF n = 0 THEN RETURN rsFail  'decodetrigger would have shown a scripterr
 
 BUG_IF(insideinterpreter = NO AND newcall = NO, "newcall=NO outside interpreter", rsFail)
 
 DIM index as integer = nowscript + 1
 
 IF index >= maxScriptRunning THEN
- scripterr "Can't load " & *scripttype & " script " & scriptname(n) & ", too many scripts running", serrMajor
+ scripterr "Can't load " & *trigger_name & " script " & scriptname(n) & ", too many scripts running", serrMajor
  RETURN rsFail
 END IF
 
 IF double_trigger_check ANDALSO index > 0 THEN
  IF n = scriptinsts(index - 1).id ANDALSO prefbit(10) = NO THEN  '"Permit double-triggering of scripts" off
-  '--scripterr "script " & n & " is already running", serrInfo
-  RETURN rsQuietFail
+  scripterr "Not double-triggering script " & scriptname(n), serrInfo
+  RETURN rsIgnored
  END IF
 END IF
 
 '--store current command data in scriptinsts (used outside of the inner interpreter)
-IF nowscript >= 0 THEN
- WITH scriptinsts(nowscript)
+IF hsvm.cur_scriptinst THEN
+ WITH *hsvm.cur_scriptinst
   .curkind = curcmd->kind
   .curvalue = curcmd->value
   .curargc = curcmd->argc
@@ -520,17 +625,20 @@ END IF
 
 WITH scriptinsts(index)
  '-- Load the script (or return the reference if already loaded)
- .scr = loadscript(n)
- IF .scr = NULL THEN
-  scripterr "Failed to load " + *scripttype + " script " & n & " " & scriptname(n), serrError
-  RETURN rsFail
- END IF
+ .scr = loadscript(n)  'Displays error on failure
+ IF .scr = NULL THEN RETURN rsFail
  IF scriptprofiling THEN .scr->numcalls += 1
  scriptctr += 1
  .scr->lastuse = scriptctr
- IF newcall THEN .scr->trigger_type = *scripttype
+ IF newcall THEN .scr->last_trigger_name = *trigger_name
  'increment refcount once loading is successful
 
+ IF newcall THEN
+  .parent = NULL
+ ELSE
+  .parent = hsvm.cur_scriptinst
+ END IF
+ .fibre = hsvm.cur_fibre  'If newcall, the caller will have set this
  .id = n
  .watched = NO
  .started = NO
@@ -545,26 +653,29 @@ WITH scriptinsts(index)
 
  DIM errstr as zstring ptr = oldscriptstate_init(index, .scr)
  IF errstr <> NULL THEN
-  scripterr "Failed to load " + *scripttype + " script " & n & " " & scriptname(n) & ", " & *errstr, serrError
+  scripterr "Failed to load " + *trigger_name + " script " & n & " " & scriptname(n) & ", " & *errstr, serrError
   RETURN rsFail
  END IF
 
- IF newcall ANDALSO index > 0 THEN
+ IF newcall ANDALSO hsvm.cur_scrat THEN
   '--suspend the previous fibre
   IF scriptprofiling THEN stop_fibre_timing  'Must call before suspending
-  scrat(index - 1).state *= -1
+  hsvm.cur_scrat->state *= -1
  END IF
 
  '--we are successful, so now its safe to increment these
  nowscript = index
+ hsvm.set_cur_script
+ nowscript_locals = @heap(hsvm.cur_scrat->frames(0).heap)  'Should really be in oldscriptstate_init
+
  .scr->refcount += 1
  IF .scr->refcount = 1 THEN
   'Removed from unused scripts cache
   unused_script_cache_mem -= .scr->size
  END IF
 
- 'debug "running " & .id & " " & scriptname(.id) & " in slot " & nowscript & " newcall = " _
- '      & newcall & " type " & *scripttype & ", parent = " & .scr->parent & " numcalls = " _
+ 'debug "running " & .id & " " & scriptname(.id) & " in slot " & hsvm.cur_slot & " newcall = " _
+ '      & newcall & " type " & *trigger_name & ", parent = " & .scr->parent & " numcalls = " _
  '      & .scr->numcalls & " refc = " & .scr->refcount & " lastuse = " & .scr->lastuse
 END WITH
 
@@ -591,7 +702,9 @@ LOCAL FUNCTION loadscript_open_script (n as integer, expect_exists as bool = YES
    scriptfile = workingdir & SLASH & n & ".hsx"
    IF NOT isfile(scriptfile) THEN
     IF expect_exists THEN
-     scripterr "script " & n & " " & scriptname(n) & " does not exist. (Maybe it was renamed, and the script trigger needs to be updated?)", serrError
+     'This should probably only happen with old definescript manually numbered scripts. With
+     'autonumbered scripts, decodetrigger should have already noticed the script was missing.
+     scripterr "script " & scriptname(n) & " does not exist. (Maybe it was renumbered, and the script trigger needs to be updated?)", serrError
     END IF
     RETURN 0
    END IF
@@ -599,12 +712,13 @@ LOCAL FUNCTION loadscript_open_script (n as integer, expect_exists as bool = YES
  END IF
 
  DIM fh as integer
- OPENFILE(scriptfile, FOR_BINARY + ACCESS_READ, fh)
+ OPENFILE(scriptfile, FOR_BINARY + ACCESS_READ + OR_ERROR, fh)
  RETURN fh
 END FUNCTION
 
-'Loads a script (putting it in the cache) or fetchs it from the cache. Returns NULL on failure.
+'Loads a script (putting it in the cache) or fetchs it from the cache.
 'Does not increment its refcount.
+'Displays an serrError error and returns NULL on failure.
 'If loaddata is false, only loads the script header.
 FUNCTION loadscript (id as integer, loaddata as bool = YES) as ScriptData ptr
  'debuginfo "loadscript(" & id & " " & scriptname(id) & ", loaddata = " & loaddata & ")"
@@ -901,6 +1015,7 @@ END TYPE
 'Iterate over all loaded scripts, sort them in descending order according to score
 'returned by the callback, and return number of scripts in numscripts
 '(LRUlist is dynamic)
+'fibres_only: only include scripts which have been triggered as the root of a fibre
 SUB sort_scripts(LRUlist() as ScriptListElmt, byref numscripts as integer, scorefunc as function(scr as ScriptData) as double, fibres_only as bool = NO)
  DIM j as integer
  numscripts = 0
@@ -910,7 +1025,7 @@ SUB sort_scripts(LRUlist() as ScriptListElmt, byref numscripts as integer, score
   DIM scrp as ScriptData Ptr = script(i)
   WHILE scrp
    ' A script is a fibre root if it has been started with a call to runscript with a trigger type name.
-   IF fibres_only AND LEN(scrp->trigger_type) = 0 THEN
+   IF fibres_only ANDALSO LEN(scrp->last_trigger_name) = 0 THEN
     scrp = scrp->next
     CONTINUE WHILE
    END IF
@@ -1108,15 +1223,15 @@ END SUB
 
 ' Do script profile accounting when one script calls another (including with runscriptbyid),
 ' but not when a new script fibre is started.
-' nowscript is the new script, nowscript-1 is the calling script.
+' cur_scriptinst is the new script
 SUB script_call_timing
  DIM timestamp as double
  READ_TIMER(timestamp)
- 'Exclusive time for calling script
- scriptinsts(nowscript - 1).scr->totaltime += timestamp
- WITH *scriptinsts(nowscript).scr
-  'debug "script_call_timing: slot " & (nowscript-1) & " id " & scriptinsts(nowscript - 1).scr->id & " called slot " & nowscript & " id " & .id & " calls_in_stack++ =" & .calls_in_stack
-  'debug "  caller totaltime now " & scriptinsts(nowscript - 1).scr->totaltime
+ 'End exclusive time for calling script
+ hsvm.cur_scriptinst->parent->scr->totaltime += timestamp
+ WITH *hsvm.cur_script
+  'debug "script_call_timing: id " & hsvm.cur_scriptinst->parent->scr->id & " called id " & .id & " calls_in_stack++ =" & .calls_in_stack
+  'debug "  caller totaltime now " & hsvm.cur_scriptinst->parent->scr->totaltime
   .entered += 1
   'Exclusive time
   .totaltime -= timestamp
@@ -1130,12 +1245,12 @@ SUB script_call_timing
 END SUB
 
 ' Called when a script returns and script profiling enabled.
-' nowscript is the returning script, and either nowscript-1 called it, or it was triggered/spawned.
+' hsvm.cur_script is the returning script, which may or may not have a caller.
 SUB script_return_timing
  DIM timestamp as double
  READ_TIMER(timestamp)
- WITH *scriptinsts(nowscript).scr
-  'debug "script_return_timing: slot " & nowscript & " id " & .id & " calls_in_stack-- =" & .calls_in_stack & " (returning script)"
+ WITH *hsvm.cur_script
+  'debug "script_return_timing: slot " & hsvm.cur_slot & " id " & .id & " calls_in_stack-- =" & .calls_in_stack & " (returning script)"
   'Exclusive time
   .totaltime += timestamp
   'debug "  id " & .id & " totaltime now " & .totaltime
@@ -1144,16 +1259,16 @@ SUB script_return_timing
   IF .calls_in_stack = 0 THEN
    'Was not a recursive call, so won't be double-counting time
    .childtime += timestamp - .laststart
-   IF scriptinsts(nowscript).watched THEN
+   IF hsvm.cur_scriptinst->watched THEN
     gam.script_log.last_script_childtime = timestamp - .laststart
    END IF
    'debug "  adding to id " & .id & " childtime: " & (timestamp - .laststart)  & " now: " & .childtime
   END IF
  END WITH
 
- IF nowscript > 0 ANDALSO scrat(nowscript - 1).state >= 0 THEN
+ IF hsvm.cur_scriptinst->parent THEN
   'Was called from another script; time accounting for it
-  WITH *scriptinsts(nowscript - 1).scr
+  WITH *hsvm.cur_scriptinst->parent->scr
    .entered += 1
    .totaltime -= timestamp
   END WITH
@@ -1168,36 +1283,32 @@ END SUB
 SUB start_fibre_timing
  'No need to restart command timing if resuming a script command.
  IF scriptprofiling = NO THEN EXIT SUB
- IF nowscript < 0 OR insideinterpreter = NO THEN EXIT SUB
- 'debug "start_fibre_timing slot " & nowscript & " id " & scrat(nowscript).scr->id
+ IF hsvm.cur_script = NULL ORELSE insideinterpreter = NO THEN EXIT SUB
+ 'debug "start_fibre_timing slot " & hsvm.cur_slot & " id " & hsvm.cur_script->id
  IF timing_fibre THEN EXIT SUB
  timing_fibre = YES
 
- scrat(nowscript).scr->entered += 1
+ hsvm.cur_script->entered += 1
 
  DIM timestamp as double
  READ_TIMER(timestamp)
 
  ' Exclusive time (in this script)
- scrat(nowscript).scr->totaltime -= timestamp
-
- ' Error checking
- FOR which as integer = nowscript TO 0 STEP -1
-  IF scrat(which).state < 0 THEN EXIT FOR  'Bottom of fibre callstack
-  WITH *scrat(which).scr
-   IF .calls_in_stack <> 0 THEN showbug "Garbage calls_in_stack=" & .calls_in_stack & " value for script " & .id
-  END WITH
- NEXT
+ hsvm.cur_script->totaltime -= timestamp
 
  ' Inclusive time (in this script and call tree descendents)
- FOR which as integer = nowscript TO 0 STEP -1
-  IF scrat(which).state < 0 THEN EXIT FOR  'Bottom of fibre callstack
-  WITH *scrat(which).scr
+ DIM inst as ScriptInst ptr = hsvm.cur_scriptinst
+ WHILE inst
+  WITH *inst->scr
+   ' Error checking
+   IF .calls_in_stack <> 0 THEN showbug "Garbage calls_in_stack=" & .calls_in_stack & " value for script " & .id
+
    .calls_in_stack += 1
    .laststart = timestamp
    'debug "  set slot " & which & " id " & .id & " laststart = " & timestamp & " ++calls_in_stack = " & .calls_in_stack
   END WITH
- NEXT
+  inst = inst->parent
+ WEND
 END SUB
 
 ' Call this when execution of the current script fibre stops, e.g. due to a wait
@@ -1206,8 +1317,8 @@ END SUB
 SUB stop_fibre_timing
  stop_command_timing
  IF scriptprofiling = NO THEN EXIT SUB
- IF nowscript < 0 OR insideinterpreter = NO THEN EXIT SUB
- 'debug "stop_fibre_timing slot " & nowscript & " id " & scrat(nowscript).scr->id
+ IF hsvm.cur_script = NULL ORELSE insideinterpreter = NO THEN EXIT SUB
+ 'debug "stop_fibre_timing slot " & hsvm.cur_slot & " id " & hsvm.cur_script->id
  IF timing_fibre = NO THEN EXIT SUB
  timing_fibre = NO
 
@@ -1215,13 +1326,13 @@ SUB stop_fibre_timing
  READ_TIMER(timestamp)
 
  ' Exclusive time (in this script)
- scrat(nowscript).scr->totaltime += timestamp
- 'debug "  id " & scrat(nowscript).scr->id & " totaltime now " & scrat(nowscript).scr->totaltime
+ hsvm.cur_script->totaltime += timestamp
+ 'debug "  id " & hsvm.cur_script->id & " totaltime now " & hsvm.cur_script->totaltime
 
  ' Inclusive time (in this script and call tree descendents)
- FOR which as integer = nowscript TO 0 STEP -1
-  IF scrat(which).state < 0 THEN EXIT FOR  'Bottom of fibre callstack
-  WITH *scrat(which).scr
+ DIM inst as ScriptInst ptr = hsvm.cur_scriptinst
+ WHILE inst
+  WITH *inst->scr
    'debug "  id " & .id & " calls_in_stack-- = " & .calls_in_stack
    .calls_in_stack -= 1
    IF .calls_in_stack = 0 THEN
@@ -1229,17 +1340,12 @@ SUB stop_fibre_timing
     .childtime += timestamp - .laststart
     'debug "  adding to id " & .id & " childtime: " & (timestamp - .laststart) & " now: " & .childtime
    END IF
-  END WITH
- NEXT
 
- ' Error checking
- FOR which as integer = nowscript TO 0 STEP -1
-  IF scrat(which).state < 0 THEN EXIT FOR  'Bottom of fibre callstack
-  WITH *scrat(which).scr
-   IF .calls_in_stack <> 0 THEN showbug "Garbage calls_in_stack=" & .calls_in_stack & " value for script " & .id & " slot " & which
+   ' Error checking
+   IF .calls_in_stack <> 0 THEN showbug "Garbage calls_in_stack=" & .calls_in_stack & " value for script " & .id
   END WITH
- NEXT
-
+  inst = inst->parent
+ WEND
 END SUB
 
 'Sort by total time
@@ -1343,7 +1449,7 @@ SUB print_script_profiling
        & lpad(format(.childtime*1000, "0"), , 10) & "ms" _
        & lpad(format(.childtime*1000/.numcalls, "0.0"), , 12) & "ms" _
        & lpad(STR(.numcalls), , 10) _
-       & lpad(.trigger_type, , 20) _
+       & lpad(.last_trigger_name, , 20) _
        & "  " & scriptname(ABS(.id))
   END WITH
  NEXT
@@ -1390,7 +1496,7 @@ SUB timed_script_commands(cmdid as integer)
  'Start command timing
  IF cmdid <= maxScriptCmdID THEN
   profiling_cmdid = cmdid
-  profiling_cmd_in_script = scrat(nowscript).scr
+  profiling_cmd_in_script = hsvm.cur_script
   profiling_cmd_in_script->numcmdcalls += 1
   WITH command_profiles(cmdid)
    .calls += 1
@@ -1614,10 +1720,10 @@ END FUNCTION
 'Get information about position in the script source of the currently executing
 'command of a script on the script stack (eg nowscript)
 'Returns true on success (debug info is available)
-FUNCTION get_script_line_info(posdata as ScriptTokenPos, selectedscript as integer) as bool
+FUNCTION get_script_line_info(posdata as ScriptTokenPos, which_scrat as OldScriptState ptr) as bool
  DIM srcpos as uinteger
- srcpos = script_current_srcpos(selectedscript)
- RETURN decode_srcpos(posdata, srcpos, scrat(selectedscript).scr->script_position)
+ srcpos = script_current_srcpos(which_scrat)
+ RETURN decode_srcpos(posdata, srcpos, which_scrat->scr->script_position)
 END FUNCTION
 
 'Format the line and statement that a script is currently at,
@@ -1629,6 +1735,7 @@ FUNCTION highlighted_script_line(posdata as ScriptTokenPos, maxchars as integer,
  DIM highlightcol as integer
  DIM linepiece as string
 
+ /'
  WITH posdata
   debug "posdata.linenum = " & posdata.linenum
   debug "posdata.col = " & posdata.col
@@ -1636,6 +1743,7 @@ FUNCTION highlighted_script_line(posdata as ScriptTokenPos, maxchars as integer,
   debug "posdata.linetext = " & posdata.linetext
   debug "posdata.filename = " & posdata.filename
  END WITH
+ '/
 
  'highlightcol = IIF(posdata.isvirtual, uilook(uiSelectedDisabled + tog), uilook(uiSelectedItem + tog))
  highlightcol = IIF(posdata.isvirtual, findrgb(128, 0, 200), findrgb(0, 0, 240))
@@ -1681,8 +1789,8 @@ END FUNCTION
 
 
 'Read one of the strings from a script's string table.
-FUNCTION script_string_constant(scriptinsts_slot as integer, offset as integer) as string
- WITH *scriptinsts(scriptinsts_slot).scr
+FUNCTION script_string_constant(script as ScriptData ptr, offset as integer) as string
+ WITH *script
   DIM stringp as integer ptr = .ptr + .strtable + offset
   'IF .strtable + offset >= .size ORELSE .strtable + (stringp[0] + 3) \ 4 >= .size THEN
   IF offset >= .strtablelen ORELSE offset + (stringp[0] + 3) \ 4 >= .strtablelen THEN
@@ -1821,8 +1929,6 @@ FUNCTION scriptcmdname (kind as integer, id as integer, scrdat as ScriptData) as
  }
 
  SELECT CASE kind
-  CASE tystop
-   RETURN "KIND=STOP"  'Doesn't ever occur in scripts
   CASE tynumber
    RETURN STR(id)
   CASE tyflow
@@ -1876,18 +1982,18 @@ END FUNCTION
 'trim_front: if true, limit string length.
 'errorlevel: optional, relevant only to scripterr
 FUNCTION script_call_chain (trim_front as bool = YES, errorlevel as scriptErrEnum = 0) as string
- IF nowscript < 0 THEN
-  RETURN "(No scripts running)"
- END IF
+ DIM inst as ScriptInst ptr = hsvm.cur_scriptinst
+ IF inst = NULL THEN RETURN "(No scripts running)"
 
  DIM scriptlocation as string
- scriptlocation = scriptname(scriptinsts(nowscript).id)
- FOR i as integer = nowscript - 1 TO 0 STEP -1
-  IF scrat(i).state < 0 THEN EXIT FOR 'suspended: not part of the call chain
-  scriptlocation = scriptname(scriptinsts(i).id) + " -> " + scriptlocation
- NEXT
+ scriptlocation = scriptname(inst->id)
+ WHILE inst->parent
+  inst = inst->parent
+  scriptlocation = scriptname(inst->id) + " -> " + scriptlocation
+ WEND
 
- 'If a serious error occurred, the call chain is useless, and less screen space is available
+ 'If corrupt game data or an interpreter internal error occurred the call chain is useless,
+ 'and less screen space may be available
  DIM as integer cchainlimit
  cchainlimit = IIF(errorlevel >= serrError, 50, 120)
  IF trim_front AND LEN(scriptlocation) > cchainlimit THEN scriptlocation = " ..." + RIGHT(scriptlocation, cchainlimit - 4)
@@ -1910,8 +2016,31 @@ FUNCTION should_display_error_to_user(byval errorlevel as scriptErrEnum) as bool
  IF gen(genCurrentDebugMode) = 0 THEN 'Release mode, suppress most error display
   RETURN NO
  END IF
- RETURN YES
+ ' By default Info messages are printed to g_debug.txt but not shown,
+ ' since if they are so annoying then we wouldn't want to add more of them
+ ' (in future we should have a dedicated script log for info and warning messages)
+ RETURN errorlevel > serrInfo
 END FUNCTION
+
+DIM SHARED as integer error_ignorelist()
+
+FUNCTION scriptcmdhash() as integer
+ IF hsvm.cur_scrat THEN RETURN hsvm.cur_scrat->id * 100000 + hsvm.cur_scrat->ptr
+END FUNCTION
+
+FUNCTION error_ignorelist_contains(errmsg as zstring ptr) as bool
+ 'Match errors in two different ways (throw location, error message) to improve odds of the match working.
+ IF hsvm.cur_scrat THEN
+  IF a_find(error_ignorelist(), scriptcmdhash) <> -1 THEN RETURN YES
+ END IF
+ IF a_find(error_ignorelist(), strhash(*errmsg)) <> -1 THEN RETURN YES
+ RETURN NO
+END FUNCTION
+
+SUB error_ignorelist_add(errmsg as zstring ptr)
+ a_append error_ignorelist(), scriptcmdhash  'May be zero
+ a_append error_ignorelist(), strhash(*errmsg)
+END SUB
 
 'For errorlevel scheme, see scriptErrEnum in const.bi
 'NOTE: this function can get called with errors which aren't caused by scripts,
@@ -1921,36 +2050,50 @@ SUB scripterr (errmsg as string, byval errorlevel as scriptErrEnum = serrBadOp, 
  'mechanism to handle scriptwatch throwing errors
  STATIC as integer recursivecall
 
- STATIC as integer ignorelist()
-
- DIM as integer scriptcmdhash, errmsghash
-
  'err_suppress_lvl is always at least serrIgnore
  IF errorlevel <= err_suppress_lvl THEN EXIT SUB
 
+ 'Is the error ignored? Don't even log it, it could repeat thousands of times.
+ STATIC logged_ignore as bool = NO
+ IF error_ignorelist_contains(errmsg) THEN
+  IF logged_ignore = NO THEN
+   debug "(One or more ignored script error/warning...)"
+   logged_ignore = YES
+  END IF
+  EXIT SUB
+ END IF
+
  DIM display as bool = should_display_error_to_user(errorlevel)
 
+ 'Otherwise, log the error even if it isn't displayed, up to a point.
  'Logging is very slow, so we shouldn't if there are repeated errors (especially in release mode)
  STATIC error_count as integer = 0
- IF display = YES ORELSE error_count < 50 THEN
+ CONST error_count_limit = 200
+ IF display = YES ORELSE error_count < error_count_limit THEN
   DIM as string call_chain
   IF insideinterpreter THEN call_chain = script_call_chain(NO)
-  debug "Scripterr(" & errorlevel & "): " + call_chain + ": " + errmsg
- ELSEIF error_count = 50 THEN
+  DIM logmsg as string = call_chain + ": " + errmsg
+  STATIC lasterror as string
+  STATIC logged_repeat as bool = NO  'Logged a 'repeats' line for the last error
+  IF display = YES ORELSE logmsg <> lasterror THEN
+   lasterror = logmsg
+   logged_repeat = NO
+  ELSEIF logged_repeat THEN
+   'Once only
+   EXIT SUB
+  ELSE
+   debug "(One or more repeats of last script error/warning...)"
+   logged_repeat = YES
+   EXIT SUB
+  END IF
+  debug "Scripterr(errlvl=" & errorlevel & " " & *scripterr_names(errorlevel) & "): " + logmsg
+  logged_ignore = NO  'Indicate when there are hidden script errors between the logged ones
+ ELSEIF error_count = error_count_limit THEN
   debug "Ignoring further script errors"
  END IF
  error_count += 1
 
  IF display = NO THEN EXIT SUB
-
- 'Is the error ignored? Match errors in two different ways (throw location,
- 'error message) to improve odds of the match working.
- IF nowscript >= 0 THEN
-  scriptcmdhash = scrat(nowscript).id * 100000 + scrat(nowscript).ptr
-  IF a_find(ignorelist(), scriptcmdhash) <> -1 THEN EXIT SUB
- END IF
- errmsghash = strhash(errmsg)
- IF a_find(ignorelist(), errmsghash) <> -1 THEN EXIT SUB
 
  ' OK, decided to show the error
  stop_fibre_timing
@@ -1961,12 +2104,16 @@ SUB scripterr (errmsg as string, byval errorlevel as scriptErrEnum = serrBadOp, 
 
  IF errorlevel = serrError THEN errtext = "Script data may be corrupt or unsupported:" + CHR(10) + errtext
 
- errtext &= !"\n\n  Call chain (current script last):\n" & script_call_chain(YES, errorlevel)
+ 'TODO: sometimes outside the interpreter we're still in the context of a command, e.g. processing gam.want
+ 'flags. We should add another global to indicate the relevance of a script.
+ IF insideinterpreter THEN
+  errtext &= !"\n\n  Call chain (current script last):\n" & script_call_chain(YES, errorlevel)
 
- IF nowscript >= 0 THEN
-  DIM as ScriptTokenPos posdata
-  IF get_script_line_info(posdata, nowscript) THEN
-   errtext &= !"\n" & fgtag(uilook(uiDescription)) & highlighted_script_line(posdata, 120, @scriptinsts(nowscript))
+  IF hsvm.cur_scriptinst THEN
+   DIM as ScriptTokenPos posdata
+   IF get_script_line_info(posdata, hsvm.cur_scrat) THEN
+    errtext &= !"\n" & fgtag(uilook(uiDescription)) & highlighted_script_line(posdata, 120, hsvm.cur_scriptinst)
+   END IF
   END IF
  END IF
 
@@ -1992,11 +2139,11 @@ SUB scripterr (errmsg as string, byval errorlevel as scriptErrEnum = serrBadOp, 
   'Outside the interpreter there's no active fiber, can't call killscriptthread
   append_menu_item menu, "Stop this script", 2
  END IF
- append_menu_item menu, "Exit game", 4
+ 'append_menu_item menu, "Exit game", 4
  IF context_slice THEN
   append_menu_item menu, "Show this slice in the slice editor", 5
  ELSE
-  append_menu_item menu, "Enter slice editor/debugger", 5
+  'append_menu_item menu, "Enter slice editor/debugger", 5
  END IF
 
  IF recursivecall = 1 THEN  'don't reenter the debugger if possibly already inside!
@@ -2035,8 +2182,7 @@ SUB scripterr (errmsg as string, byval errorlevel as scriptErrEnum = serrBadOp, 
      killscriptthread
      EXIT DO
     CASE 3 'ignore permanently
-     a_append(ignorelist(), scriptcmdhash)
-     a_append(ignorelist(), errmsghash)
+     error_ignorelist_add errmsg
      EXIT DO
     CASE 4
      debuginfo "scripterr: User opted to quit"
@@ -2068,6 +2214,7 @@ SUB scripterr (errmsg as string, byval errorlevel as scriptErrEnum = serrBadOp, 
   ELSEIF errorlevel >= serrWarn THEN
    header = IIF(insideinterpreter, "Script Warning", "Warning")
   ELSEIF errorlevel = serrInfo THEN
+   'Never actually shown
    header = IIF(insideinterpreter, "Script Diagnostic", "Diagnostic")
   END IF
   IF LEN(header) THEN

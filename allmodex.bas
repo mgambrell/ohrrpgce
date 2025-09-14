@@ -142,6 +142,11 @@ dim faded_to_color as RGBcolor 'If faded_in=NO, the color the screen is faded to
 'like alt+enter or window buttons.
 dim user_toggled_fullscreen as bool = NO
 
+'Running in nongraphical mode (--nogfx with gfx_console or gfx_fb), not even using curses.
+'Uses include running testcases ("scons headless=1 tests") or importing scripts,
+'so may want to print certain messages to console instead.
+dim nogfx_mode as bool = NO
+
 'The -input-debug cmdline option: causes gfx backends to print info about events and other user/OS input
 '(Use set_debugging_io to set)
 dim debugging_io as bool = NO
@@ -470,6 +475,7 @@ dim shared fps_time_start as double = 0.0
 dim shared draw_fps as double             'Current measured frame draw rate, per second
 dim shared real_fps as double             'Current measured frame display rate, per second
 dim shared overlay_showfps as integer = 0 'Draw on overlay? 0 (off), 1 (real fps), or 2 (draw fps)
+dim shared as integer total_real_frames, total_skipped_frames, unskippable_frames  'Stats, for interest only
 
 dim shared overlays_enabled as bool = YES 'Whether to draw overlays in general
 dim shared overlay_message as string      'Message to display on screen
@@ -609,6 +615,10 @@ local sub after_gfx_backend_init()
 			resizing_enabled = gfx_set_resizable(NO, 0, 0)
 		end if
 	end if
+
+	dim gfx_settings as GfxSettings
+	gfx_get_settings(gfx_settings)
+	nogfx_mode = gfx_settings.nogfx <> 0
 end sub
 
 ' Initialise this module and backends, create a window
@@ -626,6 +636,8 @@ end sub
 local sub modex_quit()
 	stop_recording_input
 	stop_recording_video
+
+	'? "Frame statistics: displayed: " & total_real_frames & " (inc unskippable: " & unskippable_frames & ") skipped: " & total_skipped_frames
 
 	for i as integer = 0 to ubound(vpages)
 		frame_unload(@vpages(i))
@@ -1076,7 +1088,9 @@ function unlock_resolution (min_w as integer, min_h as integer) as bool
 		resizing_enabled = NO
 		return NO
 	end if
-	debuginfo "unlock_resolution(" & minwinsize & ")"
+	if debugging_io then
+		debuginfo "unlock_resolution(" & minwinsize & ")"
+	end if
 	resizing_enabled = gfx_set_resizable(YES, minwinsize.w, minwinsize.h)
 	windowsize.w = large(windowsize.w, minwinsize.w)
 	windowsize.h = large(windowsize.h, minwinsize.h)
@@ -1086,7 +1100,9 @@ end function
 
 'Disable window resizing.
 sub lock_resolution ()
-	debuginfo "lock_resolution()"
+	if debugging_io then
+		debuginfo "lock_resolution()"
+	end if
 	resizing_requested = NO
 	resizing_enabled = gfx_set_resizable(NO, 0, 0)  'Hard to imagine this could return YES
 	minwinsize = XY(0, 0)
@@ -1104,7 +1120,9 @@ sub set_resolution (w as integer, h as integer)
 	if gfx_supports_variable_resolution andalso gfx_supports_variable_resolution() = NO then
 		exit sub
 	end if
-	debuginfo "set_resolution " & w & "*" & h
+	if debugging_io then
+		debuginfo "set_resolution " & w & "*" & h
+	end if
 	windowsize.w = large(w, minwinsize.w)
 	windowsize.h = large(h, minwinsize.h)
 	if modex_initialised = NO then
@@ -1265,10 +1283,12 @@ sub SkippedFrame.drop()
 	page = -1
 end sub
 
-' If the last setvispage was skipped, display it
+' If the last setvispage was skipped, display it afterall. This is needed if we want
+' to fade the palette after a skipped frame.
 sub SkippedFrame.show ()
 	' Note: setvispage will call SkippedFrame.drop() after displaying the page
 	if page > -1 then
+		total_skipped_frames -= 1
 		setvispage page, NO
 	end if
 end sub
@@ -1325,6 +1345,7 @@ sub setvispage (page as integer, skippable as bool = YES)
 		update_fps_counter YES
 		exit sub
 	end if
+	if not skippable then unskippable_frames += 1
 	update_fps_counter NO
 
 	dim starttime as double = timer
@@ -2624,7 +2645,7 @@ function interrupting_keypress () as bool
 	if keybd_dummy(scPageup) > 0 and keybd_dummy(scPagedown) > 0 and keybd_dummy(scEsc) > 1 then closerequest = YES
 	if closerequest then
 #ifdef IS_GAME
-		exit_gracefully()
+		exit_gracefully(YES)
 #else
 		ret = YES
 #endif
@@ -3625,6 +3646,7 @@ function gfx_try_set_settings(settings as GfxSettings) as bool
 	return memcmp(@settings, @newsettings, sizeof(GfxSettings)) = 0
 end function
 
+'See also nogfx_mode
 
 '==========================================================================================
 '                                  Engine Settings menu
@@ -3772,7 +3794,7 @@ local sub allmodex_controls()
 #elseif defined(IS_GAME)
 	'Quick abort (could probably do better, just moving this here for now)
 	if closerequest then
-		exit_gracefully()
+		exit_gracefully(YES)
 	end if
 #endif
 
@@ -4116,12 +4138,16 @@ sub toggle_fps_display ()
 	overlay_showfps = (overlay_showfps + 1) MOD 3
 end sub
 
-' Called every time a frame is drawn.
-' skipped: true if this frame was frameskipped.
+' Called every time a frame is drawn (to a vpage), or we attempted to redisplay it with a
+' different palette during fades.
+' skipped: true if this frame was frameskipped meaning it wasn't sent to the gfx backend for display.
 local sub update_fps_counter (skipped as bool)
 	fps_draw_frames += 1
 	if not skipped then
 		fps_real_frames += 1
+		total_real_frames += 1
+	else
+		total_skipped_frames += 1
 	end if
 	dim nowtime as double = timer
 	if nowtime > fps_time_start + 1 then
@@ -11955,8 +11981,9 @@ end function
 
 
 'Find a frame in a frameset, returning frame index or -1.
-'If exact = NO, then return the nearest match (the last frame in the same frame group)
-'if the frame doesn't exist. Otherwise return -1.
+'If the frame doesn't exist:
+' exact = YES: return -1
+' exact = NO: return the nearest match: the last frame in the same frame group, or -1 if an empty group
 'frameset must be the first Frame in the frameset
 function frameid_to_frame(frameset as Frame ptr, frameid as integer, exact as bool = NO) as integer
 	dim as integer lastid = -1, lastidx = -1

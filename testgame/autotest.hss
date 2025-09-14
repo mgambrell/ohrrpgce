@@ -53,6 +53,10 @@ global variable(123, move hero count)
 global variable(124, timer expect arg 1)
 global variable(125, timer expect arg 2)
 global variable(126, autorun counter)
+global variable(127, start tick)   # Often needed by different scripts, initialise to ticknumber
+global variable(128, textbox20 instead triggered)
+global variable(129, timer script triggered)
+global variable(130, move hero script triggered)
 global variable(50000, the global with the biggest id)
 
 # 200-500 used in hstests.hss
@@ -103,7 +107,7 @@ end
 
 plotscript, load game, slot, arg1, arg2, arg3, begin
   trace($1="loadgame script")
-  tracevalue(slot, arg1, arg2, arg3, hook loadgame)
+  tracevalue(slot, arg1, arg2, arg3, hook loadgame, start tick, ticknumber)
   suspend player
   seed random(4444)
 
@@ -120,10 +124,11 @@ end
 # testing starts here
 script, run tests 1, begin
   assert(map autorun triggered == 1)
+  start tick counter
   interpreter tests
   extra array tests
   global npc tests
-  scheduling tests
+  script trigger interference tests
   plotstr tests
   string load tests
   platform tests
@@ -135,16 +140,16 @@ script, run tests 1, begin
   zone tests
   map state tests
   inventory tests
+  items tests
   hero tests
   death tests
-  trigger tests
+  harm tile tests
   door tests
   map autorun tests
   npc tests
   menu tests
   textbox tests
   shop tests
-  script trigger tests
   attack tests
   enemy tests
   battle tests
@@ -153,7 +158,8 @@ script, run tests 1, begin
   vehicle tests
   obsolete map data tests
   run game tests
-  resetgame tests   # Resets the game
+  reset game tests   # Resets the game
+  # Shouldn't get here
   crash
 end
 
@@ -171,9 +177,10 @@ script, stop checkpoint timer, begin
   stop timer(timer:checkpoint)
 end
 
-# follows "resetgame tests"
+# follows "reset game tests"
 script, run tests 2, begin
   savegame tests  # Saves and loads the game
+  # Shouldn't get here
   crash
 end
 
@@ -186,6 +193,7 @@ end
 script, passed tests, begin
   $0="TESTS SUCCEEDED"
   trace(0)
+  trace value(ticknumber)
   gameover
 end
 
@@ -244,27 +252,10 @@ end
 
 ########################################################################
 
-# Test the interaction of different script fibres, including pausing,
-# waiting, and back-compat blocking.
-# This makes use of timers, but the real timer tests are elsewhere.
-# (Timer tests happen after these tests!)
-# Triggering scripts is also tested in "script trigger tests" and
-# a number of other tests for npcs, menus, battles, etc.
-script, scheduling tests, begin
-  $0="scheduling tests"
-
+script, start tick counter, tick = 0, begin
   tick counter slice := create container
-  set slice velocity x(tick counter slice, 1, 1000)
-
-  blocking tests
-  assert(check bug 430 enabled == false)
-  variable (oldval)
-  oldval := read general(178)  # genBits2
-  write general(178, oldval, or, (2 ^ 1)) # Enable bug 430
-  assert(check bug 430 enabled == true)
-  write general(178, oldval)
-
-  free slice(tick counter slice)
+  set slice x(tick counter slice, tick)
+  set slice velocity x(tick counter slice, 1, 100000)
 end
 
 script, ticknumber, begin
@@ -290,19 +281,20 @@ end
 
 script, eachtick script, begin
   ticker 0 += 1
+  assert(ticknumber == ticker 0 + start tick)
   set timer(3, 0, 1, @eachtick script)
 end
 
-script, blocking tests, begin
-  $0="blocking tests"
+# Test plotscripts blocking each other from running
+script, plotscript blocking tests, begin
+  $0="plotscript blocking tests"
 
-  variable (start tick)
   start tick := ticknumber
   ticker 0 := 0
   ticker 1 := 0  # globals
   ticker 2 := 0
 
-  # Start an each-tick script on a timer that should not interfer with anything else
+  # Start an each-tick script on a timer that should not interfere with anything else
   # (since it has a higher timer ID)
   set timer(3, 0, 1, @eachtick script)
 
@@ -310,7 +302,7 @@ script, blocking tests, begin
   assert(ticknumber == start tick + 2)
 
   # Trigger another script and check that this one is blocked
-  # (This is also a test for bug 430, because of eachtick script)
+  # (This is also a regression test for bug 430, because of eachtick script)
   expected ticker 0 := 0
   set timer(1, 0, 1, @blocker script)
   assert(ticknumber == start tick + 2)
@@ -320,7 +312,7 @@ script, blocking tests, begin
   assert(ticker 1 == 2)
   assert(ticknumber == start tick + 4)
 
-  # Trigger two scripts to run at once; one blocks the other (test for bug 430)
+  # Trigger two scripts to run at once; one blocks the other (additional test for bug 430)
   expected ticker 1 := 2
   set timer(1, 0, 1, @blocker script)
   set timer(2, 0, 1, @blocker script 2)  # Runs first
@@ -332,27 +324,26 @@ script, blocking tests, begin
 
   # Check eachtick ran every tick
   #trace value(ticknumber, start tick, ticker 0, ticker 1, ticker 2)
-  assert(ticker 0 == ticknumber -- start tick)
+  assert(ticknumber == start tick + ticker 0)
   stop timer(3)
 end
 
 ########################################################################
 
 script, bug 430 tester, begin
-  variable (start tick)
-  start tick := ticknumber
+  variable(tick)
+  tick := ticknumber
   wait  # should be skipped
-  if (ticknumber == start tick) then (
+  if (ticknumber == tick) then (
     # was skipped
     ticker 1 += 1
   )
 end
 
-# blocking tests is completely broken if bug 430 is enabled, so here is a separate test,
+# "plotscript blocking tests" is completely broken if bug 430 is enabled, so here is a separate test.
 # Returns whether bug 430 is enabled
 script, check bug 430 enabled, begin
   $0="check bug 430 enabled"
-  variable (start tick)
   start tick := ticknumber
   ticker 1 := 0  # globals
   ticker 2 := 0
@@ -372,6 +363,15 @@ script, check bug 430 enabled, begin
     # Other combinations should be impossible
     crash
   )
+end
+
+script, bug 430 emulation tests, begin
+  assert(check bug 430 enabled == false)
+  variable(oldval)
+  oldval := read general(178)  # genBits2 + 1
+  write general(178, oldval, or, (2 ^ 1)) # Enable bug 430 (prefbit 33)
+  assert(check bug 430 enabled == true)
+  write general(178, oldval)
 end
 
 ########################################################################
@@ -460,8 +460,8 @@ script, inventory tests, begin
   delete item(item:Bulky, 46)
 
   # Max out the inventory (was set to 10 rows, 30 slots)
-  assert(get item(item:spamknif, 99) == true) # yes there is room for 99 of these
-  assert(get item(item:spamknif, 3000) == false) # No, there will not be room for these
+  assert(get item(item:spamknif, 99) == 99) # yes there is room for 99 of these
+  assert(get item(item:spamknif, 3000) == 2871) # No, there will not be room for all of these
   assert(inventory(item:spamknif) == 2970)
   variable(who)
   who := find hero(hero:Freki)
@@ -483,6 +483,46 @@ script, inventory tests, begin
   delete item(item:overflow, 1)
   assert(inventory(item:overflow) == 0)
   
+end
+
+########################################################################
+
+script, items tests, begin
+  $0="Items tests"
+  # These tests concern the definitions of items.
+  # For items actually in your inventory, see "inventory tests"
+
+  get item name(1, item:Boots)
+  assert(string equal(1, $2="Boots"))
+  get item description(1, item:Boots)
+  assert(string equal(1, $2="For foots"))
+  assert(get item value(item:boots) == 10)
+  assert(get item teach spell(item:boots) == none)
+  assert(get item teach spell(item:larnspel) == atk:ice attack)
+  assert(get item attack outside battle(item:boots) == none)
+  assert(get item attack outside battle(item:potion) == atk:potionatk)
+  assert(get item attack in battle(item:boots) == none)
+  assert(get item attack in battle(item:potion) == atk:potionatk)
+  assert(get item attack as weapon(item:boots) == none)
+  assert(get item attack as weapon(item:dulsword) == atk:dullsword)
+  variable(box, line)
+  box := get item text box(item:boots)
+  assert(box == -1)
+  box := get item text box(item:boxitem)
+  text box line(1, box, 0)
+  assert(string equal(1, $2="Nobody expects the textbox inquisition"))
+  assert(get item equip stat bonus(item:skort, stat:atk) == 0)
+  assert(get item equip stat bonus(item:skort, stat:def) == 2)
+  assert(get item equip stat bonus(item:skort, stat:dog) == -1)
+  assert(equippable in slot(item:skort,slot:weapon) == false)
+  assert(equippable in slot(item:skort,slot:legs) == true)
+  assert(equippable in slot(item:skort,slot:head) == true)
+  assert(equippable in slot(item:skort,slot:body) == false)
+  assert(equippable in slot(item:skort,slot:arms) == false)
+  assert(get item weapon pic(item:sordpic) == 1)
+  assert(get item weapon pal(item:sordpic) == -1)
+  assert(get item weapon pic(item:ackspic) == 2)
+  assert(get item weapon pal(item:ackspic) == 36)
 end
 
 ########################################################################
@@ -541,6 +581,10 @@ plotscript, move hero hook, slot, old slot, loading, begin
     assert(loading == false)
   )
   if (testing script triggers == 1) then (
+    # Used inside "concurrent script trigger tests"
+    called from move hero hook
+  )
+  if (testing script triggers == 3) then (
     # Swapping slots 2 and 3, both occupied
     assert(slot == 2 || slot == 3)
     assert(slot + old slot == 5)
@@ -565,9 +609,9 @@ script, hero party management tests, begin
   h0d := hero direction(0)
 
   assert(observed hero count == 1)
-  add hero(hero:Helga)
-  add hero(hero:Olaf)
-  add hero(hero:Frumpy)
+  assert(add hero(hero:Helga) == 1)
+  assert(add hero(hero:Olaf) == 2)
+  assert(add hero(hero:Frumpy) == 3)
   assert(room in active party == 0)
   assert(observed hero count == 4)
   assert(hero by rank(0) == hero:Freki)
@@ -644,10 +688,10 @@ script, hero party management tests, begin
   get hero name(2, find hero(hero:Kitt))
   assert(string compare(1, 2))
   # Swapping
-  swap out hero(hero:Helga)
+  assert(swap out hero(hero:Helga) >= 4)
   assert(hero by slot(1) == -1)
   assert(find hero(hero:Helga) >= 4)
-  swap in hero(hero:Kitt)
+  assert(swap in hero(hero:Kitt) == 1)
   assert(hero by slot(1) == hero:Kitt)
   assert(find hero(hero:Kitt) >> 0 && find hero(hero:Kitt) <= 3)
   swap by position(0, 3) # swap Styrge and Frumpy
@@ -661,6 +705,25 @@ script, hero party management tests, begin
   assert(find hero(hero:Kitt) >= 4)
   swap out hero(hero by slot(0)) # swap out frumpy
   assert(hero by slot(0) == -1)
+  # # Invalid swaps of empty slots (these throw errors)
+  # assert(hero by slot(20) == -1)  # Precondition
+  # assert(swap out hero by slot(20) == -1)
+  # assert(swap in hero by slot(20) == -1)
+  # assert(swap in hero by slot(9999) == -1)
+  # assert(swap out hero by slot(9999) == -1)
+  # assert(swap in hero by slot(-1) == -1)
+  # assert(swap out hero by slot(-1) == -1)
+  # Locking
+  lock hero(hero:Frumpy)
+  assert(hero is locked(hero:Frumpy) == true)
+  # ...check locking doesn't prevent scripted swapping
+  swap in hero(hero:Frumpy)
+  assert(find hero(hero:Frumpy) < 4)
+  swap out hero(hero:Frumpy)
+  assert(find hero(hero:Frumpy) >= 4)
+  unlock hero(hero:Frumpy)
+  assert(hero is locked(hero:Frumpy) == false)
+
   # restore numeric order
   add hero(hero:Freki) # Freki
   assert(hero by slot(0) == hero:Freki)
@@ -668,20 +731,35 @@ script, hero party management tests, begin
   assert(hero by slot(1) == hero:Helga)
   swap by position(2, find hero(hero:Olaf))
   assert(hero by slot(2) == hero:Olaf)
-  swap by position(3, find hero(hero:Frumpy))
+  #swap by position(3, find hero(hero:Frumpy))
+  swap by slot(3, find hero(hero:Frumpy))  # Test alias
   assert(hero by slot(3) == hero:Frumpy)
 
-  # add another copy of Freki, should go to reserve
+  # add another copy of Freki, should go to first free reserve slot
   add hero(hero:Freki)
   slot := find hero(hero:Freki)
   assert(slot == 0)
   delete hero by slot(slot)
   slot := find hero(hero:Freki)
-  assert(slot >= 4)
+  #assert(slot >= 4)
+  assert(slot == 4)
   # add back leader Freki
   assert(hero by slot(0) == -1)
   add hero(hero:Freki)
   assert(hero by slot(0) == hero:Freki)
+  # Check 'by slot' locking and swapping
+  lock hero by slot(0)
+  assert(hero is locked(hero:Freki) == true)
+  variable(newslot)
+  newslot := swap out hero by slot(0)
+  assert(newslot > 4)
+  # The Freki in slot 4 now is the first
+  assert(hero is locked(hero:Freki) == false)
+  unlock hero by slot(newslot)
+  assert(hero is locked(hero:Freki) == false)  # slot 4
+  lock hero by slot(newslot)
+  assert(swap in hero by slot(newslot) == 0)
+  assert(hero is locked(hero:Freki) == true)  # slot 0
   # Delete the reserve Freki
   assert(slot >= 4)
   assert(hero by slot(slot) == hero:Freki)
@@ -693,7 +771,7 @@ script, hero party management tests, begin
   w
 
   # Test "move hero hook"
-  testing script triggers := 1  # Tell the hook script to pay attention
+  testing script triggers := 3  # Tell the hook script to pay attention
   assert(move hero count == 0)
   # Swapping two occupied slots
   swap by position (2, 3)
@@ -967,10 +1045,6 @@ script, show box names, begin
   show text box(11)
   w(10)
 end
-
-## Party management
-#lock hero (who)
-#unlock hero (who)
 
 script, hero caterpillar tests, begin
   variable(i)
@@ -2155,7 +2229,7 @@ script, npc tag and onetime tests, begin
 end
 
 plotscript, another npc script, begin
-  assert(ticknumber == 2)
+  assert(ticknumber == start tick + 2)
   npc script triggered := 1
 end
 
@@ -2163,24 +2237,20 @@ script, use npc script tests, begin
   $0="use npc script tests"
   # Tests the implicit wait behaviour of usenpc
 
-  tick counter slice := create container
-  set slice velocity x(tick counter slice, 1, 1000)
-  assert(ticknumber == 0)
+  start tick := ticknumber
 
   create npc(8)  # Does nothing
   use npc(8)
-  assert(ticknumber == 1)
+  assert(ticknumber == start tick + 1)
   delete npc(8)
 
-  # Both this script and anothernpcscript should wait
-  create npc(7)  # Calls anothernpcscript
+  # Both this script and "another npc script" should wait
+  create npc(7)  # Calls "another npc script"
   npc script triggered := 0
   use npc(7)
   assert(npc script triggered == 1)
-  assert(ticknumber == 2)
+  assert(ticknumber == start tick + 2)
   delete npc(7)
-
-  free slice(tick counter slice)
 end
 
 script, npc slice tests, begin
@@ -2729,10 +2799,6 @@ script, global npc tests, begin
 end
 
 ########################################################################
-
-script, trigger tests, begin
-  harm tile tests
-end
 
 script, assert hurt pattern, test no, start hp, h0, h1, h2, h3, begin
   # h# is the amount of damage by which hero # in the walkabout party should be hurt
@@ -3429,6 +3495,14 @@ end
 
 ########################################################################
 
+# Run by text box 20
+plotscript, textbox20 instead script, begin
+  assert(current textbox == -1)
+  # Check the set tag condition skipped
+  assert(checktag(tag:textbox 20 settag) == false)
+  textbox20 instead triggered += 1
+end
+
 script, textbox tests, begin
   $0="textbox tests"
   show text box(2), w
@@ -3446,17 +3520,21 @@ script, textbox tests, begin
   show text box(12), w, advance text box, w
   show text box(13), w, advance text box, w
 
+  ###### "showtextbox happens immediately" is ON
   variable (oldval)
-  oldval := read general(178)  # genBits2
-  assert((oldval, and, 2^2) == 2^2)  # "showtextbox happens immediately" is on
+  oldval := read general(178)  # genBits2 + 1
+  assert((oldval, and, 2^2) == 2^2)
 
   # check showtextbox isn't delayed
+  start tick := ticknumber
   show text box(14)
+  assert(ticknumber == start tick)
   assert(checktag(tag:textbox 14 happened) == true)
   # no wait required before advance
   advance textbox
   wait
   assert(current textbox == -1)
+  assert(ticknumber == start tick + 1)
   settag(tag:textbox 14 happened, false)
 
   # check both showtextboxes work
@@ -3467,8 +3545,18 @@ script, textbox tests, begin
   advance textbox
   settag(tag:textbox 14 happened, false)
   settag(tag:textbox 15 happened, false)
+  assert(current textbox == -1)
+  assert(ticknumber == start tick + 1)  # No ticks happened
 
-  write general(178, oldval -- 2^2) # "showtextbox happens immediately" OFF
+  # check Instead scripts happen immediately, and Instead skips Set Tag conditions
+  show text box(20)
+  assert(ticknumber == start tick + 1)
+  assert(current textbox == -1)
+  assert(checktag(tag:textbox 20 settag) == false)
+  assert(textbox20 instead triggered == 1)
+
+  ###### "showtextbox happens immediately" OFF
+  write general(178, oldval -- 2^2)
 
   # Check currenttextbox still updates immediately
   show text box(2)
@@ -3486,6 +3574,16 @@ script, textbox tests, begin
   advance textbox
   settag(tag:textbox 14 happened, false)
 
+  # check Instead scripts happen, and Instead script skips Set Tag conditions
+  textbox20 instead triggered := 0
+  start tick := ticknumber
+  show text box(20)
+  wait
+  assert(current textbox == -1)
+  assert(checktag(tag:textbox 20 settag) == false)
+  assert(textbox20 instead triggered == 1)
+  assert(ticknumber == start tick + 1)
+
   # check only last showtextbox works
   show text box(14)
   show text box(15)
@@ -3493,7 +3591,15 @@ script, textbox tests, begin
   assert(checktag(tag:textbox 14 happened) == false)
   assert(checktag(tag:textbox 15 happened) == true)
   advance textbox
+  assert(current textbox == -1)
 
+  # check only last showtextbox works, using Instead script triggers
+  show text box(20)
+  show text box(20)
+  wait
+  assert(textbox20 instead triggered == 2)
+
+  ###### Back to "showtextbox happens immediately" ON
   write general(178, oldval)
 end
 
@@ -3557,6 +3663,7 @@ script, battle tests, begin
 
   test battle formation modification
   test hero counterattacks
+  test battle rewards
 end
 
 # Formation set should be 1-2
@@ -3736,6 +3843,28 @@ script, test hero counterattacks, begin
   assert(get hero stat(0, stat:HP, current stat) == 6), w
   # Heal up
   set hero stat(0, stat:HP, 10, current stat), w
+end
+
+script, test battle rewards, begin
+  fight formation(11), w
+  assert(money reward == 4)
+  assert(experience reward == 2)
+  assert(items reward (get count) == 1)
+  variable (i, item, qty)
+  for (i, 0, items reward (get count) -- 1) do (
+    item := items reward(i)
+    qty := items quantity reward(i)
+    assert(item == item:tooth)
+    assert(qty == 2)
+    get item name(3, item)
+    string sprintf(1, $2="Got %s x %d", 3, qty)
+    show string(1)
+    w
+  )
+  show no value
+  clear string(1)
+  clear string(2)
+  clear string(3)
 end
 
 ########################################################################
@@ -4795,16 +4924,19 @@ plotscript, npc triggered script, arg, npc, begin
   # Second to run
   assert(eachstep triggered == 1)
   assert(map autorun triggered == 0)
+  assert(move hero script triggered == 0)
   npc script triggered += 1
 
   # Should happen immediately (also tested in textbox tests)
   # and trigger two scripts
   advance textbox
 
-  # Fifth to run
+  # Sixth to run
   assert(current textbox == -1)
   assert(textbox script triggered == 1)
   assert(map autorun triggered == 1)
+  assert(move hero script triggered >= 1)
+  assert(timer script triggered == 0)
   npc script triggered += 1
 end
 
@@ -4822,6 +4954,7 @@ plotscript, textbox advance script, begin
   assert(npc script triggered == 1)
   assert(eachstep triggered == 1)
   assert(map autorun triggered == 0)
+  assert(move hero script triggered == 0)
   textbox script triggered += 1
 end
 
@@ -4835,7 +4968,29 @@ plotscript, map 4 autorun, arg, begin
 
   # Fourth to run
   assert(textbox script triggered == 1)
+  assert(move hero script triggered == 0)
   map autorun triggered += 1   # also set in "map autorun"
+end
+
+script, called from move hero hook, begin
+  $0="from move hero hook", trace
+  # Fifth to run
+  assert(current textbox == -1)
+  assert(npc script triggered == 1)
+  assert(eachstep triggered == 1)
+  assert(textbox script triggered == 1)
+  assert(map autorun triggered == 1)
+  move hero script triggered += 1
+  # Note: since Freki is the only hero, swapping them out swaps them
+  # back in, and this hook is called twice. I think that's a bug.
+end
+
+# Seventh to run
+plotscript, timer triggered script, begin
+  $0="timer triggered script", trace
+  assert(move hero script triggered >= 1)
+  assert(npc script triggered == 2)
+  timer script triggered += 1
 end
 
 
@@ -4846,60 +5001,77 @@ script, concurrent script trigger tests, begin
   # This tests both scripts triggered inside and outside the interpreter
 
   # Take a step, triggering each-step script and stepping on an NPC, which runs a script,
-  # and opens a textbox, which is advanced, running a script and activating a door which
-  # goes to a map with an autorun script
+  # and opens a textbox, which is advanced, which swaps out a hero (calling move hero hook),
+  # runs a script and activates a door (which goes to a map with an autorun script)
 
   # Preconditions
   assert(current map == 0)
+  assert(hero by slot(0) == hero:Freki)
   set hero position(0, 6, 6)
   npc script triggered := 0
+  move hero script triggered := 0
   map autorun triggered := 0
+  timer script triggered := 0
 
   set eachstep script (@each-step script)
   testing script triggers := true
 
-  tick counter slice := create container
-  set slice velocity x(tick counter slice, 1, 1000)
-  assert(ticknumber == 0)
+  start tick := ticknumber
   assert(get hero speed(me) == 4)
+
+  set timer(1, 0, 5, @timer triggered script)  # Triggered on the same tick as second step
 
   create npc(6, hero x -- 1, hero y)
   walk hero(me, left, 1)
   wait for hero
 
-  #Events happen in this order, and scripts should run in reverse
-  #order of triggering:
-  #  (step completes)
-  #  (npc triggered, opens textbox)
-  #  npc script triggered
-  #  each step triggered
+  # Events happen and scripts trigger in this order, and run in reverse order of triggering:
+  # (timers are updated)
+  #  timer triggered script
+  # (hero move logic, step finished)
+  #  (npc 6 triggered, opens textbox 16)
+  #    npc triggered script
+  #   each-step script
+  # (builtin logic finishes, the frame is drawn, start of next main loop tick)
   # (interpreter entered)
-  #  (npc script calls advancetextbox)
-  #  (textbox loaded)
-  #  (preparemap called)
-  #  autorun triggered
-  #  after textbox script triggered
+  #  (npc script calls advancetextbox:)
+  #   (hero is swapped out)
+  #    move hero hook
+  #   (door is forced)
+  #    (preparemap called)
+  #     map 4 autorun
+  #   textbox advance script (After text box trigger)
   # (this script resumes, waitfornpc finishing)
 
-  #So scripts run in order (all in the same tick):
+  # So scripts run in order (all in the same tick):
   # | each step
   # | npc
-  # | | autorun
   # | | textbox
-  # | npc finishes
+  # | | autorun
+  # | | move hero hook
+  # | (npc finishes)
+  # | timer
   # this script
 
-  # Sixth to run
+  # FIXME: add/remove/move hero hooks have a higher priority than other triggers (affects
+  # fibres triggered on the same tick only), but currently that has no effect if triggered
+  # while inside interpreter. It should, so the move hero hook should run earlier.
+
+  # Eighth to run
   assert(npc script triggered == 2)
   assert(textbox script triggered == 1)
   assert(map autorun triggered == 1)
-  assert(ticknumber == 5)
+  assert(move hero script triggered >= 1)
+  assert(timer script triggered == 1)
+  assert(ticknumber == start tick + 5)
 
   # reset
   testing script triggers := false
-  free slice(tick counter slice)
   teleport to map (0, 6, 6)
   assert(current map == 0)
+  # Freki is only hero in the party, so they wouldn't have actually been swapped out
+  assert(hero by slot(0) == hero:Freki)
+  move hero count -= move hero script triggered
   # Incremented by the other map autorun script
   assert(map autorun triggered == 2)
 end
@@ -4908,7 +5080,10 @@ end
 
 script, another eachstep script, begin
   eachstep triggered += 1
-  wait for hero
+  if (hero is walking) then (
+    # Note: always waits at least one tick!
+    wait for hero
+  )
 end
 
 script, yet another eachstep script, begin
@@ -4919,55 +5094,156 @@ script, yet another eachstep script, begin
   waiting
 end
 
-script, script double trigger tests, begin
-  $0="script trigger tests"
+# Test "permit double triggering of scripts"
+script, permit double triggering tests, begin
+  $0="permit double triggering tests"
+
+  #### "permit double-triggering of scripts" is off
+  variable (oldval)
+  oldval := read general(101)  # genBits
+  assert((oldval, and, 2^10) == 0)
+
+  test double triggering (off)
+
+  #### Turn on "permit double-triggering of scripts"
+  write general(101, oldval + 2^10)
+
+  test double triggering (on)
+
+  #### Turn off "permit double-triggering of scripts"
+  write general(101, oldval)
+end
+
+
+script, waitless script, begin
+  ticker 1 += 1
+end
+
+script, blocker script 3, begin
+  wait
+  ticker 1 += 1
+end
+
+# Run twice, with permitted = true/false
+script, test double triggering, permitted, begin
+  $0="test double triggering"
+  tracevalue(permitted)
 
   # precondition
   assert(hero x == 6 && hero y == 6)
+  assert(get hero speed == 4)
+  #set hero position(me, 6, 6)
 
-  # Test double triggering of scripts
+  # 1. Basic case: eachstep script that's already running
   set eachstep script(@another eachstep script)
-
-  variable (oldval)
-  oldval := read general(101)  # genBits
-  assert((oldval, and, 2^10) == 0)  # "permit double triggering scripts" is off
-
   eachstep triggered := 0
   walk hero(me, left, 3)
   wait for hero
-  # eachstep should only trigger once
-  assert(eachstep triggered == 1)
+  if (permitted) then (
+    assert(eachstep triggered == 3)
+  ) else (
+    # eachstep should only trigger once
+    assert(eachstep triggered == 1)
+  )
 
-  write general(101, oldval + 2^10)  # turn on "permit double triggering scripts"
+  # 2. A plotscript that was triggered and started running, hasn't called any other script, but has
+  # been buried another plotscript defeats the double trigger check.
+  # 2.1 ...buried under a script that doesn't wait.
 
-  eachstep triggered := 0
-  walk hero(me, right, 3)
-  wait for hero
-  assert(eachstep triggered == 3)
+  # Repeat with varying timing. Only when delay=10 is the timer script triggered on the same
+  # tick as the hero's second step and possibly defeats the double-trigger check.
 
+  subscript, walk and trigger, begin
+    # Setup
+    set hero position(0, 3, 6)
+    eachstep triggered := 0
+    ticker 1 := 0
+    start tick := ticknumber
+
+    walk hero(me, right, 2)
+    wait for hero(me)
+    assert(hero x == 5)
+    wait(1)  # needed for delay=11
+    assert(ticker 1 == 1)
+  end
+
+  variable(delay)
+  for (delay, 9, 11) do (
+    set timer(1, 0, delay, @waitless script)
+    walk and trigger
+
+    if (permitted || delay == 10) then (
+      assert(eachstep triggered == 2)
+    ) else (
+      assert(eachstep triggered == 1)  # Didn't double trigger
+    )
+    assert(ticknumber == start tick + 11)
+  )
+
+  # 2.2 ...buried under a script that's waiting
+  for (delay, 8, 11) do (
+    # When delay=9, triggered on the tick before the second step, and has a wait(1) so still there the next tick
+    # When delay=10, triggered on same tick. (Not waiting, so not what we're trying to test)
+
+    set timer(1, 0, delay, @blocker script 3)
+    walk and trigger
+
+    if (permitted || delay == 9 || delay == 10) then (
+      assert(eachstep triggered == 2)
+    ) else (
+      assert(eachstep triggered == 1)  # Didn't double trigger
+    )
+    if (delay >= 10) then (
+      assert(ticknumber == start tick + 12)
+    ) else (
+      assert(ticknumber == start tick + 11)
+    )
+  )
+
+  # 3. eachstep script that's the current active script fibre, but has called another script
+  # also defeats the double trigger check
+  set hero position(0, 3, 6)
   set eachstep script(@yet another eachstep script)
-
-  eachstep triggered := 0
-  walk hero(me, left, 3)
-  wait for hero
-  assert(eachstep triggered == 3)
-
-  write general(101, oldval)  # turn off "permit double triggering scripts"
-
   eachstep triggered := 0
   walk hero(me, right, 3)
   wait for hero
-  # eachstep should should trigger three times because the "waiting"
-  # subscript foils the double trigger check
+  # Regardless of permitted, eachstep should trigger three times because the "waiting"
+  # subscript is topmost
   assert(eachstep triggered == 3)
 
   set eachstep script(0)
   assert(hero x == 6 && hero y == 6)
+
+  # 4. Not all script triggers check for double triggering. Check timers don't.
+  # Trigger same script twice at once.
+  ticker 1 := 0
+  start tick := ticknumber
+  # Each script is "wait, ticker 1 += 1"
+  set timer(1, 0, 1, @blocker script 3)
+  set timer(2, 0, 1, @blocker script 3)  # Runs first
+  wait
+  assert(ticker 1 == 2)
+  assert(ticknumber == start tick + 3)
 end
 
-script, script trigger tests, begin
+########################################################################
+
+# Test the interaction of triggered script fibres, including ordering,
+# blocking, double-triggering, and two back-compat bits.
+# This makes use of timers, but the real timer tests are elsewhere.
+# (Timer tests happen after these tests!)
+# Triggering of each specific script trigger type is mostly in
+# test suites for npcs, menus, battles, etc.
+script, script trigger interference tests, begin
+  plotscript blocking tests
+
+  # The following three all check scripts triggered on the same tick:
+  # -whether the scripts are triggered in the right order
   concurrent script trigger tests
-  script double trigger tests
+  # -whether the scripts are triggered at all
+  permit double triggering tests
+  # -whether that causes waits to be skipped
+  bug 430 emulation tests
 end
 
 ########################################################################
@@ -7134,6 +7410,9 @@ script, savegame tests, begin
   show string at(7, 100, 120)
   w
 
+  start tick := ticknumber  # Checked on loading
+  trace(string sprintf(99, $99="before save in slot(1), ticknumber = %d", ticknumber))
+
   hook loadgame := 1
   save in slot(1)
   hook loadgame := 0
@@ -7161,6 +7440,9 @@ script, savegame tests, begin
 end
 
 script, after loadgame, arg1, arg2, arg3, begin
+  # "tick counter slice" is loaded so ticknumber should keep working uninterrupted
+  assert(ticknumber == start tick)
+
   if (hook loadgame == 1) then (
     assert(arg1 == 0)
     assert(arg2 == 0)
@@ -7184,6 +7466,7 @@ script, savegame tests 2, begin
   # Check globals, map number, slices loaded (game is set to save slices)
   assert(savegame map == current map)
   assert(slicewidth(savegame slice) == 15)
+  assert(ticknumber == start tick)  # Reads a slice's X
 
   # Check NPCs were NOT saved
   assert(get npc id(savegame npc) == -1)  # doesn't exist
@@ -7204,6 +7487,9 @@ script, savegame tests 2, begin
   hide string(6)
   hide string(7)
   free slice(savegame slice)
+
+  start tick := ticknumber
+  trace(string sprintf(99, $99="before save in slot(1), ticknumber = %d", ticknumber))
 
   # Now try passing args to the loadgame script
   hook loadgame := 2
@@ -7226,6 +7512,8 @@ script, reset game tests, begin
   # Test with no args
   called resetgame := true
   export globals(save slot: persistent, @called resetgame, @called resetgame)
+  start tick := ticknumber
+  export globals(save slot: persistent, @start tick, @start tick)
   reset game
   $0="resetgame didn't happen!"
   crash
@@ -7235,6 +7523,11 @@ end
 plotscript, after resetgame, arg1, arg2, arg3, begin
   $0="reset game tests"
   trace(0)
+
+  # Lets say that one tick has passed
+  import globals(save slot: persistent, @start tick, @start tick)
+  assert(tick counter slice == 0)
+  start tick counter(start tick + 1)
 
   called resetgame := false
   export globals(save slot: persistent, @called resetgame, @called resetgame)
@@ -7376,7 +7669,6 @@ end
 #get grid columns (handle)
 #get grid rows (handle)
 #get instead of battle script
-#get item name (ID, item)
 #get load script
 #get map edge mode
 #get map name (ID, map)

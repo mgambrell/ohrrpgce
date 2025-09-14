@@ -63,19 +63,20 @@ EXTERN inventory() as InventSlot
 EXTERN gold as integer
 
 'Script globals
+EXTERN hsvm as HSVMState
 EXTERN script() as ScriptData Ptr
 EXTERN srcfiles() as ScriptSourceFile
 EXTERN global() as integer
 EXTERN heap() as integer
 EXTERN scrat() as OldScriptState
 EXTERN scriptinsts() as ScriptInst
-EXTERN retvals() as integer
-EXTERN wantimmediate as integer
+EXTERN retvalsbase as integer ptr
 EXTERN scriptprofiling as bool
 EXTERN commandprofiling as bool
 EXTERN timing_fibre as bool
 EXTERN insideinterpreter as bool
 EXTERN nowscript as integer
+EXTERN nowscript_locals as integer ptr
 EXTERN scriptret as integer
 EXTERN numloadedscr as integer
 EXTERN totalscrmem as integer
@@ -86,7 +87,6 @@ EXTERN interruption_grace_period as integer
 EXTERN scripts_use_cc_scancodes as bool
 EXTERN scrst as Stack
 EXTERN curcmd as ScriptCommand ptr
-EXTERN last_queued_script as ScriptFibre ptr
 EXTERN mainFibreGroup as ScriptFibre ptr vector
 EXTERN err_suppress_lvl as scriptErrEnum
 EXTERN backcompat_sound_slot_mode as bool
@@ -96,7 +96,6 @@ EXTERN globalp as integer ptr
 EXTERN heapp as integer ptr
 EXTERN scratp as OldScriptState ptr
 EXTERN scriptp as ScriptData ptr ptr
-EXTERN retvalsp as integer ptr
 EXTERN plotslicesp as SliceHandleSlot ptr
 
 EXTERN timers() as PlotTimer
@@ -120,5 +119,6 @@ EXTERN remembered_menu_pts() as integer
 'Slice handles
 EXTERN SliceTable as SliceTableType
 EXTERN plotslices() as SliceHandleSlot
+EXTERN last_slice_table_slot as integer
 EXTERN next_slice_table_slot as integer
 EXTERN num_reusable_slice_table_slots as integer

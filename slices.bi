@@ -1,5 +1,5 @@
 'OHRRPGCE - Slices
-'(C) Copyright 1997-2020 James Paige, Ralph Versteegen, and the OHRRPGCE Developers
+'(C) Copyright 1997-2025 James Paige, Ralph Versteegen, and the OHRRPGCE Developers
 'Dual licensed under the GNU GPL v2+ and MIT Licenses. Read LICENSE.txt for terms and disclaimer of liability.
 
 #ifndef SLICES_BI
@@ -58,7 +58,6 @@ CONST SL_EDITOR_SSED_PALETTE_ROOT      = -410
 CONST SL_EDITOR_SSED_TOOLTIP_TEXT      = -411
 CONST SL_EDITOR_SSED_CAPTION_TEXT      = -412
 CONST SL_EDITOR_SSED_FRAME_SEPARATOR_TEMPL = -413
-CONST SL_EDITOR_ENEMY_SPRITE           = -500
 CONST SL_ROOT                 = -100000
 CONST SL_TEXTBOX_TEXT         = -100001
 CONST SL_TEXTBOX_PORTRAIT     = -100002
@@ -79,9 +78,11 @@ CONST SL_MAP_OVERLAY          = -100020
 CONST SL_WALKABOUT_LAYER      = -100010
 CONST SL_HERO_LAYER           = -100011
 CONST SL_NPC_LAYER            = -100012
-CONST SL_WALKABOUT_SPRITE = -100013
+CONST SL_SPRITE               = -100013
+CONST SL_WALKABOUT_SPRITE     = -100013  'Alias
 CONST SL_WALKABOUT_SPRITE_COMPONENT = -100013  'Alias
-CONST SL_WALKABOUT_SHADOW = -100014
+CONST SL_SHADOW               = -100014
+CONST SL_WALKABOUT_SHADOW     = -100014  'Alias
 CONST SL_WALKABOUT_SHADOW_COMPONENT = -100014  'Alias
 CONST SL_BACKDROP             = -100015
 CONST SL_MAP_LAYER0           = -101000
@@ -185,6 +186,7 @@ CONST SL_COLLECT_SPELLSCREEN = 5
 'CONST SL_COLLECT_LOADSCREEN = 12
 CONST SL_COLLECT_VIRTUALKEYBOARDSCREEN = 21
 
+Type SliceFwd as Slice
 
 Type SliceTypes as integer
 Enum 'SliceTypes
@@ -241,14 +243,46 @@ Enum 'CoverModes
  coverFull = 3
 End Enum
 
+Type SliceContextVarTypes as integer
+Enum 'SliceContextVarTypes
+ cttyBool  '0 or 1
+ cttyInt
+ cttyStr
+ 'others: TODO
+End Enum
+
+'Context variables are almost RELOAD nodes without children
+Type SliceContextVar
+ name as string
+ dtype as SliceContextVarTypes
+ 'Union  'TODO: Can't put string in a union
+  int_value as integer  'cttyBool, cttyInt
+  str_value as string   'cttyStr
+ 'End Union
+
+ Declare Function asString() as string
+End Type
+
+DECLARE_VECTOR_OF_TYPE(SliceContextVar, SliceContextVar)
+
+'Describes a slice property that should be set to the value of a context variable
+Type SliceDynamicProp
+ propname as string   'The set_slice_property key
+ ctxname as string
+End Type
+
+DECLARE_VECTOR_OF_TYPE(SliceDynamicProp, SliceDynamicProp)
+
 ' Stores information about what this slice is used for, if that isn't explained
 ' by the lookup code.
 Type SliceContext Extends Object
  Declare Virtual Destructor()
- Declare Abstract Function description() as string
- ' Contexts can't necessarily be loaded and saved; implementing save/load is optional.
- Declare Virtual Sub save(node as Reload.Nodeptr)
- Declare Virtual Sub load(node as Reload.Nodeptr)
+ Declare Virtual Function description() as string
+ ' Contexts can't necessarily be loaded/saved/cloned; implementing these is optional.
+ Declare Virtual Sub save(sl as SliceFwd ptr, node as Reload.Nodeptr)
+ Declare Virtual Sub load(sl as SliceFwd ptr, node as Reload.Nodeptr)
+ Declare Function clone() as SliceContext ptr
+ context_vars as SliceContextVar vector
 End Type
 
 DECLARE_VECTOR_OF_TYPE(SliceContext ptr, SliceContext_ptr)
@@ -258,15 +292,15 @@ DECLARE_VECTOR_OF_TYPE(SliceContext ptr, SliceContext_ptr)
 ' and other data shared across the collection.
 Type SliceCollectionContext Extends SliceContext
  Declare Virtual Function description() as string
- Declare Virtual Sub save(node as Reload.Nodeptr)
- Declare Virtual Sub load(node as Reload.Nodeptr)
+ Declare Virtual Sub save(sl as SliceFwd ptr, node as Reload.Nodeptr)
+ Declare Virtual Sub load(sl as SliceFwd ptr, node as Reload.Nodeptr)
  name as string
- dont_save as bool       'Set when insert-importing a collection: this context is temporary, unsaved
+ dont_save as bool       'Set when insert-importing a collection: this collection context is temporary, unsaved
+                         '(Base.save() is still called to save context variables)
  id as integer = -1      'Only used by user collections. Not saved. -1 means unknown
 End Type
 
 Extern "C"
-Type SliceFwd as Slice
 Type SliceDraw as Sub(Byval as SliceFwd ptr, byval page as integer)
 Type SliceDispose as Sub(Byval as SliceFwd ptr)
 Type SliceClone as Sub(Byval as SliceFwd ptr, byval as SliceFwd ptr)
@@ -365,6 +399,7 @@ Type Slice
   Declare Function GetAnimState() as AnimationState ptr
 
   Context as SliceContext ptr  'NULL if none
+  DynamicProps as SliceDynamicProp vector  'Dynamically set properties, NULL if none
   TableSlot as integer 'which slot in plotslices() holds a reference to this slice, or 0 for none
                        'The script handle is stored at plotslices(.TableSlot).handle.
   Lookup as integer
@@ -674,6 +709,25 @@ DECLARE Sub SetSliceTarg(byval s as slice ptr, byval x as integer, byval y as in
 DECLARE Function SliceIsMoving(byval sl as Slice ptr) as bool
 DECLARE Sub AdvanceSlice(byval s as slice ptr)
 
+End Extern 'Lots of overloads, and SliceContext itself not Extern "C"
+
+DECLARE Function CalcContextStack(byval sl as Slice ptr) as SliceContext ptr vector
+DECLARE Function FindContext overload (context as SliceContext, ctxname as string) as SliceContextVar ptr
+DECLARE Function FindContext overload (context_stack as SliceContext ptr vector, ctxname as string) as SliceContextVar ptr
+DECLARE Function FindContext overload (sl as Slice ptr, ctxname as string) as SliceContextVar ptr
+DECLARE Function GetOrAddContext (sl as Slice ptr, ctxname as string) as SliceContextVar ptr
+DECLARE Function GetContextInteger(context_stack as SliceContext ptr vector, ctxname as string, byref value as integer) as bool
+DECLARE Sub SetContextBool (sl as Slice ptr, ctxname as string, value as bool)
+DECLARE Sub SetContext overload (sl as Slice ptr, ctxname as string, value as integer)
+DECLARE Sub SetContext overload (sl as Slice ptr, ctxname as string, value as string)
+DECLARE Sub RemoveContext (sl as Slice ptr, ctxname as string)
+
+Extern "C"
+
+DECLARE Sub UpdateSliceDynamicProps(sl as Slice ptr, recurse as bool = YES)
+DECLARE Sub AddSliceDynamicProp(sl as Slice ptr, propname as string, ctxname as string)
+DECLARE Function FindSliceDynamicProp(sl as Slice ptr, propname as string) as integer
+
 DECLARE Sub InsertSliceBefore(byval sl as slice ptr, byval newsl as slice ptr)
 DECLARE Sub InsertSliceAfter(byval sl as Slice ptr, byval newsl as Slice ptr)
 DECLARE Sub SwapSiblingSlices(byval sl1 as slice ptr, byval sl2 as slice ptr)
@@ -693,7 +747,6 @@ DECLARE Function FindRootSlice(slc as Slice ptr) as Slice ptr
 DECLARE Function NextDescendent(desc as Slice ptr, root_sl as Slice ptr, visit_children as bool = YES) as Slice ptr
 DECLARE Function IsAncestor(byval sl as slice ptr, byval ancestor as slice ptr) as bool
 DECLARE Function VerifySliceLineage(byval sl as slice ptr, parent as slice ptr) as bool
-DECLARE Function CalcContextStack(byval sl as Slice ptr) as SliceContext ptr vector
 DECLARE Function UpdateRootSliceSize(sl as slice ptr, page as integer) as bool
 DECLARE Function UpdateScreenSlice(clear_changed_flag as bool = YES) as bool
 DECLARE Sub RefreshSliceScreenPos(byval sl as slice ptr)
@@ -732,7 +785,7 @@ DECLARE Sub UpdateColor (sl as Slice Ptr, newcol as integer, oldcol1 as integer,
 
 End Extern
 
-'Declare any overloaded functions here. Overloaded functions can't be accessed from C/C++
+'Declare any overloaded functions here. Overloaded functions can't be accessed from C
 
 DECLARE FUNCTION SliceTypeName OVERLOAD (sl as Slice Ptr) as string
 DECLARE FUNCTION SliceTypeName OVERLOAD (t as SliceTypes) as string

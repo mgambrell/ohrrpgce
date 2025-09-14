@@ -192,7 +192,7 @@ END TYPE
 'This partially overlaps MenuDef, which is the reason it wasn't added to MenuState:
 'MenuState is used for drawing MenuDefs too, which would be confusing
 TYPE MenuOptions
-  edged as bool
+  edged as bool           'Use edged font
   highlight_selection as bool 'Display a uiHighlight-colored rectangle behind the selected item
   drawbg as bool          'Draw a transparent rect behind the text of each menu item
   normal_col as integer   'Default color/UIcol for items without .col. Defaults to uilook(uiMenuItem)
@@ -407,9 +407,17 @@ Type HSHeader
   plotscr_version as string   'empty if not known
 End Type
 
+ENUM ScriptRole
+  subscript_role = -1
+  script_role = 0
+  plotscript_role = 1
+END ENUM
+
 TYPE TriggerData
   name as string
   id as integer
+  role as ScriptRole
+  imported as bool      'For importscripts only: whether the script has actually been imported
 END TYPE
 
 TYPE ScriptData
@@ -436,8 +444,7 @@ TYPE ScriptData
   parent as integer     'ID of parent script or 0 if not a subscript
 
   'Book keeping
-  trigger_type as string 'The type of the last trigger (eg "new game") of this script, or blank
-                        '(A script is considered to be a fibre root if it has a non-blank trigger_type)
+  last_trigger_name as string 'The last trigger (eg "new game") of this script, or blank
   refcount as integer   'number of ScriptInst pointing to this data
   lastuse as uinteger
   'For script profiling. The following are filled in and used only if scriptprofiling is true.
@@ -488,6 +495,7 @@ TYPE OldScriptState
   curargn as integer    'current arg number for current statement
   depth as integer      'stack depth of current script
   id as integer         'id number of current script (duplicated from ScriptInst)
+  saved_scriptret as integer 'used when a script executing a command is interrupted by a triggered script
 END TYPE
 
 ENUM WaitTypeEnum
@@ -495,6 +503,8 @@ ENUM WaitTypeEnum
   waitingOnCmd          'A command in the script triggered a wait (ScriptInst.curvalue says which)
   waitingOnTick         'The script was externally made to wait; ScriptInst.waitarg gives the number of ticks
 END ENUM
+
+TYPE ScriptFibreFwd as ScriptFibre
 
 'Externally visible state of an executing script, used outside the interpreter
 'There is one ScriptInst for each OldScriptState.
@@ -506,6 +516,8 @@ TYPE ScriptInst
   watched as bool       'true for scripts which are being logged (fibre roots only)
   started as bool       'used only if watched is true: whether the script has started
   id as integer         'id number of script
+  fibre as ScriptFibreFwd ptr
+  parent as ScriptInst ptr 'The script that called this one, or NULL if the head/root of a fibre
 
   'These 3 items are only updated when the script interpreter is left. While inside
   'the script interpreter (command handlers) use the curcmd (ScriptCommand ptr) global.
@@ -517,18 +529,31 @@ TYPE ScriptInst
 END TYPE
 
 TYPE ScriptFibre
-
-  id as integer         'Triggers pre-decoded
-  scripttype as string
+  'role as ScriptRole
+  id as integer         'Root script ID (trigger ID pre-decoded)
+  root as ScriptInst ptr 'The initial triggered script; NULL if not loaded with runscript yet
+  trigger_name as string
   trigger_loc as string 'More information about how it was triggered
   double_trigger_check as bool  'Whether to prevent double triggering
   priority as integer   'Determines ordering when multiple scripts are triggered at once
-  log_line as string    'Debugging aid: Comprised from scripttype, arg names and values and trigger_loc
+  log_line as string    'Debugging aid: Composed from trigger_name, arg names and values and trigger_loc
   argc as integer       'The number of args passed
   args(maxScriptArgs - 1) as integer
 END TYPE
 
 DECLARE_VECTOR_OF_TYPE(ScriptFibre ptr, ScriptFibre_ptr)
+
+TYPE HSVMState
+  DECLARE SUB set_cur_script()
+
+  'cur_fibre is updated only when the fibre changes, all these
+  'others are updated by set_cur_script() whenever nowscript changes.
+  cur_fibre as ScriptFibre ptr
+  cur_script as ScriptData ptr
+  cur_scrat as OldScriptState ptr
+  cur_scriptinst as ScriptInst ptr
+  cur_slot as integer               'This is just nowscript
+END TYPE
 
 'Node of an .hsz script abstract syntax tree
 TYPE ScriptCommand
@@ -967,6 +992,9 @@ END TYPE
 
 'An item definition
 TYPE ItemDef
+	DECLARE CONSTRUCTOR() ' Defined in loading.rbas
+	DECLARE SUB resize_elementals()
+
 	name as string
 	info as string
 	stacksize as integer      'Max per inventory slot. 0 means default, genItemStackSize
@@ -975,7 +1003,22 @@ TYPE ItemDef
 	wep_pal as integer
 	tags as ItemDefTags
 	eqslots(4) as bool
-	'TODO: all other data is missing
+	equip_by_bits(31) as bool '512 bits for xreadbit indexed by hero id
+	buy_price as integer
+
+	'Use actions -- technically these are mutually exclusive in the item menu
+	'attack and text_box are mutually exclusive in the ITM file format
+	teach_spell as integer   ' attack ID, or -1 for none
+	oob_attack as integer    ' attack ID, or -1 for none
+	text_box as integer      ' text box id or -1 for none (box 0 not allowed in ITM file format, but is okay in items.reld)
+
+	stat_bonuses as Stats '0 for no bonus, negative bonuses allowed
+	elemental_resist(maxElements - 1) as single '1.0 is default
+	consumed_by_use as bool
+	cannot_be_sold_or_dropped as bool
+
+	battle_items_menu_attack as integer 'attack ID or -1 for none
+	battle_weapon_attack as integer 'attack ID or -1 for none
 END TYPE
 
 'This is a common base class only so Enemy{Steal,Reward}Def can be passed to describe_item_chance

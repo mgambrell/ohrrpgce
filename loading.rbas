@@ -12,8 +12,10 @@
 #include "reloadext.bi"
 #include "os.bi"
 #include "slices.bi"
-#include "battle_udts.bi"
 #include "crt.bi"
+#IFDEF IS_GAME
+#include "battle_udts.bi"
+#ENDIF
 
 USING RELOAD
 USING RELOAD.EXT
@@ -45,7 +47,7 @@ declare sub append_trade_node (byval par as NodePtr, byval itnum as integer, byv
 declare sub InternalDefaultUIColors (masterpal() as RGBcolor, colarray() as integer, uidef() as integer, boxarray() as BoxStyle, boxdef() as integer)
 declare sub SaveUIColorsNode (byval node as NodePtr, colarray() as integer, boxarray() as BoxStyle)
 declare sub LoadUIColorsNode (byval node as NodePtr, colarray() as integer, boxarray() as BoxStyle, masterpal() as RGBcolor)
-declare function FillMissingUIColor(byval index as integer, colarray() as integer, masterpal() as RGBcolor) as integer
+declare function FillMissingUIColor(byval index as integer, colarray() as integer, boxarray() as BoxStyle, masterpal() as RGBcolor) as integer
 
 
 '==========================================================================================
@@ -449,21 +451,21 @@ SUB save_npc_instance (byval parent as NodePtr, byval index as NPCIndex, npc as 
  DIM n as NodePtr
  n = AppendChildNode(parent, "npc", index)
  WITH npc
-  SetChildNode(n, "id", ABS(.id) - 1)
-  SetChildNode(n, "pool", .pool)
-  SetChildNode(n, "x", .x - map_offset.x * 20)
-  SetChildNode(n, "y", .y - map_offset.y * 20)
-  SetChildNode(n, "z", .z)
-  SetChildNode(n, "d", .dir)
-  SetChildNode(n, "fr", .wtog)
-  IF .xgo THEN SetChildNode(n, "xgo", .xgo)
-  IF .ygo THEN SetChildNode(n, "ygo", .ygo)
+  AppendChildNode(n, "id", ABS(.id) - 1)
+  AppendChildNode(n, "pool", .pool)
+  AppendChildNode(n, "x", .x - map_offset.x * 20)
+  AppendChildNode(n, "y", .y - map_offset.y * 20)
+  AppendChildNode(n, "z", .z)
+  AppendChildNode(n, "d", .dir)
+  AppendChildNode(n, "fr", .wtog)
+  IF .xgo THEN AppendChildNode(n, "xgo", .xgo)
+  IF .ygo THEN AppendChildNode(n, "ygo", .ygo)
   SaveExtraVector n, "extravec", .extravec
-  IF .ignore_walls THEN SetChildNode(n, "ignore_walls")
-  IF .not_obstruction THEN SetChildNode(n, "not_obstruction")
-  IF .suspend_use THEN SetChildNode(n, "suspend_use")
-  IF .suspend_ai THEN SetChildNode(n, "suspend_move")
-  SetChildNode(n, "edit", 0) 'FIXME: this is a placeholder. Real edits will start with 1
+  IF .ignore_walls THEN AppendChildNode(n, "ignore_walls")
+  IF .not_obstruction THEN AppendChildNode(n, "not_obstruction")
+  IF .suspend_use THEN AppendChildNode(n, "suspend_use")
+  IF .suspend_ai THEN AppendChildNode(n, "suspend_move")
+  AppendChildNode(n, "edit", 0) 'FIXME: this is a placeholder. Real edits will start with 1
  END WITH
 END SUB
 
@@ -1948,17 +1950,7 @@ SUB load_hero_from_reload(hero as HeroDef, byval parent as NodePtr, byval id as 
     END SELECT
    END WITHNODE
   END READNODE
-  READNODE parent."elements" as elements
-   WITHNODE elements."element" as element
-    DIM i as integer = GetInteger(element)
-    SELECT CASE i
-     CASE 0 TO maxElements - 1
-      hero.elementals(i) = CAST(single, element."damage".default(1.0).double)
-     CASE ELSE
-      debug "out-of-bounds elemental " & i & " for hero " & hero.name
-    END SELECT
-   END WITHNODE
-  END READNODE
+  ReadElementalFloatsNode parent."elements".ptr, hero.elementals(), "hero " & id & " " & hero.name
   IF parent."rename_on_add".exists    THEN setbit hero.bits(), 0, 24, YES
   IF parent."rename_on_status".exists THEN setbit hero.bits(), 0, 25, YES
   IF parent."hide_empty_lists".exists THEN setbit hero.bits(), 0, 26, YES
@@ -2111,14 +2103,7 @@ SUB save_hero_as_reload(hero as HeroDef, byval parent as NodePtr)
   END IF
  NEXT i
  
- DIM elements as NodePtr
- elements = SetChildNode(parent, "elements")
- FOR i as integer = 0 to gen(genNumElements) - 1
-  IF INT(hero.elementals(i) * 10000) <> 10000 THEN
-   ch = AppendChildNode(elements, "element", i)
-   SetChildNode ch, "damage", cast(double, hero.elementals(i))
-  END IF
- NEXT i
+ WriteElementalFloatsNode(parent, "elements", hero.elementals())
  
  IF xreadbit(hero.bits(), 24) THEN SetChildNode parent, "rename_on_add"
  IF xreadbit(hero.bits(), 25) THEN SetChildNode parent, "rename_on_status"
@@ -2202,26 +2187,53 @@ FUNCTION WriteStatsNode (byval parent as NodePtr, nodename as string, statobj as
  DIM ch as NodePtr
  FOR i as integer = 0 TO UBOUND(statobj.sta)
   ch = AppendChildNode(node, "stat", i)
-  SetChildNode(ch, "value", statobj.sta(i))
+  AppendChildNode(ch, "value", statobj.sta(i))
  NEXT i
  RETURN node
 END FUNCTION
 
 FUNCTION WriteXYPairNode (byval parent as NodePtr, nodename as string, pair as XYPair) as NodePtr
  DIM node as NodePtr
- node = SetChildNode(parent, nodename)
- SetChildNode node, "x", pair.x
- SetChildNode node, "y", pair.y
+ node = AppendChildNode(parent, nodename)
+ AppendChildNode node, "x", pair.x
+ AppendChildNode node, "y", pair.y
  RETURN node
 END FUNCTION
 
 FUNCTION WritePicPalNode (byval parent as NodePtr, nodename as string, byval pic as integer, byval pal as integer=-1) as NodePtr
  DIM node as NodePtr
- node = SetChildNode(parent, nodename)
- SetChildNode node, "pic", pic
+ node = AppendChildNode(parent, nodename)
+ AppendChildNode node, "pic", pic
  IF pal >= 0 THEN
-  SetChildNode node, "pal", pal
+  AppendChildNode node, "pal", pal
  END IF
+ RETURN node
+END FUNCTION
+
+SUB ReadElementalFloatsNode (byval elements_node as NodePtr, elementals() as single, debug_thing as string="")
+ READNODE elements_node
+  WITHNODE elements_node."element" as element
+   DIM i as integer = GetInteger(element)
+   SELECT CASE i
+    CASE 0 TO maxElements - 1
+     elementals(i) = CAST(single, element."damage".default(1.0).double)
+    CASE ELSE
+     debug "out-of-bounds elemental " & i & IIF(LEN(debug_thing) > 0, " for ", "") & debug_thing
+   END SELECT
+  END WITHNODE
+ END READNODE
+END SUB
+
+FUNCTION WriteElementalFloatsNode(byval parent as NodePtr, nodename as string, elementals() as single) as NodePtr
+ DIM node as NodePtr
+ node = SetChildNode(parent, nodename)
+ DIM ch as NodePtr
+ FOR i as integer = 0 to gen(genNumElements) - 1
+  IF INT(elementals(i) * 10000) <> 10000 THEN
+   ch = AppendChildNode(node, "element", i)
+   SetChildNode ch, "damage", cast(double, elementals(i))
+  END IF
+ NEXT i
  RETURN node
 END FUNCTION
 
@@ -2522,6 +2534,12 @@ SUB GuessDefaultUIColors (masterpal() as RGBcolor, colarray() as integer)
  fixeddefaults(uiFadeOutExitBattle)   = &h000000
  fixeddefaults(uiMPBar)               = &h00E0E0
  fixeddefaults(uiMPBarFlash)          = &h80FFFF
+ fixeddefaults(uiBuyItemDescription)  = &h4F595A
+ fixeddefaults(uiBuyBonusUp)          = &hFFFC62
+ fixeddefaults(uiBuyBonusDown)        = &h8E6B00
+ fixeddefaults(uiEquipCursorBg)       = &h228B22
+ fixeddefaults(uiEquipSlotBg)         = &h003B95
+ fixeddefaults(uiEquipDisabledSlotBg) = &h001D48
 
  DIM c as RGBcolor
  FOR i as integer = 0 TO uiColorLast
@@ -2555,7 +2573,7 @@ SUB GuessDefaultBoxStyles (masterpal() as RGBcolor, boxarray() as BoxStyle, colo
  NEXT
 END SUB
 
-FUNCTION FillMissingUIColor(byval index as integer, colarray() as integer, masterpal() as RGBcolor) as integer
+FUNCTION FillMissingUIColor(byval index as integer, colarray() as integer, boxarray() as BoxStyle, masterpal() as RGBcolor) as integer
  'This returns a missing uilook color. Some of these may be hard-coded, and others
  'may rely on the values already present in colarray(). This is used for filling gaps in
  'the uilook array for old games that have uicolor data, but lack new uilook slots
@@ -2596,6 +2614,12 @@ FUNCTION FillMissingUIColor(byval index as integer, colarray() as integer, maste
   CASE uiBattleHeal: RETURN colarray(uiText)
   CASE uiBattlePoison: RETURN colarray(uiText)
   CASE uiBattleRegen: RETURN colarray(uiText)
+  CASE uiBuyItemDescription: RETURN colarray(uiDisabledItem)
+  CASE uiBuyBonusUp: RETURN colarray(uiSelectedItem)
+  CASE uiBuyBonusDown: RETURN colarray(uiSelectedDisabled)
+  CASE uiEquipCursorBg: RETURN colarray(uiHighlight2)
+  CASE uiEquipSlotBg: RETURN colarray(uiHighlight)
+  CASE uiEquipDisabledSlotBg: RETURN boxarray(0).bgcol 'Yes, this one used to be based on box style 0 background color. It was insane.
   CASE ELSE
    'Return defaults for all other colors
    DIM defaults(uiColorLast) as integer
@@ -2660,6 +2684,12 @@ FUNCTION UiColorCaption(byval n as integer) as string
   CASE uiFadeOutExitBattle: RETURN "Fadeout: exit/flee battle"
   CASE uiMPBar: RETURN "MP bar"
   CASE uiMPBarFlash: RETURN "MP bar overfull"
+  CASE uiBuyItemDescription: RETURN "Shop Buy: Item description"
+  CASE uiBuyBonusUp: RETURN "Shop Buy: Equipment bonus up"
+  CASE uiBuyBonusDown: RETURN "Shop Buy: Equipment bonus down"
+  CASE uiEquipCursorBg: RETURN "Equip: Cursor background"
+  CASE uiEquipSlotBg: RETURN "Equip: Slot background"
+  CASE uiEquipDisabledSlotBg: RETURN "Equip: Disabled slot background"
 
  END SELECT
  'Invalid values still print, but !?
@@ -2754,7 +2784,7 @@ SUB LoadUIColors (colarray() as integer, boxarray() as BoxStyle, byval palnum as
  'If we have fallen back to uicolors.bin then we need to fill the missing
  'values for colors that were added after uicolors.bin was obsoleted
  FOR i as integer = uiColorOldLast + 1 TO uiColorLast
-  colarray(i) = FillMissingUIColor(i, colarray(), masterpal())
+  colarray(i) = FillMissingUIColor(i, colarray(), boxarray(), masterpal())
  NEXT i
  
 END SUB
@@ -2787,7 +2817,7 @@ SUB LoadUIColorsNode (byval node as NodePtr, colarray() as integer, boxarray() a
  
  FOR i as integer = 0 TO uiColorLast
   IF NOT foundui(i) THEN
-   colarray(i) = FillMissingUIColor(i, colarray(), masterpal())
+   colarray(i) = FillMissingUIColor(i, colarray(), boxarray(), masterpal())
   END IF
  NEXT i
  
@@ -3578,9 +3608,11 @@ FUNCTION split_spritesheet(sheet as Frame ptr, framesize as XYPair, numframes as
 END FUNCTION
 
 'Split up a spriteset in the original import/export format.
+'Does NOT set the frameids, the caller should.
 FUNCTION spriteset_from_basic_spritesheet(sheet as Frame ptr, sprtype as SpriteType, numframes as integer) as Frame ptr
   DIM ss as Frame ptr = split_spritesheet(sheet, XY(large(1, sheet->w \ numframes), sheet->h), numframes)
-  initialise_backcompat_pt_frameids ss, sprtype
+  'Used to call this, but it doesn't support variable frame counts.
+  'initialise_backcompat_pt_frameids ss, sprtype
   RETURN ss
 END FUNCTION
 
@@ -3603,10 +3635,12 @@ END FUNCTION
 
 'fr must have a number of frames equal to the sprite_sizes(sprtype).frames default
 SUB initialise_backcompat_pt_frameids(fr as Frame ptr, sprtype as SpriteType)
-' For heroes
+  ' For heroes
   STATIC default_pt0_frameids(7) as integer = {0, 1, 100, 101, 200, 300, 400, 500}
   ' For walkabouts
   STATIC default_pt4_frameids(7) as integer = {0, 1, 100, 101, 200, 201, 300, 301}
+
+  BUG_IF(fr->arraylen <> sprite_sizes(sprtype).frames, "shouldn't have been called")
 
   IF sprtype = sprTypeHero THEN
     FOR i as integer = 0 TO 7
@@ -3617,6 +3651,7 @@ SUB initialise_backcompat_pt_frameids(fr as Frame ptr, sprtype as SpriteType)
       fr[i].frameid = default_pt4_frameids(i)
     NEXT
   END IF
+  ' Everything else has one frame group
 END SUB
 
 DIM SHARED box_border_captions(15) as zstring ptr = { _
@@ -4092,12 +4127,28 @@ END SUB
 '                                          Items
 '==========================================================================================
 
+CONSTRUCTOR ItemDef()
+ wep_pal = -1
+ battle_items_menu_attack = -1
+ battle_weapon_attack = -1
+ oob_attack = -1
+ teach_spell = -1
+ text_box = -1
+ FOR i as integer = 0 to maxElements - 1
+  elemental_resist(i) = 1.0
+ NEXT i
+END CONSTRUCTOR
 
-SUB loaditemdata (array() as integer, byval index as integer)
+SUB ClearItemData (item as ItemDef)
+  item.Destructor()
+  item.Constructor()
+END SUB
+
+SUB loaditemdata_old_itm_format (array() as integer, byval index as integer)
  flusharray array(), dimbinsize(binITM), 0
- IF index > gen(genMaxItem) THEN debug "loaditemdata:" & index & " out of range" : EXIT SUB
+ IF index > gen(genMaxItem) THEN debug "loaditemdata_old_itm_format:" & index & " out of range" : EXIT SUB
  IF loadrecord(array(), game & ".itm", getbinsize(binITM) \ 2, index) = NO THEN
-  debug "loaditemdata:" & index & " loadrecord failed"
+  debug "loaditemdata_old_itm_format:" & index & " loadrecord failed"
   EXIT SUB
  END IF
  'Auto-update equipability bits if needed
@@ -4125,13 +4176,26 @@ FUNCTION item_is_equippable(itembuf() as integer) as bool
  RETURN NO
 END FUNCTION
 
+FUNCTION item_is_equippable(item as ItemDef) as bool
+ FOR i as integer = 0 TO 4
+  IF item.eqslots(i) THEN RETURN YES
+ NEXT i
+ RETURN NO
+END FUNCTION
+
 FUNCTION item_is_equippable_in_slot(itembuf() as integer, byval slot as integer) as bool
  RETURN xreadbit(itembuf(), slot, 239)
 END FUNCTION
 
-SUB loaditemdata (item as ItemDef, item_id as integer)
+SUB loaditemdata_old_itm_format (item as ItemDef, item_id as integer)
+ 'Clearing the item data first makes sure that we corrtectly set any
+ 'defaults for data that is newer than when the ITM format was deprecated
+ '(Probably it will be okay because the constructor will have already been called,
+ ' but we do it explicitly here in case this is a re-used ItemDef object)
+ ClearItemData item
+
  DIM itembuf(dimbinsize(binITM)) as integer
- loaditemdata itembuf(), item_id
+ loaditemdata_old_itm_format itembuf(), item_id
  WITH item
   .name = readbadbinstring(itembuf(), 0, 8)
   .info = readbadbinstring(itembuf(), 9, 36)
@@ -4145,13 +4209,208 @@ SUB loaditemdata (item as ItemDef, item_id as integer)
   NEXT
   item_tags_from_buf .tags, itembuf()
   FOR i as integer = 0 TO 4
-   .eqslots(i) = xreadbit(itembuf(), 239, i)
+   .eqslots(i) = xreadbit(itembuf(), i, 239)
   NEXT i
-  'TODO: very incomplete!
+  .buy_price = itembuf(46)
+  .teach_spell = itembuf(50) - 1
+  .oob_attack = -1
+  .text_box = -1
+  IF itembuf(51) > 0 THEN
+   .oob_attack = itembuf(51) - 1
+  ELSEIF itembuf(51) < 0 THEN
+   .text_box = ABS(itembuf(51))
+  END IF
+  .battle_items_menu_attack = itembuf(47) - 1
+  .battle_weapon_attack = itembuf(48) - 1
+  FOR i as integer = 0 to 11
+   .stat_bonuses.sta(i) = itembuf(54 + i)
+  NEXT i
+  FOR i as integer = 0 to 3
+   .equip_by_bits(i) = itembuf(66 + i)
+  NEXT i
+  FOR i as integer = 0 to 27
+   .equip_by_bits(4 + i) = itembuf(211 + i)
+  NEXT i
+  .consumed_by_use = (itembuf(73) = 1)
+  .cannot_be_sold_or_dropped = (itembuf(73) = 2)
+
+  IF getfixbit(fixItemElementals) THEN
+   FOR i as integer = 0 TO small(maxElements - 1, 63)
+    .elemental_resist(i) = DeSerSingle(itembuf(), 82 + i * 2)
+   NEXT
+  ELSE
+   FOR i as integer = 0 TO small(maxElements - 1, 63)
+    .elemental_resist(i) = LoadOldItemElemental(itembuf(), i)
+   NEXT
+  END IF
+
  END WITH
 END SUB
 
-SUB saveitemdata (array() as integer, byval index as integer)
+SUB debug_compare_items(it1 as ItemDef, it2 as ItemDef, id as integer)
+ 'This is just for sanity-testing migration from ITM format to items.reld format
+ 'There is no reason to keep this around after that migration is complete
+ DIM ok as bool = YES
+ DIM msg as string = "ITEM MISMATCH " & id & " " & it1.name & ": "
+ IF it1.name <> it2.name THEN debugerror msg & " on name " & it1.name & "<>" & it2.name : ok = NO
+ IF it1.info <> it2.info THEN debugerror msg & " on info " & it1.info & "<>" & it2.info : ok = NO
+ IF it1.stacksize <> it2.stacksize THEN debugerror msg & " on stacksize " & it1.stacksize & "<>" & it2.stacksize : ok = NO
+ IF it1.eqslots(0) THEN
+  'Don't care about these unless it is equippable as a weapon. ITM kept around stale data fror non-weapons
+  FOR i as integer = 0 to 1
+   IF it1.wep_handle(i).x <> it2.wep_handle(i).x THEN debugerror msg & " on wep_handle(" & i & ").x " & it1.wep_handle(i).x & "<>" & it2.wep_handle(i).x : ok = NO
+   IF it1.wep_handle(i).y <> it2.wep_handle(i).y THEN debugerror msg & " on wep_handle(" & i & ").y " & it1.wep_handle(i).y & "<>" & it2.wep_handle(i).y : ok = NO
+  NEXT i
+  IF it1.wep_pic <> it2.wep_pic THEN debugerror msg & " on wep_pic " & it1.wep_pic & "<>" & it2.wep_pic : ok = NO
+  IF it1.wep_pal > 0 ORELSE it2.wep_pal > 0 THEN
+   '--Default for items that don't use this differs and that is okay
+   IF it1.wep_pal <> it2.wep_pal THEN debugerror msg & " on wep_pal " & it1.wep_pal & "<>" & it2.wep_pal : ok = NO
+  END IF
+ END IF
+ IF it1.tags.have_tag <> it2.tags.have_tag THEN debugerror msg & " on tags.have_tag " & it1.tags.have_tag & "<>" & it2.tags.have_tag : ok = NO
+ IF it1.tags.in_inventory_tag <> it2.tags.in_inventory_tag THEN debugerror msg & " on tags.in_inventory_tag " & it1.tags.in_inventory_tag & "<>" & it2.tags.in_inventory_tag : ok = NO
+ IF it1.tags.is_equipped_tag <> it2.tags.is_equipped_tag THEN debugerror msg & " on tags.is_equipped_tag " & it1.tags.is_equipped_tag & "<>" & it2.tags.is_equipped_tag : ok = NO
+ IF it1.tags.is_actively_equipped_tag <> it2.tags.is_actively_equipped_tag THEN debugerror msg & " on tags.is_actively_equipped_tag " & it1.tags.is_actively_equipped_tag & "<>" & it2.tags.is_actively_equipped_tag : ok = NO
+ FOR i as integer = 0 to 4
+  IF it1.eqslots(i) <> it2.eqslots(i) THEN debugerror msg & " on eqslots(" & i & ") " & it1.eqslots(i) & "<>" & it2.eqslots(i) : ok = NO
+ NEXT i
+ FOR i as integer = 0 to gen(genMaxHero)
+  IF item_read_equipbit(it1, i) <> item_read_equipbit(it2, i) THEN debugerror msg & " on item_read_equipbit(item, " & i & ") " & item_read_equipbit(it1, i) & "<>" & item_read_equipbit(it2, i) : ok = NO
+ NEXT i
+ IF it1.buy_price <> it2.buy_price THEN debugerror msg & " on buy_price " & it1.buy_price & "<>" & it2.buy_price : ok = NO
+ IF it1.teach_spell <> it2.teach_spell THEN debugerror msg & " on teach_spell " & it1.teach_spell & "<>" & it2.teach_spell : ok = NO
+ IF it1.oob_attack <> it2.oob_attack THEN debugerror msg & " on oob_attack " & it1.oob_attack & "<>" & it2.oob_attack : ok = NO
+ IF it1.text_box <> it2.text_box THEN debugerror msg & " on text_box " & it1.text_box & "<>" & it2.text_box : ok = NO
+ FOR i as integer = 0 to 11
+  IF it1.stat_bonuses.sta(i) <> it2.stat_bonuses.sta(i) THEN debugerror msg & " on stat_bonuses.sta(" & i & ") " & it1.stat_bonuses.sta(i) & "<>" & it2.stat_bonuses.sta(i) : ok = NO
+ NEXT i
+ FOR i as integer = 0 to maxElements - 1
+  IF it1.elemental_resist(i) <> it2.elemental_resist(i) THEN debugerror msg & " on elemental_resist(" & i & ") " & it1.elemental_resist(i) & "<>" & it2.elemental_resist(i) : ok = NO
+ NEXT i
+ IF it1.consumed_by_use <> it2.consumed_by_use THEN debugerror msg & " on consumed_by_use " & it1.consumed_by_use & "<>" & it2.consumed_by_use : ok = NO
+ IF it1.cannot_be_sold_or_dropped <> it2.cannot_be_sold_or_dropped THEN debugerror msg & " on cannot_be_sold_or_dropped " & it1.cannot_be_sold_or_dropped & "<>" & it2.cannot_be_sold_or_dropped : ok = NO
+ IF it1.battle_items_menu_attack <> it2.battle_items_menu_attack THEN debugerror msg & " on battle_items_menu_attack " & it1.battle_items_menu_attack & "<>" & it2.battle_items_menu_attack : ok = NO
+ IF it1.battle_weapon_attack <> it2.battle_weapon_attack THEN debugerror msg & " on battle_weapon_attack " & it1.battle_weapon_attack & "<>" & it2.battle_weapon_attack : ok = NO
+
+ 'IF ok THEN debuginfo "GOOD ITEM " & id & " " & it1.name
+END SUB
+
+SUB loaditemdata (item as ItemDef, item_id as integer)
+ 'First try to load the data from items.reld and then fall back on the .ITM
+ 'lump if that hero wasn't in heroes.reld. Do this because we don't always upgrade
+ '.ITM -> items.reld in one go, they can get upgraded as individual records are
+ 'loaded and saved, during upgrade() or in hero_editor, so the upgrade may be
+ 'partial!
+
+ DIM loaded as bool = NO
+
+ DIM doc as DocPtr
+ doc = LoadDocument(workingdir & SLASH & "items.reld", optIgnoreMissing)
+ IF doc THEN  'file present
+  DIM item_node as NodePtr = NodeByPath(doc, "/item[" & item_id & "]")
+  IF item_node THEN
+   'debuginfo "Item ID " & item_id & " was found in items.reld"
+   load_item_from_reload item, item_node, item_id
+   loaded = YES
+   
+   'FIXME: Remove this section soon! It is just a migration sanity test and it is slow and debug noisy
+   DIM olditem as ItemDef
+   loaditemdata_old_itm_format olditem, item_id
+   debug_compare_items olditem, item, item_id
+  END IF
+
+  FreeDocument doc
+ END IF
+
+ 'if not found, fall back to ITM lump
+ IF NOT loaded THEN
+  'debuginfo "falling back to " & game & ".itm" & " slot " & item_id
+  loaditemdata_old_itm_format item, item_id
+ END IF
+END SUB
+
+'id is only used for debugging
+SUB load_item_from_reload(item as ItemDef, byval node as NodePtr, byval id as integer = -1)
+ ClearItemData item 'Sets some defaults, but we don't rely on that; everything below should use correct defaults
+ LoadNode node   'Efficiency
+ READNODE node, default
+  item.name = node."name".string
+  item.info = node."info".string
+  item.stacksize = node."stacksize".integer
+
+  'These will get moved to sprite data somehow later, but for now they still live here
+  READNODE node."wep_handles" as wep_handles
+   WITHNODE wep_handles."wep_handle" as wep_handle
+    DIM i as integer = GetInteger(wep_handle)
+    SELECT CASE i
+     CASE 0 TO UBOUND(item.wep_handle)
+      item.wep_handle(i).x = wep_handle."x".integer
+      item.wep_handle(i).y = wep_handle."y".integer
+    END SELECT
+   END WITHNODE
+  END READNODE
+
+  READNODE node."wepspr" as wepspr
+   item.wep_pic = wepspr."pic".integer
+   item.wep_pal = wepspr."pal".default(-1).integer
+  END READNODE
+  
+  READNODE node."tags" as tags_node
+   item.tags.have_tag                 = tags_node."have".integer
+   item.tags.in_inventory_tag         = tags_node."in_inventory".integer
+   item.tags.is_equipped_tag          = tags_node."is_equipped".integer
+   item.tags.is_actively_equipped_tag = tags_node."is_actively_equipped".integer
+  END READNODE
+
+  READNODE node."eqslots" as eqslots
+   WITHNODE eqslots."slot" as slot
+    DIM i as integer = GetInteger(slot)
+    SELECT CASE i
+    CASE 0 TO UBOUND(item.eqslots)
+     item.eqslots(i) = YES
+    CASE ELSE
+     debuginfo "load_item_from_reload: out of bound equip slot " & i & " for item " & id & " " & item.name
+    END SELECT
+   END WITHNODE
+  END READNODE
+  
+  READNODE node."equip_by" as equip_by
+   WITHNODE equip_by."hero" as hero_node
+    DIM i as integer = GetInteger(hero_node)
+    SELECT CASE i
+    CASE 0 TO gen(genMaxHero)
+     item_write_equipbit item, i, YES
+    CASE ELSE
+     debuginfo "load_item_from_reload: out of bound equip hero id " & i & " for item " & id & " " & item.name
+    END SELECT
+   END WITHNODE
+  END READNODE
+
+  item.buy_price = node."buy_price".integer
+
+  READNODE node."outside_battle" as outside_battle
+   item.teach_spell = outside_battle."teach_spell".default(-1).integer
+   item.oob_attack = outside_battle."oob_attack".default(-1).integer
+   item.text_box = outside_battle."text_box".default(-1).integer
+  END READNODE
+
+  ReadStatsNode node."stat_bonuses".ptr, item.stat_bonuses
+  ReadElementalFloatsNode node."elemental_resist".ptr, item.elemental_resist(), "item " & id & " " & item.name
+  
+  item.consumed_by_use = node."consumed_by_use".bool
+  item.cannot_be_sold_or_dropped = node."cannot_be_sold_or_dropped".bool
+
+  item.battle_items_menu_attack = node."battle_items_menu_attack".default(-1).integer
+  item.battle_weapon_attack = node."battle_weapon_attack".default(-1).integer
+
+ END READNODE
+
+ IF NumChildren(node."outside_battle".ptr) > 1 THEN
+  debuginfo "load_item_from_reload: more than one outside_battle action node for item " & id & " " & item.name
+ END IF
+END SUB
+
+SUB saveitemdata_old_itm_format (array() as integer, byval index as integer)
  'Back-port the first equip slot
  'We do not support downgrading, but it does not hurt to minimize the damage of downgrading
  IF xreadbit(array(), 15, 239) THEN
@@ -4167,6 +4426,157 @@ SUB saveitemdata (array() as integer, byval index as integer)
  storerecord array(), game & ".itm", getbinsize(binITM) \ 2, index
 END SUB
 
+SUB saveitemdata_old_itm_format (item as ItemDef, byval index as integer)
+ '-- Convert ItemDef back into ITM buffer format
+ 'When we switch to items.reld we can keep this around to reduce the damage from a downgrade
+ 'But there is no way to add support for any future additions to the item data
+ '(Has the side effect of zeroing out all the obsolete garbage data)
+ DIM itembuf(dimbinsize(binITM)) as integer
+ WITH item
+  writebadbinstring .name, itembuf(), 0, 8
+  writebadbinstring .info, itembuf(), 9, 36
+  itembuf(210) = .stacksize
+  itembuf(52) = .wep_pic
+  itembuf(53) = .wep_pal
+  FOR i as integer = 0 TO 1
+   'Second handle point is before the first one!
+   itembuf(80 - i * 2) = .wep_handle(i).x
+   itembuf(81 - i * 2) = .wep_handle(i).y
+  NEXT
+  itembuf(74) = .tags.have_tag
+  itembuf(75) = .tags.in_inventory_tag
+  itembuf(76) = .tags.is_equipped_tag
+  itembuf(77) = .tags.is_actively_equipped_tag
+
+  FOR i as integer = 0 TO 4
+   setbit itembuf(), 239, i, .eqslots(i)
+  NEXT i
+  itembuf(46) = .buy_price
+  itembuf(50) = .teach_spell + 1
+
+  IF .oob_attack >= 0 THEN
+   itembuf(51) = .oob_attack + 1
+  ELSEIF .text_box > 0 THEN
+   itembuf(51) = .text_box * -1
+  END IF
+
+  itembuf(47) = .battle_items_menu_attack + 1
+  itembuf(48) = .battle_weapon_attack + 1
+  FOR i as integer = 0 to 11
+   itembuf(54 + i) = .stat_bonuses.sta(i)
+  NEXT i
+  FOR i as integer = 0 to 3
+   itembuf(66 + i) = .equip_by_bits(i)
+  NEXT i
+  FOR i as integer = 0 to 27
+   itembuf(211 + i) = .equip_by_bits(4 + i)
+  NEXT i
+  IF .consumed_by_use THEN
+   itembuf(73) = 1
+  ELSEIF .cannot_be_sold_or_dropped THEN
+   itembuf(73) = 2
+  END IF
+
+  'If we ever raise the max elements in the future, ITM format can't save more than 64
+  FOR i as integer = 0 TO small(63, maxElements - 1)
+   SerSingle(itembuf(), 82 + i * 2, .elemental_resist(i))
+  NEXT
+
+ END WITH
+ saveitemdata_old_itm_format itembuf(), index
+END SUB
+
+SUB saveitemdata (item as ItemDef, byval index as integer)
+ '--save the old way
+ 'WARNING: this is lossy, and serves no purpose other than
+ 'allowing people to downgrade to older versions WITH DATA LOSS
+ saveitemdata_old_itm_format item, index
+
+ '--save the new way
+ DIM filename as string = workingdir & SLASH & "items.reld"
+ DIM doc as DocPtr
+ doc = LoadDocument(filename, optNoDelay OR optIgnoreMissing)
+ IF doc = 0 THEN
+  debuginfo "items doc not found, create it"
+  doc = CreateDocument()
+ END IF
+
+ DIM items_node as NodePtr
+ items_node = DocumentRoot(doc)
+ IF items_node = 0 THEN
+  items_node = CreateNode(doc, "items")
+  SetRootNode(doc, items_node)
+ END IF
+
+ 'Create a new item node if it doesn't already exist, otherwise we replace it
+ DIM itemnode as NodePtr
+ itemnode = NodeByPath(items_node, "/item[" & index & "]", YES)
+
+ save_item_as_reload item, itemnode
+
+ SerializeBin filename, doc
+ FreeDocument doc
+END SUB
+
+SUB save_item_as_reload(item as ItemDef, byval parent as NodePtr)
+ FreeChildren parent
+ SetChildNode(parent, "name", item.name)
+ SetChildNode(parent, "info", item.info)
+ SetChildNode(parent, "stacksize", item.stacksize)
+
+ IF item.eqslots(0) THEN
+  'Weapon handle will eventually be moved to the sprite data itself, and will need to support more frames
+  'Maybe this node will continue to exist as overrides? Who knows! Overrides might not be useful!
+  DIM wep_handles as NodePtr
+  DIM wep_handle as NodePtr
+  wep_handles = SetChildNode(parent, "wep_handles")
+  FOR i as integer = 0 TO UBOUND(item.wep_handle)
+   wep_handle = WriteXYPairNode(wep_handles, "wep_handle", item.wep_handle(i))
+   SetContent(wep_handle, i)
+  NEXT i
+  WritePicPalNode(parent, "wepspr", item.wep_pic, item.wep_pal)
+ END IF
+ 
+ DIM tags_node as NodePtr
+ tags_node = SetChildNode(parent, "tags")
+ IF item.tags.have_tag <> 0                 THEN SetChildNode(tags_node, "have", item.tags.have_tag)
+ IF item.tags.in_inventory_tag <> 0         THEN SetChildNode(tags_node, "in_inventory", item.tags.in_inventory_tag)
+ IF item.tags.is_equipped_tag <> 0          THEN SetChildNode(tags_node, "is_equipped", item.tags.is_equipped_tag)
+ IF item.tags.is_actively_equipped_tag <> 0 THEN SetChildNode(tags_node, "is_actively_equipped", item.tags.is_actively_equipped_tag)
+
+ DIM eqslots_node as NodePtr
+ eqslots_node = SetChildNode(parent, "eqslots")
+ FOR i as integer = 0 to UBOUND(item.eqslots)
+  IF item.eqslots(i) THEN AppendChildNode(eqslots_node, "slot", i)
+ NEXT i
+
+ DIM equip_by_node as NodePtr
+ equip_by_node = SetChildNode(parent, "equip_by")
+ FOR i as integer = 0 to small(gen(genMaxHero), maxMaxHero)
+  IF item_read_equipbit(item, i) THEN AppendChildNode(equip_by_node, "hero", i)
+ NEXT i
+
+ SetChildNode(parent, "buy_price", item.buy_price)
+
+ DIM outside_battle as NodePtr
+ outside_battle = SetChildNode(parent, "outside_battle")
+ IF item.teach_spell >= 0 THEN SetChildNode(outside_battle, "teach_spell", item.teach_spell)
+ IF item.oob_attack >= 0  THEN SetChildNode(outside_battle, "oob_attack", item.oob_attack)
+ IF item.text_box >= 0    THEN SetChildNode(outside_battle, "text_box", item.text_box)
+ IF NumChildren(outside_battle) > 1 THEN
+  debuginfo "save_item_as_reload(""" & item.name & """) wrote multiple outside_battle actions"
+ END IF
+
+ WriteStatsNode(parent, "stat_bonuses", item.stat_bonuses)
+ WriteElementalFloatsNode(parent, "elemental_resist", item.elemental_resist())
+ SetChildNodeBool(parent, "consumed_by_use", item.consumed_by_use)
+ SetChildNodeBool(parent, "cannot_be_sold_or_dropped", item.cannot_be_sold_or_dropped)
+
+ IF item.battle_items_menu_attack >= 0 THEN SetChildNode(parent, "battle_items_menu_attack", item.battle_items_menu_attack)
+ IF item.battle_weapon_attack >= 0     THEN SetChildNode(parent, "battle_weapon_attack", item.battle_weapon_attack)
+ 
+END SUB
+
 FUNCTION LoadOldItemElemental (itembuf() as integer, byval element as integer) as single
  IF element < 8 THEN
   RETURN backcompat_element_dmg(readbit(itembuf(), 70, element), readbit(itembuf(), 70, 8 + element), readbit(itembuf(), 70, 16 + element))
@@ -4176,18 +4586,12 @@ FUNCTION LoadOldItemElemental (itembuf() as integer, byval element as integer) a
 END FUNCTION
 
 SUB LoadItemElementals (byval index as integer, itemresists() as single)
- DIM itembuf(dimbinsize(binITM)) as integer
- loaditemdata itembuf(), index
+ DIM item as ItemDef
+ loaditemdata item, index
  REDIM itemresists(gen(genNumElements) - 1)
- IF getfixbit(fixItemElementals) THEN
-  FOR i as integer = 0 TO gen(genNumElements) - 1
-   itemresists(i) = DeSerSingle(itembuf(), 82 + i * 2)
-  NEXT
- ELSE
-  FOR i as integer = 0 TO gen(genNumElements) - 1
-   itemresists(i) = LoadOldItemElemental(itembuf(), i)
-  NEXT
- END IF
+ FOR i as integer = 0 TO gen(genNumElements) - 1
+  itemresists(i) = item.elemental_resist(i)
+ NEXT
 END SUB
 
 FUNCTION get_item_stack_size (byval item_id as integer) as integer
@@ -4205,6 +4609,10 @@ FUNCTION item_read_equipbit(itembuf() as integer, hero_id as integer) as bool
  END IF
 END FUNCTION
 
+FUNCTION item_read_equipbit(item as ItemDef, hero_id as integer) as bool
+ RETURN xreadbit(item.equip_by_bits(), hero_id)
+END FUNCTION
+
 ' Write one of the 'Equippable by' bits
 SUB item_write_equipbit(itembuf() as integer, hero_id as integer, value as bool)
  IF hero_id < 64 THEN
@@ -4212,6 +4620,10 @@ SUB item_write_equipbit(itembuf() as integer, hero_id as integer, value as bool)
  ELSE
   setbit itembuf(), 211, hero_id - 64, value
  END IF
+END SUB
+
+SUB item_write_equipbit(item as ItemDef, hero_id as integer, value as bool)
+ setbit item.equip_by_bits(), 0, hero_id, value
 END SUB
 
 
@@ -4684,55 +5096,77 @@ SUB load_hsp_header(filename as string, header as HSHeader)
  END WITH
 END SUB
 
-'Load script triggers and script names lookup tables
-'There's a lot of similar loading code in importscripts. Maybe it could be moved here
-SUB load_script_triggers_and_names()
- DIM buf(19) as integer
- REDIM script_names(0)
-
- ' Load lookup1.bin (script trigger -> script ID and name)
+'Load lookup1.bin file format (save_lookup1_bin is in scriptedit.bas)
+SUB load_lookup1_bin(triggers() as TriggerData)
  DIM fh as integer
  IF OPENFILE(workingdir + SLASH + "lookup1.bin", FOR_BINARY + ACCESS_READ, fh) THEN
   debuginfo "lookup1.bin missing"  'The game might have no scripts.
-  REDIM lookup1_bin_cache(-1 TO -1)
+  REDIM triggers(-1 TO -1)
  ELSE
-  DIM as integer records = LOF(fh) \ 40
-  REDIM lookup1_bin_cache(-1 TO records - 1)
+  DIM binsize as integer = getbinsize(binLOOKUP1)
+  DIM as integer records = LOF(fh) \ binsize
+  REDIM triggers(-1 TO records - 1)
 
   DIM idx as integer = 0
-  WHILE loadrecord(buf(), fh, 20, idx, NO)
-   DIM script_id as integer = buf(0)
-   DIM trigger_id as integer = idx + 16384
-   DIM scrname as string = readbinstring(buf(), 1, 36)
-   'debug "lookup1: trigger " & trigger_id & " script " & id & " " & scrname
-   lookup1_bin_cache(idx).id = script_id
-   lookup1_bin_cache(idx).name = scrname
-   IF script_id = 0 THEN
-    ' Previously defined, but no longer exists
-    scrname = "[" & scrname & "]"
-   END IF
-   a_append script_names(), trigger_id, scrname
-   idx += 1
-  WEND
-  CLOSE fh
- END IF
-
- ' Load plotscr.lst (ID -> script name)
- IF OPENFILE(workingdir & SLASH & "plotscr.lst", FOR_BINARY + ACCESS_READ, fh) THEN
-  debuginfo "plotscr.lst missing"  'Never imported any scripts
- ELSE
-  DIM idx as integer = 0
-  WHILE loadrecord(buf(), fh, 20, idx, NO)
-   DIM script_id as integer = buf(0)
-   DIM scrname as string = readbinstring(buf(), 1, 38)
-   'debug "plotscr.lst:  script " & id & " " & scrname
-   a_append script_names(), script_id, scrname
+  DIM buf(dimbinsize(binLOOKUP1)) as integer
+  WHILE loadrecord(buf(), fh, binsize \ 2, idx, NO)
+   WITH triggers(idx)
+    .id = buf(0)
+    .name = readbinstring(buf(), 1, 64)  '1-33
+    .role = IIF(binsize >= 70, buf(34), plotscript_role)
+    .imported = NO
+    'debug "lookup1: trigger " & (idx + 16384) & " script " & .id & " " & .name
+   END WITH
    idx += 1
   WEND
   CLOSE fh
  END IF
 END SUB
 
+SUB load_plotscr_lst(ids_names() as IntStrPair, filename as string)
+ 'I'm not sure whether 0'th index still needs to be left blank...
+ REDIM ids_names(0)
+
+ DIM fh as integer
+ IF OPENFILE(filename, FOR_BINARY + ACCESS_READ, fh) THEN
+  debuginfo "plotscr.lst missing"  'Never imported any scripts
+ ELSE
+  DIM idx as integer = 0
+  DIM buf(19) as integer
+  WHILE loadrecord(buf(), fh, 20, idx, NO)
+   DIM script_id as integer = buf(0)
+   DIM scrname as string = readbinstring(buf(), 1, 38)
+   'debug "plotscr.lst: script " & script_id & " " & scrname
+   a_append ids_names(), script_id, scrname
+   idx += 1
+  WEND
+  CLOSE fh
+ END IF
+END SUB
+
+'Load script triggers and script names lookup tables needed by decodetrigger and scriptname
+'
+'Note: IDs from 32767 down are autonumbered script IDs (never used in the editor
+'for script triggers, but can be assigned with "set death script", etc), while
+'from 16384 up are trigger IDs assigned to scripts which refer to entries in
+'lookup1.bin, with the assumption that the two won't collide.
+SUB load_script_triggers_and_names()
+ ' Load plotscr.lst (ID -> script name) to get script names for raw script IDs
+ load_plotscr_lst script_names(), workingdir & SLASH & "plotscr.lst"
+
+ ' Load lookup1.bin (script trigger ID -> script ID and name)
+ load_lookup1_bin lookup1_bin_cache()
+
+ ' Copy script names for trigger IDs
+ FOR idx as integer = 0 TO UBOUND(lookup1_bin_cache)
+  WITH lookup1_bin_cache(idx)
+   DIM trigger_id as integer = idx + 16384
+   DIM scrname as string = .name
+   IF .id = 0 THEN scrname = "[" & .name & "]"  'Previously defined, but no longer exists
+   a_append script_names(), trigger_id, scrname
+  END WITH
+ NEXT
+END SUB
 
 
 '==========================================================================================

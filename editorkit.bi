@@ -288,6 +288,7 @@ type EditorKit extends ModularMenu
 
 	' Mostly internal
 	declare sub wrap_caption(caption as string)
+	declare function form_default_caption() as string
 
 	'---- Other menu item attributes
 	declare sub keycombo(key1 as KBScancode, key2 as KBScancode = scNone)
@@ -323,6 +324,7 @@ type EditorKit extends ModularMenu
 	declare function val_float(byref datum as single, is_percent as bool = YES) as single
 
 	' Derived types
+	declare function val_int_enum(byref datum as integer, options() as string, invalid_thing as zstring ptr = @"value") as integer
 	declare function val_str_enum(byref datum as string, options() as StringEnumOption) as string
 
 	' RELOAD Nodes
@@ -356,6 +358,7 @@ type EditorKit extends ModularMenu
 
 	' Derived types
 	declare function edit_zint(byref datum as integer, min as integer, max as integer) as bool
+	declare function edit_int_enum(byref datum as integer, options() as string, invalid_thing as zstring ptr = @"value") as bool
 	declare function edit_str_enum(byref datum as string, options() as StringEnumOption) as bool
 
 	' RELOAD Nodes
@@ -399,6 +402,14 @@ type EditorKit extends ModularMenu
 	declare sub as_enemy(byref id as integer, or_none_flag as EKFlags = 0)
 	declare function edit_as_enemy(byref id as integer, or_none_flag as EKFlags = 0) as bool
 
+	' Attacks
+	declare sub as_attack(byref id as integer, or_none_flag as EKFlags = 0)
+	declare function edit_as_attack(byref id as integer, or_none_flag as EKFlags = 0) as bool
+
+	' Text Boxes
+	declare sub as_textbox(byref id as integer, or_none_flag as EKFlags = 0)
+	declare function edit_as_textbox(byref id as integer, or_none_flag as EKFlags = 0) as bool
+
 	' Extra data vectors
 	declare sub edit_extra_data_vector(byref extravec as integer vector)
 
@@ -410,7 +421,7 @@ type EditorKit extends ModularMenu
 	declare sub header()
 	' Call spacer() instead of add_spacer()
 	declare sub add_spacer()
-	' Call defitem() or defunselectable() or subsection() instead of add_item()
+	' Call defitem() or defunselectable() or subsection() instead of add_item() for a do-nothing item.
 	declare sub add_item()
 end type
 

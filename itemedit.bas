@@ -1,5 +1,5 @@
 'OHRRPGCE CUSTOM - Item Editor
-'(C) Copyright 1997-2020 James Paige, Ralph Versteegen, and the OHRRPGCE Developers
+'(C) Copyright 1997-2025 James Paige, Ralph Versteegen, and the OHRRPGCE Developers
 'Dual licensed under the GNU GPL v2+ and MIT Licenses. Read LICENSE.txt for terms and disclaimer of liability.
 '
 #include "config.bi"
@@ -12,16 +12,16 @@
 #include "customsubs.bi"
 #include "thingbrowser.bi"
 #include "cglobals.bi"
+#include "editorkit.bi"
 
 
 '--Local SUBs
 DECLARE FUNCTION item_attack_name(n as integer) as string
 DECLARE SUB generate_item_edit_menu (menu() as string, shaded() as bool, itembuf() as integer, item_name as string, info_string as string, equip_types() as string, byref box_preview as string)
 
-DECLARE SUB item_editor_equipbits(itembuf() as integer, itemname as string)
-DECLARE SUB item_editor_elementals(itembuf() as integer)
-DECLARE SUB item_editor_init_new(itembuf() as integer)
-DECLARE SUB item_editor_stat_bonuses(itembuf() as integer)
+DECLARE SUB item_editor_equipbits(item as ItemDef)
+DECLARE SUB item_editor_elementals(item as ItemDef)
+DECLARE SUB item_editor_stat_bonuses(item as ItemDef)
 
 SUB item_editor ()
  DIM itemb as ItemBrowser
@@ -39,310 +39,385 @@ FUNCTION item_picker_or_none (recindex as integer = -1) as integer
  RETURN itemb.browse(recindex - 1, YES , @individual_item_editor, NO) + 1
 END FUNCTION
 
+'ITEMFIXME remove this
 LOCAL SUB read_item_strings(itembuf() as integer, byref item_name as string, byref info as string)
  item_name = readbadbinstring(itembuf(), 0, 8)
  info = readbadbinstring(itembuf(), 9, 36)
 END SUB
 
+'ITEMFIXME remove this
 LOCAL SUB write_item_strings(itembuf() as integer, item_name as string, info as string)
  writebadbinstring item_name, itembuf(), 0, 8
  writebadbinstring info, itembuf(), 9, 36
 END SUB
 
-FUNCTION individual_item_editor(item_id as integer) as integer
-'Return value is the item_id (for thingbrowser)
-
- STATIC clipboard_used as bool  'There's something in clipboard_buf
- STATIC clipboard_buf(dimbinsize(binITM)) as integer  'For copy/pasting
- DIM undo_available as bool  'There's something in undobuf
- DIM undobuf(dimbinsize(binITM)) as integer  'Just to undo pasting
-
- DIM itembuf(dimbinsize(binITM)) as integer
-
- 'Add new item
- IF item_id > maxMaxItems THEN
-  visible_debug "Can't edit item id > " & maxMaxItems
-  RETURN -1
- END IF
- IF item_id > gen(genMaxItem) THEN
-  gen(genMaxItem) += 1
-  item_id = gen(genMaxItem)
-  item_editor_init_new itembuf()
-  saveitemdata itembuf(), item_id
- END IF
- IF item_id > UBOUND(itemtags) THEN
-  'REDIMs itemtags
-  load_special_tag_caches
- END IF
-
- CONST menusize as integer = 21
- DIM menu(menusize) as string
- DIM menu_display(menusize) as string
- DIM shaded(menusize) as bool
- DIM wep_img as GraphicPair
- DIM box_preview as string = ""
-
- DIM eqst(4) as string
- eqst(0) = readglobalstring(38, "Weapon", 10)
+SUB populate_eq_slot_names(eq_slot_names() as string)
+ eq_slot_names(0) = readglobalstring(38, "Weapon", 10)
  FOR i as integer = 0 TO 3
-  eqst(i + 1) = readglobalstring(25 + i, "Armor" & i+1)
+  eq_slot_names(i + 1) = readglobalstring(25 + i, "Armor" & i+1)
  NEXT i
- FOR i as integer = 0 TO UBOUND(eqst)
-  IF LEN(eqst(i)) = 0 THEN eqst(i) = "Equip slot " & i
+ FOR i as integer = 0 TO UBOUND(eq_slot_names)
+  IF LEN(eq_slot_names(i)) = 0 THEN eq_slot_names(i) = "Equip slot " & i
  NEXT
+END SUB
 
- loaditemdata itembuf(), item_id
- DIM item_name as string, info as string
- 'item_name and info are written to itembuf() after any change
- read_item_strings itembuf(), item_name, info
-
- 'Indexed by menu index, not by .itm/itembuf() index
- DIM max(menusize) as integer
- DIM min(menusize) as integer
- max(3) = 32767
- max(4) = 99
- max(5) = 5
- max(6) = gen(genMaxAttack)  'These are not used or kept up-to-date!
- max(7) = gen(genMaxAttack)
- max(8) = gen(genMaxAttack)
- max(9) = gen(genMaxAttack)
- max(10) = 2
- max(11) = max_tag()
- max(12) = max_tag()
- max(13) = max_tag()
- max(14) = max_tag()
- max(15) = gen(genMaxWeaponPic)
- min(16) = -1
- max(16) = 32767
-
- 'Map from menu() indices to itembuf() indices
- DIM iidx(menusize) as integer
- iidx(3)  = 46 'value
- iidx(4)  = 210 'stack size
- 'iidx(5)  = 49 'equippable as (obsolete, replaced by bitsets in int 239)
- iidx(6)  = 47 'in battle use
- iidx(7)  = 48 'weapon use
- iidx(8)  = 50 'teach spell
- iidx(9)  = 51 'out of battle use
- iidx(10) = 73 'consumption
- iidx(11) = 74 'own item tag
- iidx(12) = 75 'in inventory tag
- iidx(13) = 76 'equipped tag
- iidx(14) = 77 'actively equipped tag
- iidx(15) = 52 'weapon pic
- iidx(16) = 53 'weapon pal
-
- DIM elementnames() as string
- getelementnames elementnames()
-
- DIM bitnames(0 TO 47) as string
- FOR i as integer = 0 TO 7
-  'Lots of obsolete elemental bits
-  DIM elname as string
-  elname = IIF(i <= UBOUND(elementnames), elementnames(i), "element" & i)
-  bitnames(i) = "##Weak against " & elname & " (obsolete)"
-  bitnames(i + 8) = "##Strong against " & elname & " (obsolete)"
-  bitnames(i + 16) = "##Absorbs " & elname & " (obsolete)"
- NEXT
-
- DIM selectst as SelectTypeState
- DIM enable_strgrabber as bool
- DIM state as MenuState
- state.last = menusize
- state.need_update = YES
- state.autosize = YES
- state.autosize_ignore_lines = 2
- state.autosize_ignore_pixels = 4
-
- setkeys YES
- DO
-  setwait 55
-  setkeys YES
-  IF keyval(ccCancel) > 1 THEN EXIT DO
-  IF keyval(scF1) > 1 THEN show_help "item_editor"
-  usemenu state
-  enable_strgrabber = NO
-  IF LEN(selectst.query) = 0 AND (state.pt = 1 OR state.pt = 2) THEN
-   enable_strgrabber = YES
+FUNCTION summarize_item_equipability(item as ItemDef) as string
+ DIM eq_slot_names(4) as string
+ populate_eq_slot_names eq_slot_names()
+ DIM summary as string
+ DIM sep as string = ""
+ FOR i as integer = 0 TO 4
+  IF item.eqslots(i) THEN
+   summary &= sep & eq_slot_names(i)
+   sep = "/"
   END IF
-  IF enable_strgrabber = NO ANDALSO keyval(scAlt) > 0 THEN
-   'Alt-C/V to copy/paste. Not available when a text field
-   'selected, because Alt-C/V input characters.
-   IF keyval(scC) > 1 THEN
-    a_copy itembuf(), clipboard_buf()
-    clipboard_used = YES
+ NEXT i
+ IF summary = "" THEN summary = "NEVER EQUIPPED"
+ RETURN summary
+END FUNCTION
+
+'-----------------------------------------------------------------------
+
+TYPE ItemEditor EXTENDS EditorKit
+ DECLARE CONSTRUCTOR(item_id as integer)
+ DECLARE DESTRUCTOR
+ DECLARE SUB define_items()
+ DECLARE SUB load()
+ DECLARE SUB save()
+ DECLARE SUB save_new()
+ DECLARE SUB draw_underlays()
+ DECLARE SUB reload_sprite()
+ id as integer
+ item as ItemDef
+ eq_slot_names(4) as string
+ underlay as Slice Ptr
+ wep_sl as Slice Ptr
+ handle_pos_sl as Slice ptr
+ preview_wep_frame as integer
+ tooltip_sl as Slice Ptr
+ tooltip as string
+ STATIC clipboard_item as ItemDef ptr  'For copy/pasting, NULL if nothing copied
+ undo_item as ItemDef ptr  'Just to undo pasting. NULL if nothing
+ can_copy_and_paste as bool
+END TYPE
+DIM ItemEditor.clipboard_item as ItemDef ptr
+
+CONSTRUCTOR ItemEditor(item_id as integer)
+ populate_eq_slot_names eq_slot_names()
+
+ 'Add a new item if an out-of-range item_id was requested
+ IF item_id > gen(genMaxItem) THEN
+  id = gen(genMaxItem) + 1
+ ELSE
+  id = item_id
+ ENd IF
+
+ setup_record_switching id, 0, gen(genMaxItem), , "Item", maxMaxItems
+ 
+ 'Set up the weapon preview underlay
+ underlay = NewSliceOfType(slContainer)
+ underlay->Fill = YES
+ wep_sl = NewSliceOfType(slSprite)
+ SetSliceParent wep_sl, underlay
+ ReAlignSlice wep_sl, alignRight, alignCenter, alignRight, alignCenter
+ wep_sl->X = -20
+ preview_wep_frame = 1
+ handle_pos_sl = NewSliceOfType(slRectangle)
+ SetSliceParent handle_pos_sl, wep_sl
+ handle_pos_sl->x = -1
+ handle_pos_sl->y = -1
+ handle_pos_sl->Width = 3
+ handle_pos_sl->Height = 3
+ ReAlignSlice handle_pos_sl, alignLeft, alignLeft, alignCenter, alignCenter
+ ChangeRectangleSlice handle_pos_sl, , , uiSelectedItem2 * -1 - 1, borderLine, transHollow
+ tooltip_sl = NewSliceOfType(slText)
+ SetSliceParent tooltip_sl, underlay
+ tooltip_sl->Fill = YES
+ tooltip_sl->FillMode = sliceFillHoriz
+ tooltip_sl->AlignVert = alignBottom
+ tooltip_sl->AnchorVert = alignBottom
+ ChangeTextSlice tooltip_sl, "Hint Text Goes Here", uiText * -1 - 1, NO, YES, uiHighlight * -1 - 1
+END CONSTRUCTOR
+
+DESTRUCTOR ItemEditor()
+ DeleteSlice @underlay
+ IF undo_item THEN DELETE undo_item
+END DESTRUCTOR
+
+SUB ItemEditor.load()
+ IF id > gen(genMaxItem) THEN save_new
+ loaditemdata item, id
+ reload_sprite
+END SUB
+
+SUB ItemEditor.save_new()
+ DIM new_item as ItemDef = ItemDef()
+ saveitemdata new_item, id
+ gen(genMaxItem) = id
+ 'REDIMs itemtags
+ load_special_tag_caches
+END SUB
+
+SUB ItemEditor.save()
+ saveitemdata item, id
+END SUB
+
+SUB ItemEditor.define_items()
+
+ tooltip = ""
+
+ '----------------------------
+ IF submenu = "statbonus" THEN
+ 
+ helpkey = "equipment_stat_bonuses"
+ prev_menu_text = "Previous Menu"
+
+ FOR i as integer = 0 TO statLast
+  defint statnames(i) + " Bonus:", item.stat_bonuses.sta(i), -32768, 32767
+  DIM cap as integer = gen(genStatCap + i)
+  IF cap > 0 ANDALSO item.stat_bonuses.sta(i) > cap THEN
+   set_caption item.stat_bonuses.sta(i) & " [stat capped to " & cap & "]"
+  END IF
+ NEXT
+
+ '----------------------------
+ ELSE '--main menu
+
+ helpkey = "item_editor"
+ prev_menu_text = "Back to Item Menu"
+
+ 'Only do copy-pasting on the main menu. Not in sub-menus
+ '(We don't want to create the false impression that only the contents of the sub-menu would be pasted)
+ 'The copy-paste is implemented at the end of the main menu definition
+ IF state.pt = state.top THEN
+  IF clipboard_item THEN
+   tooltip = "Alt-C/V to copy/paste item definition"
+  ELSE
+   tooltip = "Alt-C to copy item definition"
+  END IF
+ END IF
+ can_copy_and_paste = YES
+
+ def_record_switcher
+ 
+ defstr "Name:", item.name, 8
+ IF selected THEN can_copy_and_paste = NO
+ defstr "Info:", item.info, 36
+ IF selected THEN can_copy_and_paste = NO
+ defint "Value:", item.buy_price, 0, 32767
+
+ defint "Maximum stack size:", item.stacksize, 0, 99
+ caption_default_or_int 0, "Default (99)"
+
+ 'We can split these apart after the switch from ITM to items.reld (if we wish)
+ defitem "Consumability:"
+ DIM consumability as integer = 0
+ IF item.consumed_by_use THEN consumability = 1
+ IF item.cannot_be_sold_or_dropped THEN consumability = 2
+ DIM usability_captions(...) as string = {"Unlimited Use", "Consumed By Use", "Cannot be Sold/Dropped"}
+ edit_int_enum consumability, usability_captions()
+ item.consumed_by_use = (consumability = 1)
+ item.cannot_be_sold_or_dropped = (consumability = 2)
+
+ IF defitem_act("Equippable as...:") THEN
+  editbools item.eqslots(), eq_slot_names()
+  reload_sprite
+ END IF
+ IF refresh THEN set_caption summarize_item_equipability(item)
+ 
+ defitem "When used as an item in battle:"
+ edit_as_attack item.battle_items_menu_attack, Or_None
+ IF value = -1 THEN set_caption "NOTHING"
+ IF selected THEN tooltip = THINGGRABBER_TOOLTIP
+
+ IF item.eqslots(0) THEN
+  section "As a weapon"
+  preview_wep_frame = 1
+  
+  defitem "When used as a Weapon:"
+  edit_as_attack item.battle_weapon_attack, Or_None
+  IF value = -1 THEN set_caption "NOTHING"
+  IF selected THEN tooltip = THINGGRABBER_TOOLTIP
+  
+  defitem "Weapon Picture:"
+  IF edit_as_spriteset(item.wep_pic, sprTypeWeapon) THEN
+  END IF
+
+  defitem "Weapon Palette:"
+  IF edit_as_palette(item.wep_pal, sprTypeWeapon, item.wep_pic) THEN
+  END IF
+ 
+  IF defitem_act("Handle position (A)...") THEN
+   ChangeSpriteSlice wep_sl, , , , 0
+   xy_position_on_sprite_slice wep_sl, item.wep_handle(0).x, item.wep_handle(0).y, "Weapon handle position", "xy_weapon_handle"
+  END IF
+  IF selected THEN preview_wep_frame = 0
+
+  IF defitem_act("Handle position (B)...") THEN
+   ChangeSpriteSlice wep_sl, , , , 1
+   xy_position_on_sprite_slice wep_sl, item.wep_handle(1).x, item.wep_handle(1).y, "Weapon handle position", "xy_weapon_handle"
+  END IF
+  
+  reload_sprite
+ END IF
+
+ IF item_is_equippable(item) THEN
+  IF defitem_act("Stat Bonuses...") THEN 
+   enter_submenu "statbonus"
+  END IF
+
+  IF defitem_act("Elemental Resists...") THEN
+   item_editor_elementals item
+  END IF
+  
+  IF defitem_act("Who Can Equip?...") THEN
+   item_editor_equipbits item
+  END IF
+ END IF
+ 
+ section "When used out of battle"
+
+ defitem "Cure Attack:"
+ IF item.text_box >= 0 ORELSE item.teach_spell >= 0 THEN
+  item.oob_attack = -1
+  set_disabled
+ ELSE
+  edit_as_attack item.oob_attack, Or_None
+  IF value = -1 THEN set_caption "NOTHING"
+ END IF
+ IF selected THEN tooltip = THINGGRABBER_TOOLTIP
+
+ defitem "Text Box:"
+ IF item.oob_attack >= 0 ORELSE item.teach_spell >= 0 THEN
+  item.text_box = -1
+  set_disabled
+ ELSE
+  edit_as_textbox item.text_box, Or_None
+  IF value = -1 THEN set_caption "NOTHING"
+  IF value = 0 THEN set_caption "(Box 0 not supported here)"
+ END IF
+ IF selected THEN tooltip = THINGGRABBER_TOOLTIP
+
+ defitem "Teach Spell:"
+ IF item.oob_attack >= 0 ORELSE item.text_box >= 0 THEN
+  item.teach_spell = -1
+  set_disabled
+ ELSE
+  edit_as_attack item.teach_spell, Or_None
+  IF value = -1 THEN set_caption "NOTHING"
+ END IF
+ IF selected THEN tooltip = THINGGRABBER_TOOLTIP
+
+ section "Automatically set tags"
+
+ defitem "Own item:"
+ edit_as_tag_id item.tags.have_tag
+ IF edited THEN itemtags(id) = item.tags
+
+ defitem "Is in inventory:"
+ edit_as_tag_id item.tags.in_inventory_tag
+ IF edited THEN itemtags(id) = item.tags
+
+ IF item_is_equippable(item) THEN
+  defitem "Equipped by any hero:"
+  edit_as_tag_id item.tags.is_equipped_tag
+  IF edited THEN itemtags(id) = item.tags
+  
+  defitem "Equipped by hero in active party:"
+  edit_as_tag_id item.tags.is_actively_equipped_tag
+  IF edited THEN itemtags(id) = item.tags
+ END IF
+
+ IF phase = processing THEN
+  IF can_copy_and_paste THEN
+   IF keyval(scAlt) > 0 ANDALSO keyval(scC) > 1 THEN
+    IF clipboard_item THEN DELETE clipboard_item
+    clipboard_item = NEW ItemDef(item)
     show_overlay_message "Copied item", 0.75
    END IF
-   IF clipboard_used ANDALSO keyval(scV) > 1 THEN
-    a_copy itembuf(), undobuf()
-    undo_available = YES
-    a_copy clipboard_buf(), itembuf()
-    read_item_strings itembuf(), item_name, info
+   IF clipboard_item ANDALSO keyval(scAlt) > 0 ANDALSO keyval(scV) > 1 THEN
+    IF undo_item THEN DELETE undo_item
+    undo_item = NEW ItemDef(item)
+    item = *clipboard_item
     state.need_update = YES
     show_overlay_message "Pasted item (Ctrl-Z to undo)", 1.1
    END IF
   END IF
-  IF undo_available ANDALSO keyval(scCtrl) > 0 ANDALSO keyval(scZ) > 1 THEN
-   'Ctrl-Z to undo paste
-   a_copy undobuf(), itembuf()
-   read_item_strings itembuf(), item_name, info
+
+  IF undo_item ANDALSO keyval(scCtrl) > 0 ANDALSO keyval(scZ) > 1 THEN
+   item = *undo_item
+   'DELETE undo_item
+   'undo_item = NULL
    state.need_update = YES
    show_overlay_message "Undid paste", 0.75
   END IF
-  IF enter_space_click(state) THEN
-   IF state.pt = 0 THEN EXIT DO
-   IF item_is_equippable_in_slot(itembuf(), 0) THEN
-    IF state.pt = 17 THEN
-     xy_position_on_sprite wep_img, itembuf(80), itembuf(81), 0, "Weapon handle position", "xy_weapon_handle"
-     state.need_update = YES
-    END IF
-    IF state.pt = 18 THEN
-     xy_position_on_sprite wep_img, itembuf(78), itembuf(79), 1, "Weapon handle position", "xy_weapon_handle"
-     state.need_update = YES
-    END IF
-   END IF
-   IF item_is_equippable(itembuf()) THEN
-    IF state.pt = 19 THEN
-     item_editor_stat_bonuses itembuf()
-     state.need_update = YES
-    END IF
-    IF state.pt = 20 THEN
-     item_editor_elementals itembuf()
-    END IF
-    IF state.pt = 21 THEN
-     item_editor_equipbits itembuf(), item_name
-     state.need_update = YES
-    END IF
-   END IF
-   IF state.pt = 15 THEN 'sprite browser
-    DIM weaponb as WeaponSpriteBrowser
-    itembuf(52) = weaponb.browse(itembuf(52))
-    state.need_update = YES
-   END IF
-   IF state.pt = 16 THEN '--palette picker
-    itembuf(53) = pal16browse(itembuf(53), sprTypeWeapon, itembuf(52), YES)
-    state.need_update = YES
-   END IF
-   IF state.pt = 5 THEN
-    editbitset itembuf(), 239, eqst()
-    state.need_update = YES
-   END IF
-   IF state.pt = 10 THEN
-    DIM captions(2) as string = {"Unlimited Use", "Consumed By Use", "Cannot be Sold/Dropped"}
-    DIM b as ArrayBrowser = ArrayBrowser(captions(), "Consumability")
-    itembuf(73) = b.browse(itembuf(73))
-    state.need_update = YES
-   END IF
-  END IF
-  SELECT CASE state.pt
-   CASE 1
-    IF enable_strgrabber ANDALSO strgrabber(item_name, 8) THEN
-     state.need_update = YES
-    END IF
-   CASE 2
-    IF enable_strgrabber ANDALSO strgrabber(info, 36) THEN
-     state.need_update = YES
-    END IF
-   CASE 3, 4, 10, 15, 16
-    IF intgrabber(itembuf(iidx(state.pt)), min(state.pt), max(state.pt)) THEN
-     state.need_update = YES
-    END IF
-   CASE 6, 7, 8  'Attacks
-    IF attackgrabber(itembuf(iidx(state.pt)), state, 1, 0) THEN
-     state.need_update = YES
-    END IF
-   CASE 9
-    'Out-of-battle use can be either an attack or a textbox
-    'We want attack/textboxgrabber to handle +/ins and enter/space/click when an
-    'attack/textbox is selected, and xintgrabber to handle other keys.
-    DIM boxnum as integer = -itembuf(51)
-    IF keyval(scPlus) = 0 ANDALSO xintgrabber(itembuf(51), 0, gen(genMaxAttack), -1, gen(genMaxTextbox) * -1) THEN
-     state.need_update = YES
-    ELSEIF itembuf(51) < 0 ANDALSO textboxgrabber(boxnum, state, 0, , NO) THEN  'intgrab=NO
-     itembuf(51) = -boxnum
-     state.need_update = YES
-    ELSEIF itembuf(51) > 0 ANDALSO attackgrabber(itembuf(51), state, 1, , NO) THEN  'intgrab=NO
-     state.need_update = YES
-    ELSEIF enter_or_add_new(state) THEN
-     'Yikes... never cram multiple data types in the same option!!
-     '(OK, this is overkill, since James will hopefully come along and replace this soon!)
-     DIM wantnew as bool = NOT enter_space_click(state)
-     SELECT CASE twochoice("Link to what?", "A textbox", "An attack")
-      CASE 0: itembuf(51) = textbox_picker(IIF(wantnew, 999999, 1)) * -1
-      CASE 1: itembuf(51) = attack_picker_or_none(IIF(wantnew, 999999, 0))
-     END SELECT
-     state.need_update = YES
-    END IF
-   CASE 11 TO 14
-    IF tag_id_grabber(itembuf(74 + (state.pt - 11)), state) THEN
-     state.need_update = YES
-     'Update itemtags() cache
-     item_tags_from_buf itemtags(item_id), itembuf()
-    END IF
-  END SELECT
-  IF keyval(scCtrl) > 0 ANDALSO keyval(scB) > 1 THEN  'Ctrl+B debug key: edit all bits... except equipability
-   editbitset itembuf(), 70, bitnames(), , , , , , YES, YES 'show_index = show_all = YES
-   state.need_update = YES
-  END IF
+ END IF
 
-  IF state.need_update THEN
-   state.need_update = NO
-   write_item_strings itembuf(), item_name, info
-   generate_item_edit_menu menu(), shaded(), itembuf(), item_name, info, eqst(), box_preview
-   load_sprite_and_pal wep_img, sprTypeWeapon, itembuf(52), itembuf(53)
-  END IF
-  IF enable_strgrabber = NO ANDALSO keyval(scAlt) = 0 ANDALSO select_by_typing(selectst, NO) THEN
-   select_on_word_boundary menu(), selectst, state
-  END IF
+ END IF '--End of main menu
+ '----------------------------
 
-  clearpage dpage
-  highlight_menu_typing_selection menu(), menu_display(), selectst, state
-  standardmenu menu_display(), state, shaded(), , , dpage
-  IF item_is_equippable_in_slot(itembuf(), 0) THEN
-   'Is a weapon
-   DIM weappos as XYPair = XY(280, 145)  'Near the weapon options
-   DIM frame as integer = 0
-   IF state.pt = 17 THEN frame = 1
-   frame_draw wep_img.sprite + 1 - frame, wep_img.pal, weappos.x, weappos.y, , dpage
-   DIM handle as XYPair = weappos
-   handle.x += itembuf(78 + frame * 2)
-   handle.y += itembuf(79 + frame * 2)
-   DIM col as integer = uilook(uiSelectedItem) + state.tog
-   drawline handle.x - 2, handle.y    , handle.x - 1, handle.y    , col, dpage
-   drawline handle.x    , handle.y - 2, handle.x    , handle.y - 1, col, dpage
-   drawline handle.x + 1, handle.y    , handle.x + 2, handle.y    , col, dpage
-   drawline handle.x    , handle.y + 1, handle.x    , handle.y + 2, col, dpage
-  END IF
+END SUB
 
-  'Tooltip and textbox preview
-  DIM tooltipy as RelPos = pInfoY
-  IF itembuf(51) < 0 THEN
-   edgeprint box_preview, 0, pBottom, uilook(uiText), dpage
-   tooltipy -= 10
-  END IF
-  DIM tooltip as string
-  IF state.pt >= 6 AND state.pt <= 9 THEN 'Editing a textbox/attack ID
-   tooltip = THINGGRABBER_TOOLTIP
-  ELSEIF state.pt = 0 THEN
-   'These keys work when many other menu items, aside from "Back to Item Menu",
-   'are selected too, but I think it's bad to show tooltips not specific to the current menu item,
-   'so only show it in one place (so the keys are discoverable).
-   IF clipboard_used THEN
-    tooltip = "Alt-C/V to copy/paste item definition"
-   ELSE
-    tooltip = "Alt-C to copy item definition"
-   END IF
-  END IF
-  edgeprint tooltip, pInfoX, tooltipy, uilook(uiDisabledItem), dpage
+SUB ItemEditor.reload_sprite()
+ ChangeSpriteSlice wep_sl, sprTypeWeapon, item.wep_pic, item.wep_pal, preview_wep_frame
+ handle_pos_sl->x = item.wep_handle(preview_wep_frame).x
+ handle_pos_sl->y = item.wep_handle(preview_wep_frame).y
+ wep_sl->Visible = IIF(item.eqslots(0), YES, NO)
+END SUB
 
-  SWAP vpage, dpage
-  setvispage vpage
-  dowait
- LOOP
- unload_sprite_and_pal wep_img
- saveitemdata itembuf(), item_id
- RETURN item_id
+SUB ItemEditor.draw_underlays ()
+ ChangeTextSlice tooltip_sl, tooltip
+ DrawSlice underlay, vpage
+END SUB
+
+'-----------------------------------------------------------------------
+
+SUB item_editor_elementals(item as ItemDef)
+ DIM elementals(gen(genNumElements) - 1) as single
+ FOR i as integer = 0 TO gen(genNumElements) - 1
+  elementals(i) = item.elemental_resist(i)
+  IF gen(genEquipMergeFormula) = 2 THEN  'additive merging
+   elementals(i) -= 1.0
+  END IF
+ NEXT
+ common_elementals_editor elementals(), "item_elementals", (gen(genEquipMergeFormula) = 2)
+ FOR i as integer = 0 TO gen(genNumElements) - 1
+  IF gen(genEquipMergeFormula) = 2 THEN  'additive merging
+   elementals(i) += 1.0
+  END IF
+  item.elemental_resist(i) = elementals(i)
+ NEXT
+END SUB
+
+' Who Can Equip? menu
+SUB item_editor_equipbits(item as ItemDef)
+ DIM hero_id as integer
+ DIM bitnames(-1 TO maxMaxHero) as string
+ FOR hero_id = 0 TO gen(genMaxHero)
+  bitnames(hero_id) = getheroname(hero_id)
+  IF LEN(bitnames(hero_id)) = 0 THEN bitnames(hero_id) = "Hero " & hero_id
+ NEXT
+ editbitset item.equip_by_bits(), 0, bitnames(), , , , item.name & " is equippable by..."
+END SUB
+
+'-----------------------------------------------------------------------
+
+
+FUNCTION individual_item_editor(item_id as integer) as integer
+
+ IF item_id > maxMaxItems THEN
+  visible_debug "Can't edit item id > " & maxMaxItems
+  RETURN -1
+ END IF
+
+ DIM editor as ItemEditor = ItemEditor(item_id)
+ editor.run()
+ 
+ RETURN editor.id
 END FUNCTION
+
+'-----------------------------------------------------------------------
+
 
 SUB generate_item_edit_menu (menu() as string, shaded() as bool, itembuf() as integer, item_name as string, info_string as string, equip_types() as string, byref box_preview as string)
  DIM weapon as string = readglobalstring(38, "Weapon", 10)
@@ -423,23 +498,6 @@ FUNCTION item_attack_name(n as integer) as string
  RETURN n - 1 & " " & readattackname(n - 1)
 END FUNCTION
 
-' Who Can Equip? menu
-SUB item_editor_equipbits(itembuf() as integer, itemname as string)
- DIM hero_id as integer
- ' The equippable bits are discontinuous
- DIM combined_bits(maxMaxHero \ 16) as integer
- DIM bitnames(-1 TO maxMaxHero) as string
- FOR hero_id = 0 TO gen(genMaxHero)
-  bitnames(hero_id) = getheroname(hero_id)
-  IF LEN(bitnames(hero_id)) = 0 THEN bitnames(hero_id) = "Hero " & hero_id
-  setbit combined_bits(), 0, hero_id, item_read_equipbit(itembuf(), hero_id)
- NEXT
- editbitset combined_bits(), 0, bitnames(), , , , itemname & " is equippable by..."
- FOR hero_id = 0 TO gen(genMaxHero)
-  item_write_equipbit(itembuf(), hero_id, xreadbit(combined_bits(), hero_id))
- NEXT
-END SUB
-
 'This elemental resistance editor is shared by the hero and item editors
 SUB common_elementals_editor(elementals() as single, helpfile as string, byval showsign as integer = 0)
  DIM elementnames() as string
@@ -495,77 +553,4 @@ SUB common_elementals_editor(elementals() as single, helpfile as string, byval s
  setkeys
 END SUB
 
-SUB item_editor_elementals(itembuf() as integer)
- DIM elementals(gen(genNumElements) - 1) as single
- FOR i as integer = 0 TO gen(genNumElements) - 1
-  elementals(i) = DeSerSingle(itembuf(), 82 + i * 2)
-  IF gen(genEquipMergeFormula) = 2 THEN  'additive merging
-   elementals(i) -= 1.0
-  END IF
- NEXT
- common_elementals_editor elementals(), "item_elementals", (gen(genEquipMergeFormula) = 2)
- FOR i as integer = 0 TO gen(genNumElements) - 1
-  IF gen(genEquipMergeFormula) = 2 THEN  'additive merging
-   elementals(i) += 1.0
-  END IF
-  SerSingle itembuf(), 82 + i * 2, elementals(i)
- NEXT
-END SUB
-
-SUB item_editor_init_new(itembuf() as integer)
- flusharray itembuf(), dimbinsize(binITM), 0
- FOR i as integer = 0 TO 63
-  SerSingle itembuf(), 82 + i * 2, 1.0
- NEXT i
-END SUB
-
-SUB item_editor_stat_bonuses(itembuf() as integer)
- DIM menu(-1 TO statLast) as string
- DIM menu_display(-1 TO statLast) as string
- menu(-1) = "Previous Menu"
- DIM selectst as SelectTypeState
- DIM state as MenuState
- state.first = -1
- state.top = -1
- state.last = UBOUND(menu)
- state.size = 24
- state.need_update = YES
-
- setkeys YES
- DO
-  setwait 55
-  setkeys YES
-  IF keyval(ccCancel) > 1 THEN EXIT DO
-  IF keyval(scF1) > 1 THEN show_help "equipment_stat_bonuses"
-  usemenu state
-  IF enter_space_click(state) THEN
-   IF state.pt = -1 THEN EXIT DO
-  END IF
-  IF state.pt >= 0 THEN
-   IF intgrabber(itembuf(54 + state.pt), -32768, 32767) THEN
-    state.need_update = YES
-   END IF
-  END IF
-
-  IF state.need_update THEN
-   state.need_update = NO
-   FOR i as integer = 0 TO statLast
-    menu(i) = statnames(i) + " Bonus: " & itembuf(54 + i)
-    DIM cap as integer = gen(genStatCap + i)
-    IF cap > 0 ANDALSO itembuf(54 + i) > cap THEN
-     menu(i) &= " [stat capped to " & cap & "]"
-    END IF
-   NEXT
-  END IF
-  IF select_by_typing(selectst, NO) THEN
-   select_on_word_boundary menu(), selectst, state
-  END IF
-
-  clearpage dpage
-  highlight_menu_typing_selection menu(), menu_display(), selectst, state
-  standardmenu menu_display(), state, , , dpage
-  SWAP vpage, dpage
-  setvispage vpage
-  dowait
- LOOP
-END SUB
+'-----------------------------------------------------------------------

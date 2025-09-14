@@ -38,7 +38,6 @@ DECLARE SUB reset_battle_state (byref bat as BattleState)
 DECLARE SUB reset_targetting (byref bat as BattleState)
 DECLARE SUB reset_attack (byref bat as BattleState)
 DECLARE SUB reset_victory_state (byref vic as VictoryState)
-DECLARE SUB reset_rewards_state (byref rew as RewardsState)
 DECLARE SUB show_victory (byref bat as BattleState, bslot() as BattleSprite, page as integer)
 DECLARE SUB trigger_victory(byref bat as BattleState, bslot() as BattleSprite)
 DECLARE SUB fulldeathcheck (byval killing_attack as integer, bat as BattleState, bslot() as BattleSprite, formdata as Formation)
@@ -318,7 +317,13 @@ FUNCTION battle (byval form as integer) as bool
   battle_display_menus bat, bslot(), st(), uipage
 
   IF bat.vic.state = vicEXITDELAY THEN bat.vic.state = vicEXIT
-  IF bat.vic.state > vicNONE THEN show_victory bat, bslot(), uipage
+  IF bat.vic.state > vicNONE THEN
+   IF gen(genSkipBattleRewardsTicks) = -1 THEN
+    bat.vic.state = vicEXITDELAY
+   ELSE
+    show_victory bat, bslot(), uipage
+   END IF
+  END IF
 
   IF bat.death_mode = deathENEMIES AND bat.vic.state = vicNONE THEN
    IF count_dissolving_enemies(bslot()) = 0 THEN trigger_victory bat, bslot()
@@ -2435,7 +2440,7 @@ SUB populate_battle_menu_menudef (byval hero_id as integer, menu as MenuDef, her
  DIM wep_id as integer
  DIM atk_id as integer
  DIM spells_id as integer
- DIM itembuf(dimbinsize(binITM)) as integer
+ DIM item as ItemDef
 
  init_battle_menu menu, gen(genDefaultBattleMenu) - 1
  
@@ -2445,8 +2450,8 @@ SUB populate_battle_menu_menudef (byval hero_id as integer, menu as MenuDef, her
    k = m."kind".ptr
    IF k."weapon".exists THEN
     wep_id = gam.hero(hero_id).equip(0).id
-    loaditemdata itembuf(), wep_id
-    atk_id = itembuf(48) - 1
+    loaditemdata item, wep_id
+    atk_id = item.battle_weapon_attack
     IF atk_id < 0 THEN atk_id = 0
     caption = readattackname(atk_id)
     mitem = append_menu_item(menu, caption, batmenu_ATTACK, atk_id, m)
@@ -2689,11 +2694,21 @@ SUB trigger_victory(byref bat as BattleState, bslot() as BattleSprite)
  '--Collect gold (which is capped at 2 billion max)
  gold = gold + bat.rew.plunder
  IF gold < 0 OR gold > 2000000000 THEN gold = 2000000000
- '--Give out experience
 
+ '--Give out experience
  export_battle_hero_stats bslot() 'Needed because distribute_party_experience() might level-up some heroes
  bat.rew.exper = distribute_party_experience(bat.rew.exper)
  import_battle_hero_stats bslot() 'Needed because we will likely be calling export_battle_hero_stats() again later
+
+ '--Give items
+ DIM i as integer = 0
+ FOR i = 0 TO UBOUND(bat.rew.found)
+  IF bat.rew.found(i).num > 0 THEN getitem bat.rew.found(i).id, bat.rew.found(i).num
+ NEXT
+
+ '-- Record rewards for after-battle usage
+ gam.rew = bat.rew
+
  '--Trigger the display of end-of-battle rewards
  bat.vic.state = vicGOLDEXP
  bat.vic.display_ticks = 0
@@ -2760,7 +2775,7 @@ SUB RewardsState.add_item(itemid as integer, count as integer = 1)
 END SUB
 
 FUNCTION should_victory_advance(byref bat as BattleState) as bool
- IF game_check_use_key() ORELSE game_check_cancel_key() THEN RETURN YES
+ IF gen(genSkipBattleRewardsTicks) = -1 ORELSE game_check_use_key() ORELSE game_check_cancel_key() THEN RETURN YES
  IF (readmouse.release AND mouseLeft) ORELSE (readmouse.release AND mouseLeft) THEN RETURN YES
  IF gen(genSkipBattleRewardsTicks) > 0 THEN
   IF bat.vic.display_ticks > gen(genSkipBattleRewardsTicks) THEN
@@ -2771,15 +2786,18 @@ FUNCTION should_victory_advance(byref bat as BattleState) as bool
  RETURN NO
 END FUNCTION
 
+SUB draw_victory_box(numlines as integer = 4, page as integer)
+ centerfuz 160, 10 + 5 * numlines, 280, 10 + 10 * numlines, 1, page
+END SUB
+
 SUB show_victory (byref bat as BattleState, bslot() as BattleSprite, page as integer)
  DIM tempstr as string
  WITH bat.vic
-  IF .box THEN centerfuz 160, 30, 280, 50, 1, page
   .display_ticks += 1
   SELECT CASE .state
    CASE vicGOLDEXP
     '--print acquired gold and experience
-    IF bat.rew.plunder > 0 OR bat.rew.exper > 0 THEN .box = YES: centerfuz 160, 30, 280, 50, 1, page
+    IF bat.rew.plunder > 0 OR bat.rew.exper > 0 THEN draw_victory_box 4, page
     IF bat.rew.plunder > 0 THEN
      tempstr = .gold_caption & " " & price_string(bat.rew.plunder) & "!"
      edgeprint tempstr, pCentered, 16, uilook(uiText), page
@@ -2798,11 +2816,7 @@ SUB show_victory (byref bat as BattleState, bslot() as BattleSprite, page as int
     FOR i as integer = 0 TO UBOUND(gam.hero)
      IF gam.hero(i).lev_gain <> 0 THEN numlevelled += 1
     NEXT
-    IF numlevelled THEN
-     numlevelled = large(numlevelled, 4)
-     centerfuz 160, 10 + 5 * numlevelled, 280, 10 + 10 * numlevelled, 1, page
-     .box = YES
-    END IF
+    IF numlevelled THEN draw_victory_box large(numlevelled, 4), page
     FOR i as integer = 0 TO UBOUND(gam.hero)
      SELECT CASE gam.hero(i).lev_gain
       CASE 1
@@ -2834,7 +2848,6 @@ SUB show_victory (byref bat as BattleState, bslot() as BattleSprite, page as int
        .display_ticks = 0
        .item_name = ""
        .found_index = 0
-       .box = NO
        EXIT DO
       END IF
       IF readbit(gam.hero(.learnwho).learnmask(), 0, .learnlist * 24 + .learnslot) THEN
@@ -2843,7 +2856,6 @@ SUB show_victory (byref bat as BattleState, bslot() as BattleSprite, page as int
        loadattackdata learn_attack, gam.hero(.learnwho).spells(.learnlist, .learnslot) - 1
        .item_name = gam.hero(.learnwho).name + .learned_caption + learn_attack.name
        .showlearn = YES
-       .box = YES
        IF learn_attack.learn_sound_effect > 0 THEN playsfx learn_attack.learn_sound_effect - 1
        EXIT DO
       END IF
@@ -2852,6 +2864,7 @@ SUB show_victory (byref bat as BattleState, bslot() as BattleSprite, page as int
      IF should_victory_advance(bat) THEN
       .showlearn = NO ' hide the display (which causes us to search for the next learned spell)
      END IF
+     draw_victory_box 4, page
      edgeprint .item_name, pCenteredLeft, 22, uilook(uiText), page
     END IF
    CASE vicITEMS
@@ -2867,8 +2880,6 @@ SUB show_victory (byref bat as BattleState, bslot() as BattleSprite, page as int
      END IF
      '--get the item name
      .item_name = readitemname(pickedup.id)
-     '--actually acquire the item
-     getitem pickedup.id, pickedup.num
      'tag_updates called when exiting battle() to handle all at once
     END IF
     '--if the present item is gotten, show the caption
@@ -2877,7 +2888,7 @@ SUB show_victory (byref bat as BattleState, bslot() as BattleSprite, page as int
     ELSE
      tempstr = .plural_item_caption & " " & pickedup.num & " " & .item_name
     END IF
-    IF LEN(tempstr) THEN centerfuz 160, 30, 280, 50, 1, page
+    draw_victory_box 4, page
     edgeprint tempstr, pCenteredLeft, 22, uilook(uiText), page
     '--check for a keypress
     IF should_victory_advance(bat) THEN
@@ -2943,6 +2954,7 @@ SUB reset_battle_state (byref bat as BattleState)
  reset_attack bat
  reset_victory_state bat.vic
  reset_rewards_state bat.rew
+ reset_rewards_state gam.rew
 END SUB
 
 SUB reset_targetting (byref bat as BattleState)
@@ -2963,24 +2975,10 @@ SUB reset_attack (byref bat as BattleState)
  END WITH
 END SUB
 
-SUB reset_rewards_state (byref rew as RewardsState)
- 'This could become a constructor for RewardsState when we support the -lang fb dialect
- DIM i as integer
- WITH rew
-  .plunder = 0
-  .exper = 0
-  FOR i = 0 TO UBOUND(.found)
-   .found(i).id = 0   'Note: id is not offset; num=0 indicates slot not used
-   .found(i).num = 0
-  NEXT i
- END WITH
-END SUB
-
 SUB reset_victory_state (byref vic as VictoryState)
  'This could become a constructor for VictoryState when we support the -lang fb dialect
  WITH vic
   .state = 0
-  .box = NO
   .showlearn = NO
   .learnwho = 0
   .learnlist = 0
@@ -3002,15 +3000,15 @@ END SUB
 SUB checkitemusability(iuse() as integer, bslot() as BattleSprite, byval who as integer)
  'Iterate through the iuse() bitfield and mark any items that are usable
  DIM i as integer
- DIM itembuf(dimbinsize(binITM)) as integer
+ DIM item as ItemDef
  DIM attack as AttackData
 
  FOR i = 0 TO inventoryMax
   setbit iuse(), 0, i, 0 ' Default each slot to unusable
   IF inventory(i).used THEN
-   loaditemdata itembuf(), inventory(i).id
-   IF itembuf(47) > 0 THEN ' This item is usable in battle
-    loadattackdata attack, itembuf(47) - 1
+   loaditemdata item, inventory(i).id
+   IF item.battle_items_menu_attack >= 0 THEN ' This item is usable in battle
+    loadattackdata attack, item.battle_items_menu_attack
     IF attack.check_costs_as_item THEN
      '--This attack has the bitset that requires cost checking when used from an item
      IF atkallowed(attack, who, 0, 0, bslot(who)) THEN
@@ -3902,14 +3900,14 @@ END SUB
 FUNCTION items_menu_is_usable(bspr as BattleSprite) as bool
  'Returns YES if at least one item in the items menu is usable
  'Iterate through the iuse() bitfield and mark any items that are usable
- DIM itembuf(dimbinsize(binITM)) as integer
+ DIM item as ItemDef
  DIM attack as AttackData
 
  FOR i as integer = 0 TO inventoryMax
   IF inventory(i).used THEN
-   loaditemdata itembuf(), inventory(i).id
-   IF itembuf(47) > 0 THEN ' This item is usable in battle
-    loadattackdata attack, itembuf(47) - 1
+   loaditemdata item, inventory(i).id
+   IF item.battle_items_menu_attack >= 0 THEN ' This item is usable in battle
+    loadattackdata attack, item.battle_items_menu_attack
     IF attack.check_costs_as_item THEN
      '--This attack has the bitset that requires cost checking when used from an item
      IF atkallowed(attack, bspr.index, 0, 0, bspr) THEN
@@ -4239,10 +4237,10 @@ SUB itemmenu (byref bat as BattleState, bslot() as BattleSprite)
   IF readbit(bat.iuse(), 0, bat.item.pt) = 1 THEN
    menusound gen(genAcceptSFX)
 
-   DIM itembuf(dimbinsize(binITM)) as integer
-   loaditemdata itembuf(), inventory(bat.item.pt).id
-   bslot(bat.player_turn).consume_item = IIF(itembuf(73) = 1, bat.item.pt, -1)
-   bslot(bat.player_turn).attack = itembuf(47)
+   DIM item as ItemDef
+   loaditemdata item, inventory(bat.item.pt).id
+   bslot(bat.player_turn).consume_item = IIF(item.consumed_by_use, bat.item.pt, -1)
+   bslot(bat.player_turn).attack = item.battle_items_menu_attack + 1
    bat.targ.mode = targSETUP
    bat.menu_mode = batMENUHERO
    clearkeys

@@ -194,7 +194,7 @@ CONST genFullscreen = 210       ' Whether to start in fullscreen by default
 CONST genMusicVolume = 211      ' Initial music volume as a percentage.
 CONST genSFXVolume = 212        ' Initial global sound effects volume as a percentage.
 CONST genRungameFullscreenIndependent = 213  ' If false, fullscreen settings/config for games spawned by rungame are ignored
-CONST genSkipBattleRewardsTicks = 214   ' If > 0 then the battle rewards messages will automatically advance after this many ticks
+CONST genSkipBattleRewardsTicks = 214   ' If > 0 then the battle rewards messages will automatically advance after this many ticks; if = -1 then the battle rewards messages are skipped
 CONST genDefOnkeypressScript = 215      ' Default on-keypress script, if not overridden by map
 CONST genDefEachStepScript = 216        ' Default each-step script, if not overridden by map
 CONST genDefAfterBattleScript = 217     ' Default after-battle script, if not overridden by map
@@ -303,8 +303,9 @@ CONST fixAttackMultipliers = 29  'Initialise attack damage and aim multipliers, 
 CONST fixCheckForBrokenTBChains = 30 'Ran check_for_broken_textbox_after_chains()
 CONST fixCheckTryingToMoveDirection = 31 'Checked whether "trying to move direction" script exists
 CONST fixExtendedTileAnims = 32  'Initialised .TAP record fields at indices 20+
+CONST fixInitItemsReld = 33      'Load all ITM records and save them as items.reld
 
-CONST sizeFixBits = 33 ' *** Update this when adding fix bits (last bit + 1) ***
+CONST sizeFixBits = 34 ' *** Update this when adding fix bits (last bit + 1) ***
 
 '---Sizes (replaceable with variables when suitable)
 CONST max_onetime = 15999 'The last available onetime use flag. (The first is 2.)
@@ -350,7 +351,7 @@ CONST scriptTableSize = 512  'hash table size, power of 2 please
 CONST scriptCheckDelay = 1.1     'How long, in seconds, before the script interpreter becomes interruptable
 CONST scriptCheckInterval = 0.1  'How often, in seconds, that the script interpreter should perform checks
 
-CONST maxScriptCmdID = 779  'Max ID number of any supported script command (checked when saving or loading game)
+CONST maxScriptCmdID = 802  'Max ID number of any supported script command (checked when saving or loading game)
 
 '--- Binary files in BINSIZE.BIN for getbinsize()
 CONST binATTACK = 0
@@ -367,8 +368,9 @@ CONST binDT0 = 10
 CONST binDT1 = 11
 CONST binITM = 12
 CONST binTAP = 13
+CONST binLOOKUP1 = 14
 
-CONST binLASTENTRY = 13 ' *** Update this when adding binsize records ***
+CONST binLASTENTRY = 14 ' *** Update this when adding binsize records ***
 
 Enum SpriteType
 	sprTypeInvalid = -2

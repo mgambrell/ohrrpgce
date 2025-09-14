@@ -184,6 +184,9 @@ CONSTRUCTOR GlobalTextStringsMenu ()
  add_item 93,  "Buy alert",                  "Purchased", 20
  add_item 95,  "Hire alert (suffix)",        "Joined!", 20
  add_item 309, "The shop is empty",          "The shop is empty", 30
+ add_item 334, "Equip Preview hint",         "< preview hero >", 30
+ add_item 337, "Preview hint, no heroes",    "No heroes can equip", 30
+ add_item 340, "Vs equipped $I",             "Vs equipped $I", 30
 
  header        " Sell Menu"
  add_item 77,  "Value: Worth ($) (and...)",  "Worth", 20
@@ -225,7 +228,8 @@ CONSTRUCTOR GlobalTextStringsMenu ()
  add_item 135, "Plotscript: pick hero",      "Which Hero?", 20
  add_item 137, "Hero name prompt",           "Name the Hero", 20
 
- '**** next unused index is 332
+ '**** next unused index is 343
+ 'See also https://rpg.hamsterrepublic.com/ohrrpgce/STT
 
  'NOTE: if you add global strings here, technically you should update the limit-checking on
  'the implementation of the "get global string" plotscripting command
@@ -383,7 +387,7 @@ SUB write_translation_file_txt(fname as string, translations as StrHashTable)
   v_sort items, CAST(FnCompare, @compare_translations)
 
   FOR idx as integer = 0 TO v_len(items) - 1
-    DIM code as string ptr = items[idx].key
+    DIM code as const string ptr = items[idx].key
     WITH *CAST(TranslationString ptr, items[idx].value)
       PRINT #fh,
       IF LEN(.description) THEN PRINT #fh, "# " & .description
